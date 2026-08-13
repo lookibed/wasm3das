@@ -1,0 +1,28 @@
+# Local Daslang toolchain and downloaded utilities
+/tmp/
+/tools/
+
+# Filesystem metadata copied from Windows downloads
+*Zone.Identifier
+
+# Daslang generated artifacts
+/.jitted_scripts/
+*.aot.cpp
+*.aot.h
+
+# Editor and OS metadata
+.vscode/
+.idea/
+.DS_Store
+Thumbs.db
+
+# Diagnostic and benchmark scratch data
+/logs/
+/benchmarks/tmp/
+
+# Legacy Daslang demo project retained locally, unrelated to the Wasm3 port
+/demo_*.das
+/main.das
+/lib/
+/run.sh
+/Текстовый документ.txt
