@@ -1,0 +1,79 @@
+name: Daslang quality
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+
+permissions:
+  contents: read
+
+concurrency:
+  group: daslang-quality-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  quality-gate:
+    name: Daslang quality gate
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+
+    env:
+      DASLANG_COMMIT: 1524b3bf62e7decbfe530dc5f2e794b296fa1e68
+      DASLANG_ROOT: ${{ github.workspace }}/.ci/daScript
+      DASLANG_BIN: ${{ github.workspace }}/.ci/daScript/bin/daslang
+
+    steps:
+      - name: Check out wasm3das
+        uses: actions/checkout@v4
+
+      - name: Cache Daslang build
+        id: cache-daslang
+        uses: actions/cache@v4
+        with:
+          path: .ci/daScript
+          key: daslang-linux-${{ env.DASLANG_COMMIT }}
+
+      - name: Build pinned Daslang toolchain
+        if: steps.cache-daslang.outputs.cache-hit != 'true'
+        shell: bash
+        run: |
+          set -euo pipefail
+          git clone --filter=blob:none https://github.com/GaijinEntertainment/daScript.git "$DASLANG_ROOT"
+          git -C "$DASLANG_ROOT" checkout "$DASLANG_COMMIT"
+          git -C "$DASLANG_ROOT" submodule update --init --recursive --depth 1
+          cmake -S "$DASLANG_ROOT" -B "$DASLANG_ROOT/build" -DCMAKE_BUILD_TYPE=Release
+          cmake --build "$DASLANG_ROOT/build" --target daslang --config Release --parallel 2
+
+      - name: Verify pinned compiler
+        run: |
+          test "$(git -C "$DASLANG_ROOT" rev-parse HEAD)" = "$DASLANG_COMMIT"
+          "$DASLANG_BIN" --version
+
+      - name: Compiler diagnostics
+        shell: bash
+        run: |
+          set -euo pipefail
+          while IFS= read -r file; do
+            echo "::group::compile $file"
+            "$DASLANG_BIN" -compile-only "$file"
+            echo "::endgroup::"
+          done < <(find source tests -type f -name '*.das' -print | sort)
+
+      - name: Paranoid lint
+        run: "$DASLANG_BIN" "$DASLANG_ROOT/utils/lint/main.das" -- --paranoid-only source tests
+
+      - name: Performance lint
+        run: "$DASLANG_BIN" "$DASLANG_ROOT/utils/lint/main.das" -- --perf-only source tests
+
+      - name: Style lint
+        run: "$DASLANG_BIN" "$DASLANG_ROOT/utils/lint/main.das" -- --style-only source tests
+
+      - name: Project tests
+        run: "$DASLANG_BIN" "$DASLANG_ROOT/dastest/dastest.das" -- --test tests
+
+      - name: MCP protocol tests
+        run: "$DASLANG_BIN" "$DASLANG_ROOT/dastest/dastest.das" -- --test "$DASLANG_ROOT/tests/mcp/test_mcp_jsonrpc.das"
+
+      - name: LSP protocol tests
+        run: "$DASLANG_BIN" "$DASLANG_ROOT/dastest/dastest.das" -- --test "$DASLANG_ROOT/tests/lsp"
