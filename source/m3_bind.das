@@ -48,39 +48,16 @@ def public ConvertTypeCharToTypeId(i_code : int) : u8 {
 }
 
 
-// ============================================================================
-// 2. SignatureToFuncType
-// ============================================================================
-
-
-def public SignatureToFuncType(var o_functionType : IM3FuncType&; i_signature : ccstr_t) : M3Result { // nolint:STYLE038
-    var funcType : IM3FuncType = null
-    o_functionType = null
-
-    // C's `sig` is a moving char pointer. In Daslang the same cursor is an
-    // integer into one byte-view obtained up front, avoiding repeated strlen.
-    var sig = 0
-
-    var maxNumTypes = u32(length(i_signature))
-
-    // assume min signature is "()"
-    if (maxNumTypes < 2u) {
-        return m3Err_malformedFunctionSignature
-    }
-    maxNumTypes -= 2u
-
-    if (maxNumTypes > u32(d_m3MaxSaneFunctionArgRetCount)) {
-        return m3Err_tooManyArgsRets
-    }
-
-    var result : M3Result = AllocFuncType(funcType, maxNumTypes)
-    if (!empty(result)) {
-        return result
-    }
-
-    var typelist = unsafe(addr(funcType.types[0]))
-
+def private ParseSignatureTypeList(
+    var funcType : IM3FuncType;
+    i_signature : ccstr_t;
+    maxNumTypes : u32;
+    var sig : int&;
+    var typelist : u8?&
+) : M3Result {
+    var result = m3Err_none
     var parsingRets = true
+
     peek_data(i_signature) $(data : array<uint8> const#) {
         while (sig < length(data)) {
             let typeChar = int(data[sig])
@@ -102,7 +79,6 @@ def public SignatureToFuncType(var o_functionType : IM3FuncType&; i_signature : 
                 result = "unknown argument type char"
                 break
             }
-
             if (typeId == u8(M3ValueType.c_m3Type_none)) {
                 continue
             }
@@ -126,6 +102,42 @@ def public SignatureToFuncType(var o_functionType : IM3FuncType&; i_signature : 
             }
         }
     }
+
+    return result
+}
+
+
+// ============================================================================
+// 2. SignatureToFuncType
+// ============================================================================
+
+
+def public SignatureToFuncType(var o_functionType : IM3FuncType&; i_signature : ccstr_t) : M3Result {
+    var funcType : IM3FuncType = null
+    o_functionType = null
+
+    // C's `sig` is a moving char pointer. In Daslang the same cursor is an
+    // integer into one byte-view obtained up front, avoiding repeated strlen.
+    var sig = 0
+    var maxNumTypes = u32(length(i_signature))
+
+    // assume min signature is "()"
+    if (maxNumTypes < 2u) {
+        return m3Err_malformedFunctionSignature
+    }
+    maxNumTypes -= 2u
+
+    if (maxNumTypes > u32(d_m3MaxSaneFunctionArgRetCount)) {
+        return m3Err_tooManyArgsRets
+    }
+
+    var result : M3Result = AllocFuncType(funcType, maxNumTypes)
+    if (!empty(result)) {
+        return result
+    }
+
+    var typelist = unsafe(addr(funcType.types[0]))
+    result = ParseSignatureTypeList(funcType, i_signature, maxNumTypes, sig, typelist)
 
     if (!empty(result)) {
         m3_Free_Impl(unsafe(reinterpret<void?>(funcType)))
