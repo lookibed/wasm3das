@@ -76,7 +76,7 @@ def reference_rotl32(n : u32; c : uint) : u32 {
 
     let count = int(c & 31u)
 
-    for (i in range(count)) {
+    for (_i in range(count)) {
         let carry = (result >> 31u) & 1u
 
         result <<= 1u
@@ -92,7 +92,7 @@ def reference_rotr32(n : u32; c : uint) : u32 {
 
     let count = int(c & 31u)
 
-    for (i in range(count)) {
+    for (_i in range(count)) {
         let carry = result & 1u
 
         result >>= 1u
@@ -108,7 +108,7 @@ def reference_rotl64(n : u64; c : uint) : u64 {
 
     let count = int(c & 63u)
 
-    for (i in range(count)) {
+    for (_i in range(count)) {
         let carry = (result >> 63ul) & 1ul
 
         result <<= 1ul
@@ -124,7 +124,7 @@ def reference_rotr64(n : u64; c : uint) : u64 {
 
     let count = int(c & 63u)
 
-    for (i in range(count)) {
+    for (_i in range(count)) {
         let carry = result & 1ul
 
         result >>= 1ul
@@ -144,7 +144,7 @@ def reference_rotr64(n : u64; c : uint) : u64 {
 */
 
 
-def test_expected_32() {
+def test_expected_32() { // nolint:STYLE038
 
     /*
         zero
@@ -354,7 +354,7 @@ def test_expected_32() {
 }
 
 
-def test_expected_64() {
+def test_expected_64() { // nolint:STYLE038
 
     /*
         zero
@@ -583,7 +583,7 @@ def test_expected_64() {
 */
 
 
-def test_rotations_32() {
+def test_rotations_32() { // nolint:STYLE038
 
     /*
         Значения:
@@ -748,7 +748,7 @@ def test_rotations_32() {
 */
 
 
-def test_rotations_64() {
+def test_rotations_64() { // nolint:STYLE038
 
     let values = fixed_array(
         0x0000000000000000ul,

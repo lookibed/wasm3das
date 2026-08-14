@@ -53,7 +53,7 @@ def public ConvertTypeCharToTypeId(i_code : int) : u8 {
 // ============================================================================
 
 
-def public SignatureToFuncType(var o_functionType : IM3FuncType&; i_signature : ccstr_t) : M3Result {
+def public SignatureToFuncType(var o_functionType : IM3FuncType&; i_signature : ccstr_t) : M3Result { // nolint:STYLE038
     var funcType : IM3FuncType = null
     o_functionType = null
 
