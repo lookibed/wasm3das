@@ -43,44 +43,12 @@ def private check_default_module() {
     check(moduleValue.memoryInfo.initPages == 0u, "default memoryInfo.initPages")
     check(moduleValue.memoryInfo.maxPages == 0u, "default memoryInfo.maxPages")
     check(moduleValue.memoryInfo.pageSize == 0u, "default memoryInfo.pageSize")
-    check(empty(moduleValue.memoryImport.moduleUtf8), "default memoryImport.moduleUtf8")
-    check(empty(moduleValue.memoryImport.fieldUtf8), "default memoryImport.fieldUtf8")
+    check(empty(moduleValue.memoryImport[0]), "default memoryImport.moduleUtf8 storage")
+    check(empty(moduleValue.memoryImport[1]), "default memoryImport.fieldUtf8 storage")
     check(!moduleValue.memoryImported, "default memoryImported")
     check(empty(moduleValue.memoryExportName), "default memoryExportName")
     check(moduleValue.next == null, "default next")
     check(m3_GetModuleName(modulePtr) == ".unnamed", "unnamed default module")
-}
-
-
-def private check_module_get_function() {
-    var functions : M3FunctionForward[5]
-    var functionsPtr : M3FunctionForward? = unsafe(addr(functions[0]))
-    var moduleValue = M3Module(
-        functions = functionsPtr,
-        allFunctions = 5u,
-        numFunctions = 5u
-    )
-
-    var modulePtr : IM3Module = unsafe(addr(moduleValue))
-    let first = Module_GetFunction(modulePtr, 0u)
-    let middle = Module_GetFunction(modulePtr, 2u)
-    let last = Module_GetFunction(modulePtr, 4u)
-
-    var firstExpected : IM3Function = unsafe(addr(functions[0]))
-    var middleExpected : IM3Function = unsafe(addr(functions[2]))
-    var lastExpected : IM3Function = unsafe(addr(functions[4]))
-    check(first == firstExpected, "first function")
-    check(middle == middleExpected, "middle function")
-    check(last == lastExpected, "last function")
-
-    check(Module_GetFunction(modulePtr, 5u) == null, "index numFunctions")
-    check(Module_GetFunction(modulePtr, 100000u) == null, "large out-of-range index")
-
-    // Backing capacity remains five, but logical function count is three.
-    moduleValue.numFunctions = 3u
-    check(Module_GetFunction(modulePtr, 2u) == middleExpected, "logical last function")
-    check(Module_GetFunction(modulePtr, 3u) == null, "bounds use numFunctions not capacity")
-    check(Module_GetFunction(modulePtr, 4u) == null, "hidden backing-capacity element")
 }
 
 
@@ -103,10 +71,10 @@ def private check_module_names() {
 
 
 def private check_module_runtime() {
-    var runtimeValue : M3RuntimeForward
+    var runtimeMarker : u8 = 1u
     var moduleValue : M3Module
     var modulePtr : IM3Module = unsafe(addr(moduleValue))
-    var runtimePtr : IM3Runtime = unsafe(addr(runtimeValue))
+    let runtimePtr : IM3Runtime = unsafe(addr(runtimeMarker))
 
     check(m3_GetModuleRuntime(null) == null, "null module runtime")
     check(m3_GetModuleRuntime(modulePtr) == null, "default module runtime")
@@ -116,45 +84,60 @@ def private check_module_runtime() {
 }
 
 
-def private check_global_defaults_and_config() {
+def private check_global_union_and_defaults() {
     var globalValue : M3Global
 
-    check(empty(globalValue.import.moduleUtf8), "default global import module")
-    check(empty(globalValue.import.fieldUtf8), "default global import field")
-    check(globalValue.value.i32Value == 0, "default global i32Value")
-    check(globalValue.value.i64Value == 0l, "default global i64Value")
-    check(globalValue.value.f64Value == 0.0lf, "default global f64Value")
-    check(globalValue.value.f32Value == 0.0, "default global f32Value")
+    check(empty(globalValue.import[0]), "default global import module storage")
+    check(empty(globalValue.import[1]), "default global import field storage")
+    check(typeinfo sizeof(globalValue.import) == 2 * typeinfo sizeof(type<cstr_t>), "global import storage size")
+    check(globalValue.i64Value == 0l, "default global union storage")
+    check(typeinfo sizeof(globalValue.i64Value) == 8, "global union storage size")
+
+    let unionAddress = intptr(unsafe(addr(globalValue.i64Value)))
+    let nameAddress = intptr(unsafe(addr(globalValue.name)))
+    check(nameAddress - unionAddress == 8, "anonymous union occupies exactly 8 bytes")
+
+    globalValue.i64Value = unsafe(reinterpret<i64>(3.5lf))
+    check(unsafe(reinterpret<f64>(globalValue.i64Value)) == 3.5lf, "f64 overlays union storage")
+
+    let f32Bits = unsafe(reinterpret<u32>(1.25))
+    let storedF32Bits = M3_LITTLE_ENDIAN ? u64(f32Bits) : (u64(f32Bits) << 32u)
+    globalValue.i64Value = i64(storedF32Bits)
+    let selectedF32Bits = (
+        M3_LITTLE_ENDIAN
+            ? u32(globalValue.i64Value)
+            : u32(u64(globalValue.i64Value) >> 32u)
+    )
+    check(unsafe(reinterpret<f32>(selectedF32Bits)) == 1.25, "f32 uses the same union storage")
+
     check(empty(globalValue.name), "default global name")
     check(globalValue.initExpr == null, "default global initExpr")
     check(globalValue.initExprSize == 0u, "default global initExprSize")
     check(globalValue._type == 0u, "default global type")
     check(!globalValue.imported, "default global imported")
     check(!globalValue.isMutable, "default global isMutable")
-
-    check(d_m3HasFloat, "accepted config requires float members")
-    check(!d_m3RecordBacktraces, "accepted config keeps backtraces disabled")
-    check(d_m3EnableStrace == 0u, "accepted config keeps strace disabled")
-    check(!d_m3EnableCodePageRefCounting, "accepted config keeps code page refcount disabled")
 }
 
 
-def private check_intentionally_absent_fields() {
+def private check_config_and_absent_fields() {
+    check(d_m3HasFloat, "accepted config requires float union views")
+    check(!d_m3RecordBacktraces, "accepted config keeps backtraces disabled")
+    check(d_m3EnableStrace == 0u, "accepted config keeps strace disabled")
+    check(!d_m3EnableCodePageRefCounting, "accepted config keeps code page refcount disabled")
+
     check(!typeinfo safe_has_field<importedGlobals>(default<M3Module>), "importedGlobals must stay absent")
     check(!typeinfo safe_has_field<hasWasmCodeCopy>(default<M3Module>), "hasWasmCodeCopy must stay absent")
-    check(typeinfo safe_has_field<f64Value>(default<M3GlobalValue>), "f64Value active with floats")
-    check(typeinfo safe_has_field<f32Value>(default<M3GlobalValue>), "f32Value active with floats")
+    check(!typeinfo safe_has_field<value>(default<M3Global>), "widened nested union struct must stay absent")
 }
 
 
 [test]
 def test_m3_module() {
     check_default_module()
-    check_module_get_function()
     check_module_names()
     check_module_runtime()
-    check_global_defaults_and_config()
-    check_intentionally_absent_fields()
+    check_global_union_and_defaults()
+    check_config_and_absent_fields()
 }
 
 

@@ -8,100 +8,51 @@ require ./m3_core.das public
 
 
 /*
-    m3_env.h (M3Global/M3Module) + simple accessors from m3_module.c
-    ----------------------------------------------------------------
+    Preparatory m3_module data layer.
 
-    This is the preparatory standalone data layer for m3_module. It does NOT
-    import m3_function.das yet: that module currently owns a temporary empty
-    M3Module used by Egor's accepted m3_function/m3_bind work. The two module
-    representations will be unified only after that review is complete.
+    This stage intentionally does not import m3_function.das. That file still
+    owns the temporary M3Module used by the function/bind work, so the canonical
+    structures are not merged here. In particular, this module does NOT declare
+    M3Function, M3FuncType, M3ImportInfo or aliases for them.
 
-    Forward/adaptation types
-    ------------------------
-    M3Module stores pointers to M3Runtime, M3Environment, M3FuncType and a
-    contiguous M3Function array, but the four accessors implemented at this
-    stage only dereference M3Module itself and index the function array. Small
-    opaque structs below therefore preserve pointer identity and pointer-array
-    shape without copying the full foreign structures into this module.
+    Standalone pointer/storage adaptations used until the merge step:
+    - runtime/environment are opaque pointers: their pointees are never read here;
+    - funcTypes/functions/table0 are opaque raw pointers with the same pointer-size
+      storage as their C pointer fields;
+    - M3ImportInfo is a by-value pair of const-char pointers in C. Until the
+      canonical type can be imported without a M3Module collision, `import` and
+      `memoryImport` use fixed cstr_t[2] storage in the same field position:
+      index 0 = moduleUtf8, index 1 = fieldUtf8. No duplicate M3ImportInfo type
+      is declared.
 
-    M3FunctionForward is intentionally one byte only. It is a temporary stride
-    for this isolated module test, not a second implementation of M3Function.
-    During the later merge it must be replaced by the canonical M3Function from
-    m3_function.das; M3Module field order and Module_GetFunction logic stay the
-    same. No ownership is attached to any forward pointer.
+    M3Global anonymous union adaptation:
+    C overlays i32Value/i64Value/f64Value/f32Value in one union whose size and
+    alignment are 8 bytes for the active d_m3HasFloat configuration. Gen2 has no
+    untagged union declaration, so `i64Value` is kept as the single 8-byte
+    storage anchor at the union position. The other C members are views of this
+    same storage, not separate fields. Future global accessors must reinterpret
+    this storage according to `_type`; no ownership is introduced.
 
-    C anonymous-union adaptation in M3Global
-    ----------------------------------------
-    Gen2 Daslang has no untagged C union declaration. The active union members
-    are retained by name in M3GlobalValue and stored as a nested value object.
-    This preparatory layer does not perform C interop or raw ABI casts, so the
-    widened pure-Daslang storage does not change ownership. Future global-value
-    access must select the member indicated by M3Global._type. d_m3HasFloat is
-    true in the accepted configuration, therefore f64Value and f32Value are
-    present. If float support is disabled later, those two members are removed
-    to match the C #if d_m3HasFloat branch.
-
-    String/null adaptation
-    ----------------------
-    Accepted m3_core maps C `const char *` to Daslang string and uses empty
-    string as the null-equivalent sentinel. Consequently a module whose `name`
-    is empty is treated like C name == NULL by m3_GetModuleName.
-
-    Inactive/commented C fields
-    ---------------------------
+    Inactive/commented C fields:
     - M3Module.importedGlobals is commented out in m3_env.h: absent here.
     - M3Module.hasWasmCodeCopy is commented out in m3_env.h: absent here.
-    There are no active #if-controlled fields inside M3Module itself in the
-    supplied header. M3Global's float members ARE active because d_m3HasFloat
-    is true. No M3Runtime conditional fields are copied into this preparatory
-    module; runtime is an opaque forward pointer only.
+    M3Global's float union views are active because d_m3HasFloat == true, but
+    they share the same `i64Value` storage anchor rather than widening the struct.
 */
 
 
 // ============================================================================
-// Forward/adaptation pointer types used directly by M3Module
+// Minimal forward/adaptation pointer aliases used directly by M3Module
 // ============================================================================
 
 
-struct M3RuntimeForward {
-    _opaque : u8
-}
-
-typedef public IM3Runtime = M3RuntimeForward?
-
-
-struct M3EnvironmentForward {
-    _opaque : u8
-}
-
-typedef public IM3Environment = M3EnvironmentForward?
-
-
-struct M3FuncTypeForward {
-    _opaque : u8
-}
-
-typedef public IM3FuncType = M3FuncTypeForward?
-
-
-struct M3FunctionForward {
-    _opaque : u8
-}
-
-typedef public IM3Function = M3FunctionForward?
+typedef public IM3Runtime = void?
+typedef public IM3Environment = void?
 
 
 // ============================================================================
 // Public value types used by M3Global/M3Module
 // ============================================================================
-
-
-struct M3ImportInfo {
-    moduleUtf8 : cstr_t
-    fieldUtf8 : cstr_t
-}
-
-typedef public IM3ImportInfo = M3ImportInfo?
 
 
 struct M3MemoryInfo {
@@ -121,24 +72,16 @@ struct M3DataSegment {
 }
 
 
-// Pure-Daslang replacement for C's anonymous value union; see module comment.
-struct M3GlobalValue {
-    i32Value : i32
-    i64Value : i64
-    f64Value : f64              // active because d_m3HasFloat == true
-    f32Value : f32              // active because d_m3HasFloat == true
-}
-
-
 // ============================================================================
 // M3Global from m3_env.h
 // ============================================================================
 
 
 struct M3Global {
-    import : M3ImportInfo
+    import : cstr_t[2]           // C M3ImportInfo: [moduleUtf8, fieldUtf8]
 
-    value : M3GlobalValue
+    i64Value : i64               // 8-byte anchor for C anonymous union
+                                 // i32Value/f64Value/f32Value overlay this address
 
     name : cstr_t
     initExpr : bytes_t           // wasm code
@@ -167,12 +110,12 @@ struct M3Module {
     name : cstr_t
 
     numFuncTypes : u32
-    funcTypes : IM3FuncType?         // C: IM3FuncType *
+    funcTypes : void?                 // C: IM3FuncType *; opaque until canonical merge
 
     numFuncImports : u32
     numFunctions : u32
     allFunctions : u32
-    functions : M3FunctionForward?   // C: M3Function *; temporary forward stride
+    functions : void?                 // C: M3Function *; opaque until canonical merge
 
     startFunction : i32
 
@@ -187,12 +130,12 @@ struct M3Module {
     elementSection : bytes_t
     elementSectionEnd : bytes_t
 
-    table0 : IM3Function?            // C: IM3Function *
+    table0 : void?                     // C: IM3Function *; opaque until canonical merge
     table0Size : u32
     table0ExportName : cstr_t
 
     memoryInfo : M3MemoryInfo
-    memoryImport : M3ImportInfo
+    memoryImport : cstr_t[2]           // C M3ImportInfo: [moduleUtf8, fieldUtf8]
     memoryImported : bool
     memoryExportName : cstr_t
 
@@ -204,27 +147,14 @@ struct M3Module {
 typedef public IM3Module = M3Module?
 
 
-// ============================================================================
-// 1. Module_GetFunction
-// ============================================================================
-
-
-def public Module_GetFunction(var i_module : IM3Module; i_functionIndex : u32) : IM3Function {
-    var func : IM3Function = null
-
-    if (i_functionIndex < i_module.numFunctions) {
-        // Bounds intentionally follow numFunctions, not backing capacity.
-        unsafe {
-            func = addr(i_module.functions[i_functionIndex])
-        }
-    }
-
-    return func
-}
+// The function-index accessor is intentionally deferred in review 5.1.
+// Its C implementation requires canonical M3Function stride/indexing; opaque
+// pointer storage is not sufficient for correct element-address arithmetic.
+// It will be restored only after the canonical module/function models merge.
 
 
 // ============================================================================
-// 2. m3_GetModuleName
+// m3_GetModuleName
 // ============================================================================
 
 
@@ -238,7 +168,7 @@ def public m3_GetModuleName(i_module : IM3Module) : cstr_t {
 
 
 // ============================================================================
-// 3. m3_SetModuleName
+// m3_SetModuleName
 // ============================================================================
 
 
@@ -250,7 +180,7 @@ def public m3_SetModuleName(var i_module : IM3Module; name : cstr_t) {
 
 
 // ============================================================================
-// 4. m3_GetModuleRuntime
+// m3_GetModuleRuntime
 // ============================================================================
 
 

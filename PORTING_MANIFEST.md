@@ -16,7 +16,7 @@ Status meanings:
 | `m3_code.c` | `source/m3_code.das` | Accepted | Code pages and word emission |
 | `m3_function.c` | `source/m3_function.das` | Accepted | Function types, metadata, ownership and release operations |
 | `m3_bind.c` | `source/m3_bind.das` | Revision | Signature conversion/parsing only; resolve the outstanding style-lint review, then port validation/linking after module/compiler support exists |
-| `m3_module.c`, structures from `m3_env.h` | `source/m3_module.das` | Revision | Fix C-union representation and remove the artificial one-byte `M3Function` stride before acceptance |
+| `m3_module.c`, structures from `m3_env.h` | `source/m3_module.das` | Accepted | Preparatory data layer and simple accessors; `Module_GetFunction` remains deferred until canonical module/function types are merged |
 | `m3_parse.c` | — | Not started | WebAssembly module parser |
 | `m3_env.c` | — | Not started | Environment, runtime, memory, globals and calls |
 | `m3_compile.c` | — | Not started | Wasm-to-Wasm3 compiler |
@@ -35,4 +35,3 @@ C control-flow fidelity still require code-owner review.
 
 The final project milestone requires parsing, compiling, linking, and executing
 representative non-WASI `.wasm` modules end to end.
-

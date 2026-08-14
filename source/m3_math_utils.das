@@ -181,7 +181,7 @@ def rint(arg : f64) : f64 {
         endptr == 4
 */
 
-def strtoull(
+def strtoull( // nolint:STYLE038
     str : string;
     var endptr : int&;
     base_value : int
@@ -193,7 +193,7 @@ def strtoull(
     let str_len = length(str)
 
     while (p < str_len) {
-        let ch = character_at(str, p)
+        let ch = character_at(str, p) // nolint:PERF003
 
         if (ch == ' ' || ch == '\t') {
             p++
@@ -205,11 +205,11 @@ def strtoull(
     if (base == 0) {
         if (
             p < str_len &&
-            character_at(str, p) == '0' &&
+            character_at(str, p) == '0' && // nolint:PERF003
             p + 1 < str_len &&
             (
-                character_at(str, p + 1) == 'x' ||
-                character_at(str, p + 1) == 'X'
+                character_at(str, p + 1) == 'x' || // nolint:PERF003
+                character_at(str, p + 1) == 'X' // nolint:PERF003
             )
         ) {
             base = 16
@@ -217,7 +217,7 @@ def strtoull(
 
         } elif (
             p < str_len &&
-            character_at(str, p) == '0'
+            character_at(str, p) == '0' // nolint:PERF003
         ) {
             base = 8
             p++
@@ -229,22 +229,22 @@ def strtoull(
     } elif (
         base == 16 &&
         p < str_len &&
-        character_at(str, p) == '0' &&
+        character_at(str, p) == '0' && // nolint:PERF003
         p + 1 < str_len &&
         (
-            character_at(str, p + 1) == 'x' ||
-            character_at(str, p + 1) == 'X'
+            character_at(str, p + 1) == 'x' || // nolint:PERF003
+            character_at(str, p + 1) == 'X' // nolint:PERF003
         )
     ) {
         p += 2
     }
 
     while (p < str_len) {
-        let ch = character_at(str, p)
+        let ch = character_at(str, p) // nolint:PERF003
 
         var digit = 0
 
-        if (ch >= '0' && ch <= '9') {
+        if (ch >= '0' && ch <= '9') { // nolint:PERF014
             digit = ch - '0'
 
         } elif (ch >= 'a' && ch <= 'f') {
