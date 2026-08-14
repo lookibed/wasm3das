@@ -42,7 +42,12 @@ jobs:
           git clone --filter=blob:none https://github.com/GaijinEntertainment/daScript.git "$DASLANG_ROOT"
           git -C "$DASLANG_ROOT" checkout "$DASLANG_COMMIT"
           git -C "$DASLANG_ROOT" submodule update --init --recursive --depth 1
-          cmake -S "$DASLANG_ROOT" -B "$DASLANG_ROOT/build" -DCMAKE_BUILD_TYPE=Release
+          cmake -S "$DASLANG_ROOT" -B "$DASLANG_ROOT/build" \
+            -DCMAKE_BUILD_TYPE=Release \
+            -DDAS_MODULES_INCLUDE= \
+            -DDAS_TESTS_DISABLED=ON \
+            -DDAS_TUTORIAL_DISABLED=ON \
+            -DDAS_AOT_EXAMPLES_DISABLED=ON
           cmake --build "$DASLANG_ROOT/build" --target daslang --config Release --parallel 2
 
       - name: Verify pinned compiler
