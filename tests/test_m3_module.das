@@ -14,7 +14,7 @@ def private check(condition : bool; message : string) {
 }
 
 
-def private check_default_module() {
+def private check_default_module_head() {
     var moduleValue : M3Module
     var modulePtr : IM3Module = unsafe(addr(moduleValue))
 
@@ -34,6 +34,13 @@ def private check_default_module() {
     check(moduleValue.dataSegments == null, "default dataSegments")
     check(moduleValue.numGlobals == 0u, "default numGlobals")
     check(moduleValue.globals == null, "default globals")
+    check(m3_GetModuleName(modulePtr) == ".unnamed", "unnamed default module")
+}
+
+
+def private check_default_module_tail() {
+    var moduleValue : M3Module
+
     check(moduleValue.numElementSegments == 0u, "default numElementSegments")
     check(moduleValue.elementSection == null, "default elementSection")
     check(moduleValue.elementSectionEnd == null, "default elementSectionEnd")
@@ -43,12 +50,30 @@ def private check_default_module() {
     check(moduleValue.memoryInfo.initPages == 0u, "default memoryInfo.initPages")
     check(moduleValue.memoryInfo.maxPages == 0u, "default memoryInfo.maxPages")
     check(moduleValue.memoryInfo.pageSize == 0u, "default memoryInfo.pageSize")
-    check(empty(moduleValue.memoryImport[0]), "default memoryImport.moduleUtf8 storage")
-    check(empty(moduleValue.memoryImport[1]), "default memoryImport.fieldUtf8 storage")
+    check(empty(moduleValue.memoryImport.moduleUtf8), "default memoryImport.moduleUtf8")
+    check(empty(moduleValue.memoryImport.fieldUtf8), "default memoryImport.fieldUtf8")
     check(!moduleValue.memoryImported, "default memoryImported")
     check(empty(moduleValue.memoryExportName), "default memoryExportName")
     check(moduleValue.next == null, "default next")
-    check(m3_GetModuleName(modulePtr) == ".unnamed", "unnamed default module")
+}
+
+
+
+def private check_module_functions() {
+    var functions : M3Function[5]
+    var moduleValue = M3Module(
+        numFunctions = 3u,
+        allFunctions = 5u,
+        functions = unsafe(addr(functions[0]))
+    )
+    var modulePtr : IM3Module = unsafe(addr(moduleValue))
+
+    check(Module_GetFunction(modulePtr, 0u) == unsafe(addr(functions[0])), "first function")
+    check(Module_GetFunction(modulePtr, 1u) == unsafe(addr(functions[1])), "middle function")
+    check(Module_GetFunction(modulePtr, 2u) == unsafe(addr(functions[2])), "last function")
+    check(Module_GetFunction(modulePtr, 3u) == null, "index numFunctions")
+    check(Module_GetFunction(modulePtr, 4u) == null, "capacity is not logical bound")
+    check(Module_GetFunction(modulePtr, 1000u) == null, "large function index")
 }
 
 
@@ -71,10 +96,10 @@ def private check_module_names() {
 
 
 def private check_module_runtime() {
-    var runtimeMarker : u8 = 1u
+    var runtimeValue : M3Runtime
     var moduleValue : M3Module
     var modulePtr : IM3Module = unsafe(addr(moduleValue))
-    let runtimePtr : IM3Runtime = unsafe(addr(runtimeMarker))
+    var runtimePtr : IM3Runtime = unsafe(addr(runtimeValue))
 
     check(m3_GetModuleRuntime(null) == null, "null module runtime")
     check(m3_GetModuleRuntime(modulePtr) == null, "default module runtime")
@@ -87,28 +112,29 @@ def private check_module_runtime() {
 def private check_global_union_and_defaults() {
     var globalValue : M3Global
 
-    check(empty(globalValue.import[0]), "default global import module storage")
-    check(empty(globalValue.import[1]), "default global import field storage")
+    check(empty(globalValue.import.moduleUtf8), "default global import module")
+    check(empty(globalValue.import.fieldUtf8), "default global import field")
     check(typeinfo sizeof(globalValue.import) == 2 * typeinfo sizeof(type<cstr_t>), "global import storage size")
-    check(globalValue.i64Value == 0l, "default global union storage")
-    check(typeinfo sizeof(globalValue.i64Value) == 8, "global union storage size")
+    check(globalValue.valueBits == 0ul, "default global union storage")
+    check(typeinfo sizeof(globalValue.valueBits) == 8, "global union storage size")
 
-    let unionAddress = intptr(unsafe(addr(globalValue.i64Value)))
+    let unionAddress = intptr(unsafe(addr(globalValue.valueBits)))
     let nameAddress = intptr(unsafe(addr(globalValue.name)))
     check(nameAddress - unionAddress == 8, "anonymous union occupies exactly 8 bytes")
 
-    globalValue.i64Value = unsafe(reinterpret<i64>(3.5lf))
-    check(unsafe(reinterpret<f64>(globalValue.i64Value)) == 3.5lf, "f64 overlays union storage")
-
-    let f32Bits = unsafe(reinterpret<u32>(1.25))
-    let storedF32Bits = M3_LITTLE_ENDIAN ? u64(f32Bits) : (u64(f32Bits) << 32u)
-    globalValue.i64Value = i64(storedF32Bits)
-    let selectedF32Bits = (
-        M3_LITTLE_ENDIAN
-            ? u32(globalValue.i64Value)
-            : u32(u64(globalValue.i64Value) >> 32u)
+    M3Global_SetF64Value(globalValue, 3.5lf)
+    check(M3Global_GetF64Value(globalValue) == 3.5lf, "f64 overlays union storage")
+    check(
+        unsafe(reinterpret<u64>(M3Global_GetI64Value(globalValue))) == globalValue.valueBits,
+        "i64 reads the same f64 storage"
     )
-    check(unsafe(reinterpret<f32>(selectedF32Bits)) == 1.25, "f32 uses the same union storage")
+
+    M3Global_SetF32Value(globalValue, 1.25)
+    check(M3Global_GetF32Value(globalValue) == 1.25, "f32 uses the same union storage")
+    check(
+        unsafe(reinterpret<u32>(M3Global_GetI32Value(globalValue))) == unsafe(reinterpret<u32>(1.25)),
+        "i32 reads the same f32 storage"
+    )
 
     check(empty(globalValue.name), "default global name")
     check(globalValue.initExpr == null, "default global initExpr")
@@ -133,7 +159,9 @@ def private check_config_and_absent_fields() {
 
 [test]
 def test_m3_module() {
-    check_default_module()
+    check_default_module_head()
+    check_default_module_tail()
+    check_module_functions()
     check_module_names()
     check_module_runtime()
     check_global_union_and_defaults()

@@ -3,144 +3,21 @@ options indenting = 4
 
 module m3_function shared public
 
-require ./m3_config.das public
-require ./m3_core.das public
+require ./m3_types.das public
 
 
 /*
-    m3_function.h / m3_function.c + M3ImportInfo from wasm3.h -> m3_function.das
+    m3_function.h / m3_function.c helpers.
 
-    Pure gen2 Daslang port of Wasm3 function signature metadata and function
-    ownership helpers.
-
-    M3FuncType memory adaptation
-    ----------------------------
-    C ends M3FuncType with the flexible array member `u8 types[]`.  A normal
-    Daslang dynamic array would introduce a second allocation and independent
-    ownership, which would break the layout expected by later parser/runtime
-    stages.  Instead `types[1]` below is only a layout anchor. AllocFuncType
-    allocates one raw block beginning at the structure address and extending
-    exactly `i_numTypes` bytes from the real address of types[0]. Consumers use
-    a raw u8 pointer rooted at that field; no container owns the tail.
-
-    String ownership adaptation
-    ---------------------------
-    Accepted m3_core maps C `const char *` to Daslang `string`. Such strings are
-    context-managed and must not be passed to m3_Free_Impl. Consequently
-    FreeImportInfo/Function_Release release their ownership by clearing the
-    stored string references. Raw allocations (`constants` and owned `wasm`)
-    still use m3_Free_Impl exactly like C. This also makes an alias from
-    names[i] to import.fieldUtf8 intrinsically double-free safe: there is only
-    one managed string allocation and all references are dropped, never raw-
-    freed twice.
-
-    Reserved identifier adaptation
-    ------------------------------
-    C names the M3Function module pointer `module`. `module` is a reserved
-    Daslang keyword and cannot be used as a structure field identifier, so the
-    sole spelling adaptation is `_module`. m3_GetFunctionModule preserves the
-    public C API and hides this syntax-only difference.
-
-    Inactive C fields
-    -----------------
-    d_m3EnableCodePageRefCounting is false, so codePageRefs and
-    numCodePageRefs are intentionally absent. DEBUG is inactive, so hits/index
-    are absent. If those capabilities are enabled later, the corresponding C
-    fields must be inserted at their original positions before maxStackSlots.
+    Canonical M3ImportInfo, M3FuncType, M3Function and M3Module declarations
+    live in m3_types.das so m3_function and m3_module can share one type graph.
+    Production function bodies below are unchanged from the accepted review.
 */
-
-
-// ============================================================================
-// M3ImportInfo from wasm3.h
-// ============================================================================
-
-
-struct M3ImportInfo {
-    moduleUtf8 : cstr_t
-    fieldUtf8 : cstr_t
-}
-
-
-typedef public IM3ImportInfo = M3ImportInfo?
-
-
-// ============================================================================
-// M3FuncType from m3_function.h
-// ============================================================================
-
-
-struct M3FuncType {
-    next : M3FuncType?
-
-    numRets : u16
-    numArgs : u16
-    types : u8[1]                 // returns, then args; flexible raw tail anchor
-}
-
-
-typedef public IM3FuncType = M3FuncType?
-
-
-/*
-    Minimal forward-stage module representation. m3_function only stores and
-    returns this pointer; no M3Module field is consumed here. The full structure
-    belongs to the future m3_module/m3_env layer.
-*/
-struct M3Module {
-}
-
-
-typedef public IM3Module = M3Module?
-
-
-// C `pc_t` is only stored by this stage. With code-page refcounting disabled,
-// no function in m3_function reads or mutates the compiled code pointer.
-typedef private m3_function_code_t = void?
-typedef private m3_function_pc_t = m3_function_code_t?
-
-
-struct M3Function {
-    _module : IM3Module            // C field `module`; keyword-safe Daslang spelling
-
-    import : M3ImportInfo
-
-    wasm : bytes_t
-    wasmEnd : bytes_t
-
-    names : cstr_t[d_m3MaxDuplicateFunctionImpl]
-    export_name : cstr_t          // should be a part of "names"
-    numNames : u16
-
-    funcType : IM3FuncType
-
-    compiled : m3_function_pc_t
-
-    // d_m3EnableCodePageRefCounting == false: codePageRefs fields absent.
-    // DEBUG inactive: hits/index fields absent.
-
-    maxStackSlots : u16
-
-    numRetSlots : u16
-    numRetAndArgSlots : u16
-
-    numLocals : u16               // not including args
-    numLocalBytes : u16
-
-    ownsWasmCode : bool
-
-    numConstantBytes : u16
-    constants : void?
-}
-
-
-typedef public IM3Function = M3Function?
 
 
 // Address of the flexible-array anchor. Callers must respect numRets+numArgs.
 def private m3_func_type_types(var i_funcType : IM3FuncType) : u8? {
-    unsafe {
-        return addr(i_funcType.types[0])
-    }
+    return unsafe(addr(i_funcType.types[0]))
 }
 
 

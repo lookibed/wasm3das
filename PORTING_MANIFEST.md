@@ -15,9 +15,9 @@ Status meanings:
 | `m3_core.c` | `source/m3_core.das` | Accepted | Binary readers, LEB128, UTF-8 reads, type normalization |
 | `m3_code.c` | `source/m3_code.das` | Accepted | Code pages and word emission |
 | `m3_function.c` | `source/m3_function.das` | Accepted | Function types, metadata, ownership and release operations |
-| `m3_bind.c` | `source/m3_bind.das` | Revision | Signature conversion/parsing only; resolve the outstanding style-lint review, then port validation/linking after module/compiler support exists |
-| `m3_module.c`, structures from `m3_env.h` | `source/m3_module.das` | Accepted | Preparatory data layer and simple accessors; `Module_GetFunction` remains deferred until canonical module/function types are merged |
-| `m3_parse.c` | — | Not started | WebAssembly module parser |
+| `m3_bind.c` | `source/m3_bind.das` | Accepted | Signature conversion/parsing; validation and linking remain dependent on later compiler/runtime stages |
+| `m3_module.c`, structures from `m3_env.h` | `source/m3_module.das`, `source/m3_types.das` | Accepted | Canonical module/function type graph, global value views, `Module_GetFunction`, and simple accessors |
+| `m3_parse.c` | `source/m3_parse.das` | Accepted | Initial stage: table/memory types plus start and element sections; remaining parser sections are not started |
 | `m3_env.c` | — | Not started | Environment, runtime, memory, globals and calls |
 | `m3_compile.c` | — | Not started | Wasm-to-Wasm3 compiler |
 | `m3_info.c` | — | Not started | Diagnostic and formatting helpers |
