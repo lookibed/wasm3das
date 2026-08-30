@@ -16,6 +16,9 @@
 .DS_Store
 Thumbs.db
 
+# Session-local LSP/MCP wiring (machine-specific absolute paths)
+/opencode.json
+
 # Diagnostic and benchmark scratch data
 /logs/
 /benchmarks/tmp/
