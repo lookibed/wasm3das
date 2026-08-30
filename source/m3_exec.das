@@ -46,13 +46,14 @@ def forwardTrap(err : M3Result) : M3Result {
     it when the full module set loads.
 */
 
-var CompileFunctionHook : function<(var io_function : IM3Function) : M3Result>
+var public CompileFunctionHook : function<(var io_function : IM3Function) : M3Result>
 
-var ResizeMemoryHook : function<(var io_runtime : IM3Runtime; i_numPages : u32) : M3Result>
+var public ResizeMemoryHook : function<(var io_runtime : IM3Runtime; i_numPages : u32) : M3Result>
 
 // C: M3Result ResizeMemory (IM3Runtime io_runtime, u32 i_numPages) — m3_env.c,
-// registered by m3_env.das (see CompileFunctionHook note).
-def ResizeMemory(io_runtime : IM3Runtime; i_numPages : u32) : M3Result {
+// registered by m3_env.das (see CompileFunctionHook note). Private: m3_env.das
+// defines the real ResizeMemory and must not see this bridge as a second candidate.
+def private ResizeMemory(io_runtime : IM3Runtime; i_numPages : u32) : M3Result {
     if (ResizeMemoryHook == null) {
         return "memory resize hook is not wired"
     }
@@ -62,7 +63,7 @@ def ResizeMemory(io_runtime : IM3Runtime; i_numPages : u32) : M3Result {
     }
 }
 
-def CompileFunction(io_function : IM3Function) : M3Result {
+def private CompileFunction(io_function : IM3Function) : M3Result {
     if (CompileFunctionHook == null) {
         return "lazy compilation hook is not wired"
     }

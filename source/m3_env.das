@@ -11,6 +11,7 @@ require ./m3_code.das public
 require ./m3_function.das public
 require ./m3_module.das public
 require ./m3_compile.das public
+require ./m3_exec.das
 require math
 require strings
 
@@ -122,6 +123,13 @@ def RunFunctionCode(var i_function : IM3Function) : M3Result {
 
 
 def m3_NewEnvironment() : IM3Environment {
+    // Port scaffolding (m3_exec.das hook note): C's m3_exec.h reaches the
+    // compiler and ResizeMemory through its include cycle; the acyclic
+    // Daslang module graph replaces those edges with these global bindings,
+    // registered once before any runtime can execute. Idempotent.
+    CompileFunctionHook = @@CompileFunction
+    ResizeMemoryHook = @@ResizeMemory
+
     var env : IM3Environment = null
     unsafe {
         env = new M3Environment()
