@@ -267,38 +267,7 @@ def ForEachModule(var i_runtime : IM3Runtime; i_visitor : ModuleVisitor; i_info 
 }
 
 
-def Module_FreeFunctions(var i_module : IM3Module) {
-    for (ii in 0..int(i_module.numFunctions)) {
-        var func : IM3Function
-        unsafe { func = addr(i_module.functions[ii]) }
-        Function_Release(func)
-    }
-}
-
-
-def m3_FreeModule(var i_module : IM3Module) {
-    if (i_module == null) { return }
-
-    Module_FreeFunctions(i_module)
-    if (i_module.functions != null) { m3_Free_Impl(unsafe(reinterpret<void?>(i_module.functions))) }
-    if (i_module.funcTypes != null) { m3_Free_Impl(unsafe(reinterpret<void?>(i_module.funcTypes))) }
-    if (i_module.dataSegments != null) { m3_Free_Impl(unsafe(reinterpret<void?>(i_module.dataSegments))) }
-    if (i_module.table0 != null) { m3_Free_Impl(unsafe(reinterpret<void?>(i_module.table0))) }
-
-    for (ii in 0..int(i_module.numGlobals)) {
-        unsafe {
-            var g = addr(i_module.globals[ii])
-            g.name = ""
-            FreeImportInfo(g.import)
-        }
-    }
-    if (i_module.globals != null) { m3_Free_Impl(unsafe(reinterpret<void?>(i_module.globals))) }
-    i_module.memoryExportName = ""
-    i_module.table0ExportName = ""
-    FreeImportInfo(i_module.memoryImport)
-    unsafe { delete i_module }
-}
-
+// Module_FreeFunctions and m3_FreeModule live in m3_module.das (m3_module.c).
 
 def _FreeModule(var i_module : IM3Module; i_info : void?) : void? {
     m3_FreeModule(i_module)
