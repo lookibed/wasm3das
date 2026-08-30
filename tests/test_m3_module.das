@@ -96,16 +96,18 @@ def private check_module_names() {
 
 
 def private check_module_runtime() {
-    var runtimeValue : M3Runtime
+    // M3Runtime carries the full m3_env.h layout (compilation scratch space);
+    // C heap-allocates it in m3_NewRuntime, so the test does the same.
+    var runtimePtr : IM3Runtime = new M3Runtime()
     var moduleValue : M3Module
     var modulePtr : IM3Module = unsafe(addr(moduleValue))
-    var runtimePtr : IM3Runtime = unsafe(addr(runtimeValue))
 
     check(m3_GetModuleRuntime(null) == null, "null module runtime")
     check(m3_GetModuleRuntime(modulePtr) == null, "default module runtime")
 
     moduleValue.runtime = runtimePtr
     check(m3_GetModuleRuntime(modulePtr) == runtimePtr, "stored module runtime")
+    unsafe { delete runtimePtr }
 }
 
 

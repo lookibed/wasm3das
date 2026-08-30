@@ -4,6 +4,7 @@ options indenting = 4
 module m3_code shared public
 
 require ./m3_core.das public
+require ./m3_types.das public
 
 
 /*
@@ -33,69 +34,12 @@ require ./m3_core.das public
 
 
 // ============================================================================
-// Core code-page types from m3_core.h / m3_code.h
-// ============================================================================
-
-
-/* C: typedef void * code_t; */
-typedef public code_t = void?
-
-/* C: typedef code_t const * pc_t; */
-typedef public pc_t = code_t?
-
-
-struct M3CodePageHeader {
-    next : M3CodePage?
-
-    lineIndex : u32
-    numLines : u32
-    sequence : u32
-    usageCount : u32
-
-    // d_m3RecordBacktraces == 0: mapping is intentionally not active yet.
-}
-
-
-struct M3CodePage {
-    info : M3CodePageHeader
-    code : code_t[1]
-
-    /*
-        The declared one-element field preserves the C field name/order and
-        anchors code[0] at exactly the header boundary. NewCodePage allocates
-        more raw bytes after that first element, so indexing beyond code[0] is
-        performed through pc_t rather than through the fixed-array type.
-    */
-}
-
-
-typedef public IM3CodePage = M3CodePage?
-
-
-/*
-    Temporary incomplete runtime view.
-
-    Full M3Runtime belongs to the future m3_env port. m3_code.c needs only
-    newCodePageSequence, so this is intentionally the smallest public runtime
-    shape required by NewCodePage and is kept here rather than hidden in tests.
-*/
-struct M3Runtime {
-    newCodePageSequence : u32
-}
-
-
-typedef public IM3Runtime = M3Runtime?
-
-
-// wasm3 source/m3_config.h default: 32 * 1024.
-let public d_m3CodePageAlignSize : u32 = 32u * 1024u
-
-let private m3_u32_max : u64 = 0xfffffffful
-
-
-// ============================================================================
 // 1. NewCodePage
 // ============================================================================
+
+
+
+let private m3_u32_max : u64 = 0xfffffffful
 
 
 def public NewCodePage(
@@ -190,6 +134,12 @@ def public NumFreeLines(var i_page : IM3CodePage) : u32 {
 // ============================================================================
 // 4. EmitWord_impl
 // ============================================================================
+
+
+/* C m3_code.h: #define EmitWord(page, val) EmitWord_impl((page), (const void *)(val)) */
+def public EmitWord(var i_page : IM3CodePage; i_word : auto) {
+    EmitWord_impl(i_page, unsafe(reinterpret<void?>(i_word)))
+}
 
 
 def public EmitWord_impl(var i_page : IM3CodePage; i_word : void?) {
@@ -364,3 +314,131 @@ def public GetEndCodePage(var i_list : IM3CodePage) : IM3CodePage {
 
     DEBUG dump_code_page is also intentionally omitted per assignment.
 */
+
+
+// ============================================================================
+// Code-page pool (ported from m3_env.c)
+// ============================================================================
+
+
+/*
+    Deviation note: C keeps the page-pool functions in m3_env.c. They are
+    hosted in m3_code.das because the Daslang module graph is acyclic: the
+    compiler layer below the environment needs the pool, while m3_env.das
+    itself requires m3_compile.das. The functions operate purely on the
+    M3Runtime/M3Environment page fields and m3_code primitives; bodies
+    follow the C source, with m3log and DEBUG-only branches compiled out
+    under the active configuration.
+*/
+
+
+/* C m3_env.c: IM3CodePage RemoveCodePageOfCapacity (M3CodePage ** io_list, u32 i_minimumLineCount) */
+def public RemoveCodePageOfCapacity(var io_list : IM3CodePage&; i_minimumLineCount : u32) : IM3CodePage {
+    var prev : IM3CodePage = null
+    var page = io_list
+
+    while (page != null) {
+        if (NumFreeLines(page) >= i_minimumLineCount) {
+            d_m3Assert(page.info.usageCount == 0)
+            var next = page.info.next
+            if (prev != null) {
+                prev.info.next = next    // mid-list
+            } else {
+                io_list = next           // front of list
+            }
+            break
+        }
+
+        prev = page
+        page = page.info.next
+    }
+
+    return page
+}
+
+
+/* C m3_env.c: IM3CodePage Environment_AcquireCodePage (IM3Environment i_environment, u32 i_minimumLineCount) */
+def public Environment_AcquireCodePage(var i_environment : IM3Environment; i_minimumLineCount : u32) : IM3CodePage {
+    return RemoveCodePageOfCapacity(i_environment.pagesReleased, i_minimumLineCount)
+}
+
+
+/* C m3_env.c: void Environment_ReleaseCodePages (IM3Environment i_environment, IM3CodePage i_codePageList) */
+def public Environment_ReleaseCodePages(var i_environment : IM3Environment; var i_codePageList : IM3CodePage) {
+    var end = i_codePageList
+
+    while (end != null) {
+        end.info.lineIndex = 0    // reset page
+        // d_m3RecordBacktraces == false: the C mapping reset is compiled out.
+
+        var next = end.info.next
+        if (next == null) {
+            break
+        }
+
+        end = next
+    }
+
+    if (end != null) {
+        end.info.next = i_environment.pagesReleased
+        i_environment.pagesReleased = i_codePageList
+    }
+}
+
+
+/* C m3_env.c: void ReleaseCodePageNoTrack (IM3Runtime i_runtime, IM3CodePage i_codePage) */
+def public ReleaseCodePageNoTrack(var i_runtime : IM3Runtime; var i_codePage : IM3CodePage) {
+    if (i_codePage != null) {
+        var pageFull = NumFreeLines(i_codePage) < d_m3CodePageFreeLinesThreshold
+
+        if (pageFull) {
+            PushCodePage(i_runtime.pagesFull, i_codePage)
+        } else {
+            PushCodePage(i_runtime.pagesOpen, i_codePage)
+        }
+
+        // C: m3log (emit, ...) — compiled out under the active configuration.
+    }
+}
+
+
+/* C m3_env.c: IM3CodePage AcquireCodePageWithCapacity (IM3Runtime i_runtime, u32 i_minLineCount) */
+def public AcquireCodePageWithCapacity(var i_runtime : IM3Runtime; i_minLineCount : u32) : IM3CodePage {
+    var page = RemoveCodePageOfCapacity(i_runtime.pagesOpen, i_minLineCount)
+
+    if (page == null) {
+        page = Environment_AcquireCodePage(i_runtime.environment, i_minLineCount)
+
+        if (page == null) {
+            page = NewCodePage(i_runtime, i_minLineCount)
+        }
+
+        if (page != null) {
+            i_runtime.numCodePages++
+        }
+    }
+
+    if (page != null) {
+        // C: m3log (emit, ...) — compiled out under the active configuration.
+        i_runtime.numActiveCodePages++
+    }
+
+    return page
+}
+
+
+/* C m3_env.c: IM3CodePage AcquireCodePage (IM3Runtime i_runtime) */
+def public AcquireCodePage(var i_runtime : IM3Runtime) : IM3CodePage {
+    return AcquireCodePageWithCapacity(i_runtime, d_m3CodePageFreeLinesThreshold)
+}
+
+
+/* C m3_env.c: void ReleaseCodePage (IM3Runtime i_runtime, IM3CodePage i_codePage) */
+def public ReleaseCodePage(var i_runtime : IM3Runtime; var i_codePage : IM3CodePage) {
+    if (i_codePage != null) {
+        ReleaseCodePageNoTrack(i_runtime, i_codePage)
+        i_runtime.numActiveCodePages--
+
+        // C: DEBUG-only page accounting and m3log are compiled out.
+    }
+}

@@ -39,9 +39,9 @@ def private expected_num_lines(i_minNumLines : u32) : u32 {
 }
 
 
-def private new_page(var runtime : M3Runtime; min_lines : u32) : IM3CodePage {
+def private new_page(var runtime : M3Runtime?; min_lines : u32) : IM3CodePage {
     unsafe {
-        var page = NewCodePage(addr(runtime), min_lines)
+        var page = NewCodePage(runtime, min_lines)
         check(page != null, "NewCodePage({min_lines}) returned null")
         return page
     }
@@ -102,7 +102,8 @@ def test_new_code_page() {
     check(code_size() == 4u || code_size() == 8u, "code_t must have the real pointer size")
     check(d_m3CodePageAlignSize == 32768u, "default code page alignment must be 32 KiB")
 
-    var runtime : M3Runtime
+    // Full m3_env.h runtime layout: heap-allocate like C m3_NewRuntime does.
+    var runtime : M3Runtime? = new M3Runtime()
 
     var p0 = new_page(runtime, 0u)
     check_page_initial_state(p0, 1u, 0u)
@@ -127,7 +128,7 @@ def test_new_code_page() {
     let impossible = 0xffffffffu / code_size() + 1u
     let sequence_before = runtime.newCodePageSequence
     unsafe {
-        let rejected = NewCodePage(addr(runtime), impossible)
+        let rejected = NewCodePage(runtime, impossible)
         check(rejected == null, "multiplication-overflow page must be rejected")
     }
     check(runtime.newCodePageSequence == sequence_before,
@@ -136,17 +137,19 @@ def test_new_code_page() {
     // Raw size fits u32, but rounding it up to 32 KiB crosses UINT_MAX.
     let max_raw_lines = (0xffffffffu - header_size()) / code_size()
     unsafe {
-        let alignment_overflow = NewCodePage(addr(runtime), max_raw_lines)
+        let alignment_overflow = NewCodePage(runtime, max_raw_lines)
         check(alignment_overflow == null, "alignment-overflow page must be rejected")
     }
     check(runtime.newCodePageSequence == sequence_before,
         "alignment-overflow page must not consume a sequence number")
+    unsafe { delete runtime }
 }
 
 
 [test]
 def test_emit_words_and_pc() {
-    var runtime : M3Runtime
+    // Full m3_env.h runtime layout: heap-allocate like C m3_NewRuntime does.
+    var runtime : M3Runtime? = new M3Runtime()
     var page = new_page(runtime, 8u)
 
     let start_addr = intptr(GetPageStartPC(page))
@@ -196,12 +199,14 @@ def test_emit_words_and_pc() {
 
     free_page(page)
     check(GetPagePC(null) == null, "GetPagePC(null) must return null")
+    unsafe { delete runtime }
 }
 
 
 [test]
 def test_emit_last_slot_and_overflow() {
-    var runtime : M3Runtime
+    // Full m3_env.h runtime layout: heap-allocate like C m3_NewRuntime does.
+    var runtime : M3Runtime? = new M3Runtime()
 
     // EmitWord32 succeeds in the last slot and fails on the next write.
     var page32 = new_page(runtime, 1u)
@@ -255,6 +260,7 @@ def test_emit_last_slot_and_overflow() {
     }
     check(overflow_ptr, "EmitWord_impl overflow must assert")
     free_page(page_ptr)
+    unsafe { delete runtime }
 }
 
 
@@ -268,7 +274,8 @@ def test_code_page_list() {
     check(FindCodePageEnd(empty_list, end) == 0u, "empty FindCodePageEnd count")
     check(end == null, "empty FindCodePageEnd end")
 
-    var runtime : M3Runtime
+    // Full m3_env.h runtime layout: heap-allocate like C m3_NewRuntime does.
+    var runtime : M3Runtime? = new M3Runtime()
     var list : IM3CodePage
     var pages : array<IM3CodePage>
     pages |> reserve(5)
@@ -313,6 +320,7 @@ def test_code_page_list() {
     unsafe {
         delete pages
     }
+    unsafe { delete runtime }
 }
 
 
@@ -322,12 +330,15 @@ def test_free_code_pages() {
     FreeCodePages(empty_list)
     check(empty_list == null, "freeing empty list must leave null head")
 
+    // Full m3_env.h runtime layout: heap-allocate like C m3_NewRuntime does.
+    var runtime : M3Runtime? = new M3Runtime()
+
     // Raw malloc/free are not represented by Daslang container ownership.
     // heap_allocation_count is the available runtime counter; on runtimes where
-    // raw allocations participate in it, the count must return to baseline.
+    // raw allocations participate in it, the page cycle below must return the
+    // counter to its pre-cycle baseline (the runtime itself outlives the check
+    // and is deleted at the end of the test).
     let heap_before = heap_allocation_count()
-
-    var runtime : M3Runtime
     var list : IM3CodePage
     for (i in range(16)) {
         var page = new_page(runtime, u32(i + 1))
@@ -353,6 +364,7 @@ def test_free_code_pages() {
         FreeCodePages(stress_list)
         check(stress_list == null, "stress FreeCodePages must clear head")
     }
+    unsafe { delete runtime }
 }
 
 
