@@ -324,7 +324,10 @@ struct M3Environment {
 
     funcTypes : IM3FuncType                    // linked list of unique M3FuncType structs
 
-    retFuncTypes : IM3FuncType[int(M3ValueType.c_m3Type_unknown)]    // these 'point' to elements in the linked list above.
+    // C: IM3FuncType retFuncTypes[c_m3Type_unknown]; int(enum) folds only with
+    // infer-time folding, but the lint-profile compile disables folding and the
+    // dimension must stay a constant: spelled as the literal 6 = c_m3Type_unknown.
+    retFuncTypes : IM3FuncType[6]                  // these 'point' to elements in the linked list above.
 
     pagesReleased : IM3CodePage
 
