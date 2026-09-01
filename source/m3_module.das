@@ -54,7 +54,11 @@ def m3_FreeModule(var i_module : IM3Module) {
             FreeImportInfo(memoryImport[0])
         }
 
-        m3_Free_Impl(i_module)
+        // C: m3_Free(i_module) - host free of m3_AllocStruct. In this port the
+        // module object is created with Daslang `new M3Module()` by
+        // m3_ParseModule (managed struct with string fields, mirroring
+        // m3_NewRuntime), so it must be released with Daslang `delete`.
+        unsafe { delete i_module }
         i_module = null
     }
 }

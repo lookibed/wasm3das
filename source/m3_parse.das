@@ -661,7 +661,7 @@ def public m3_ParseModule(var i_environment : IM3Environment; var o_module : IM3
     if (result == m3Err_none) {
         result = Read_u32(version, pos, end)
     }
-    if (result == m3Err_none && magic != 0x61736d00u) {
+    if (result == m3Err_none && magic != 0x6d736100u) {
         result = m3Err_wasmMalformed
     }
     if (result == m3Err_none && version != 1u) {

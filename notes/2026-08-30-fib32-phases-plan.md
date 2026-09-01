@@ -49,7 +49,7 @@ fib(25)=75025). Приоритеты владельца: работоспосо�
   черновиках. Принятые модули + parse + env практически чисты — решение №1
   теперь локальное, а не глобальное.
 
-## Фаза 2 — вайринг хуков
+## Фаза 2 — вайринг хуков — ВЫПОЛНЕНО 2026-08-30 (коммит 9a2058e)
 
 - Глобалы уже объявлены: `m3_exec.das:49 CompileFunctionHook`,
   `:51 ResizeMemoryHook`.
@@ -58,6 +58,23 @@ fib(25)=75025). Приоритеты владельца: работоспосо�
   `ResizeMemoryHook = @@ResizeMemory` (`m3_env.das`).
 - Проверить guard'ы `m3_exec.das:56-71` (null-sentinel) — в раннере не
   должны срабатывать.
+
+### Фактический итог фазы 2
+
+- Вайринг в начале `m3_NewEnvironment` (идемпотентен), не отдельная
+  `WireHooks`: весь исполняющий код life-cycle-ом проходит env.
+- `env` требует `./m3_exec.das` НЕ public: иначе в parse (требует env)
+  names exec утекли бы в граф.
+- Bridage-обёртки `CompileFunction`/`ResizeMemory` в m3_exec.das стали
+  `def private`: без этого в env они коллизуют с m3_compile::CompileFunction
+  и собственным m3_env::ResizeMemory («too many matching»).
+- Хуки — `var public` в m3_exec (присваивание из m3_env).
+- Новые keyword-жертвы: `label` (параметр в тесте) — переименован в
+  `stage`; `let env = m3_NewEnvironment()` — const-бинаринг протекает в
+  точечно-const, env-API берёт `var` (в тесте задокументировано).
+- Тесты: `tests/test_m3_env.das` 3 теста (вайринг, идемпотентность,
+  runtime-survival) → dastest 40/40; все 3 профиля: 0 findings на новых
+  файлах.
 
 ## Фаза 3 — end-to-end раннер
 
