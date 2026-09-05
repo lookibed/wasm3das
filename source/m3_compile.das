@@ -3,14 +3,13 @@ options indenting = 4
 
 module m3_compile shared public
 
-require m3_core
-require m3_types
-require m3_code
-require m3_exec
-require m3_exec_defs
-require m3_function
-require m3_module
-require m3_exception
+require ./m3_core.das
+require ./m3_types.das
+require ./m3_code.das public
+require ./m3_exec.das
+require ./m3_exec_defs.das public
+require ./m3_function.das public
+require ./m3_module.das
 require math
 
 

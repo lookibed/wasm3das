@@ -4,7 +4,7 @@ options indenting = 4
 module m3_exec_defs shared public
 
 require ./m3_core.das public
-require ./m3_types.das public
+require ./m3_types.das
 
 
 /*

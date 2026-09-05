@@ -1,9 +1,10 @@
 options gen2
+options indenting = 4
 
 module m3_exec shared public
 
 require math
-require ./m3_core.das public
+require ./m3_core.das
 require ./m3_types.das public
 require ./m3_math_utils.das public
 require ./m3_exec_defs.das public

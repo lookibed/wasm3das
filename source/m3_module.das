@@ -3,10 +3,9 @@ options indenting = 4
 
 module m3_module shared public
 
-require ./m3_core.das public
+require ./m3_core.das
 require ./m3_types.das public
-require ./m3_function.das public
-require ./m3_exception.das public
+require ./m3_function.das
 
 // Conservative Gen2 port of m3_module.c.
 

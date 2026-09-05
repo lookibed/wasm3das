@@ -4,7 +4,7 @@ options indenting = 4
 module m3_code shared public
 
 require ./m3_core.das public
-require ./m3_types.das public
+require ./m3_types.das
 
 
 /*

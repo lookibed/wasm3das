@@ -4,7 +4,7 @@ options no_global_variables = false
 
 module m3_core shared public
 
-require ./wasm3_defs.das
+require ./wasm3_defs.das public
 require strings
 
 
@@ -380,9 +380,9 @@ def public m3_Abort(message : string) {
 */
 
 def public d_m3Assert(
-    condition : bool;
-    message : string = "wasm3 assertion failed"
-) {
+                      condition : bool;
+                      message : string = "wasm3 assertion failed"
+                      ) {
     if (!condition) {
         panic("wasm3: {message}")
     }
@@ -595,10 +595,10 @@ def public m3_Free_Impl(i_ptr : void?) {
 
 
 def public m3_Realloc_Impl(
-    i_ptr : void?;
-    i_newSize : u64;
-    i_oldSize : u64
-) : void? {
+                           i_ptr : void?;
+                           i_newSize : u64;
+                           i_oldSize : u64
+                           ) : void? {
     if (i_newSize == i_oldSize) {
         return i_ptr
     }
@@ -693,9 +693,9 @@ def public m3StackGetMax() : int {
 
 
 def public NormalizeType(
-    var o_type : u8&;
-    i_convolutedWasmType : i8
-) : M3Result {
+                         var o_type : u8&;
+                         i_convolutedWasmType : i8
+                         ) : M3Result {
     var result = m3Err_none
 
     var normalized_type = u8(-i32(i_convolutedWasmType))
@@ -777,10 +777,10 @@ def public m3_ptr_addr(ptr : cbytes_t) : u64 {
 
 
 def private m3_check_read(
-    io_bytes : cbytes_t;
-    i_end : cbytes_t;
-    i_size : u64
-) : M3Result {
+                          io_bytes : cbytes_t;
+                          i_end : cbytes_t;
+                          i_size : u64
+                          ) : M3Result {
     if (i_size != 0ul && io_bytes == null) {
         return m3Err_wasmUnderrun
     }
@@ -807,10 +807,10 @@ def private m3_check_read(
 
 
 def public Read_u64(
-    var o_value : u64&;
-    var io_bytes : bytes_t&;
-    i_end : cbytes_t
-) : M3Result {
+                    var o_value : u64&;
+                    var io_bytes : bytes_t&;
+                    i_end : cbytes_t
+                    ) : M3Result {
     let result = m3_check_read(io_bytes, i_end, 8ul)
 
     if (result != m3Err_none) {
@@ -838,10 +838,10 @@ def public Read_u64(
 
 
 def public Read_u32(
-    var o_value : u32&;
-    var io_bytes : bytes_t&;
-    i_end : cbytes_t
-) : M3Result {
+                    var o_value : u32&;
+                    var io_bytes : bytes_t&;
+                    i_end : cbytes_t
+                    ) : M3Result {
     let result = m3_check_read(io_bytes, i_end, 4ul)
 
     if (result != m3Err_none) {
@@ -874,10 +874,10 @@ def public Read_u32(
 */
 
 def public Read_f64(
-    var o_value : f64&;
-    var io_bytes : bytes_t&;
-    i_end : cbytes_t
-) : M3Result {
+                    var o_value : f64&;
+                    var io_bytes : bytes_t&;
+                    i_end : cbytes_t
+                    ) : M3Result {
     var bits : u64 = 0ul
     let result = Read_u64(bits, io_bytes, i_end)
 
@@ -894,10 +894,10 @@ def public Read_f64(
 
 
 def public Read_f32(
-    var o_value : f32&;
-    var io_bytes : bytes_t&;
-    i_end : cbytes_t
-) : M3Result {
+                    var o_value : f32&;
+                    var io_bytes : bytes_t&;
+                    i_end : cbytes_t
+                    ) : M3Result {
     var bits : u32 = 0u
     let result = Read_u32(bits, io_bytes, i_end)
 
@@ -914,10 +914,10 @@ def public Read_f32(
 
 
 def public Read_u8(
-    var o_value : u8&;
-    var io_bytes : bytes_t&;
-    i_end : cbytes_t
-) : M3Result {
+                   var o_value : u8&;
+                   var io_bytes : bytes_t&;
+                   i_end : cbytes_t
+                   ) : M3Result {
     let result = m3_check_read(io_bytes, i_end, 1ul)
 
     if (result != m3Err_none) {
@@ -934,10 +934,10 @@ def public Read_u8(
 
 
 def public Read_opcode(
-    var o_value : m3opcode_t&;
-    var io_bytes : bytes_t&;
-    i_end : cbytes_t
-) : M3Result {
+                       var o_value : m3opcode_t&;
+                       var io_bytes : bytes_t&;
+                       i_end : cbytes_t
+                       ) : M3Result {
     /*
         wasm3's default d_m3CascadedOpcodes is 1. In that configuration the
         #if d_m3CascadedOpcodes == 0 block in m3_core.c is not compiled and an
@@ -958,11 +958,11 @@ def public Read_opcode(
 
 
 def public ReadLebUnsigned(
-    var o_value : u64&;
-    i_maxNumBits : u32;
-    var io_bytes : bytes_t&;
-    i_end : cbytes_t
-) : M3Result {
+                           var o_value : u64&;
+                           i_maxNumBits : u32;
+                           var io_bytes : bytes_t&;
+                           i_end : cbytes_t
+                           ) : M3Result {
     var result = m3Err_wasmUnderrun
     var value : u64 = 0ul
     var shift : u32 = 0u
@@ -1010,11 +1010,11 @@ def public ReadLebUnsigned(
 
 
 def public ReadLebSigned(
-    var o_value : i64&;
-    i_maxNumBits : u32;
-    var io_bytes : bytes_t&;
-    i_end : cbytes_t
-) : M3Result {
+                         var o_value : i64&;
+                         i_maxNumBits : u32;
+                         var io_bytes : bytes_t&;
+                         i_end : cbytes_t
+                         ) : M3Result {
     var result = m3Err_wasmUnderrun
     var value_bits : u64 = 0ul
     var shift : u32 = 0u
@@ -1069,10 +1069,10 @@ def public ReadLebSigned(
 
 
 def public ReadLEB_u32(
-    var o_value : u32&;
-    var io_bytes : bytes_t&;
-    i_end : cbytes_t
-) : M3Result {
+                       var o_value : u32&;
+                       var io_bytes : bytes_t&;
+                       i_end : cbytes_t
+                       ) : M3Result {
     var value : u64 = 0ul
     let result = ReadLebUnsigned(value, 32u, io_bytes, i_end)
 
@@ -1082,10 +1082,10 @@ def public ReadLEB_u32(
 
 
 def public ReadLEB_u7(
-    var o_value : u8&;
-    var io_bytes : bytes_t&;
-    i_end : cbytes_t
-) : M3Result {
+                      var o_value : u8&;
+                      var io_bytes : bytes_t&;
+                      i_end : cbytes_t
+                      ) : M3Result {
     var value : u64 = 0ul
     let result = ReadLebUnsigned(value, 7u, io_bytes, i_end)
 
@@ -1095,10 +1095,10 @@ def public ReadLEB_u7(
 
 
 def public ReadLEB_i7(
-    var o_value : i8&;
-    var io_bytes : bytes_t&;
-    i_end : cbytes_t
-) : M3Result {
+                      var o_value : i8&;
+                      var io_bytes : bytes_t&;
+                      i_end : cbytes_t
+                      ) : M3Result {
     var value : i64 = 0l
     let result = ReadLebSigned(value, 7u, io_bytes, i_end)
 
@@ -1108,10 +1108,10 @@ def public ReadLEB_i7(
 
 
 def public ReadLEB_i32(
-    var o_value : i32&;
-    var io_bytes : bytes_t&;
-    i_end : cbytes_t
-) : M3Result {
+                       var o_value : i32&;
+                       var io_bytes : bytes_t&;
+                       i_end : cbytes_t
+                       ) : M3Result {
     var value : i64 = 0l
     let result = ReadLebSigned(value, 32u, io_bytes, i_end)
 
@@ -1121,10 +1121,10 @@ def public ReadLEB_i32(
 
 
 def public ReadLEB_i64(
-    var o_value : i64&;
-    var io_bytes : bytes_t&;
-    i_end : cbytes_t
-) : M3Result {
+                       var o_value : i64&;
+                       var io_bytes : bytes_t&;
+                       i_end : cbytes_t
+                       ) : M3Result {
     var value : i64 = 0l
     let result = ReadLebSigned(value, 64u, io_bytes, i_end)
 
@@ -1134,10 +1134,10 @@ def public ReadLEB_i64(
 
 
 def public Read_utf8(
-    var o_utf8 : cstr_t&;
-    var io_bytes : bytes_t&;
-    i_end : cbytes_t
-) : M3Result {
+                     var o_utf8 : cstr_t&;
+                     var io_bytes : bytes_t&;
+                     i_end : cbytes_t
+                     ) : M3Result {
     o_utf8 = ""
 
     var utf8Length : u32 = 0u

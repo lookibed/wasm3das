@@ -3,12 +3,11 @@ options indenting = 4
 
 module m3_parse shared public
 
-require ./m3_core.das public
-require ./m3_types.das public
+require ./m3_core.das
+require ./m3_types.das
 require ./m3_env.das public
-require ./m3_module.das public
-require ./m3_compile.das public
-require ./m3_exception.das public
+require ./m3_module.das
+require ./m3_compile.das
 
 // Conservative Gen2 port of m3_parse.c.
 // Parsing order, ownership transfers, partial-state side effects, and M3Result

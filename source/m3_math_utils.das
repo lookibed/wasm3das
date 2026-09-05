@@ -4,8 +4,8 @@ options indenting = 4
 module m3_math_utils shared public
 
 require math
-require strings public
-require m3_core public
+require strings
+require ./m3_core.das public
 
 
 /*

@@ -23,7 +23,7 @@ Status meanings:
 | structures from `m3_env.h`, `m3_compile.h`, `m3_function.h` | `source/m3_types.das` | Accepted | Shared type hub (`M3Environment`, `M3Runtime`, `M3Module`, `M3Function`, `M3Compilation`, `M3Memory`, ...). It exists because Daslang cannot express the C header cycle; every other layer depends on it |
 | `m3_module.c` | `source/m3_module.das` | Accepted | `Module_GetFunction`, simple accessors, module release |
 | `m3_parse.c` | `source/m3_parse.das` | Revision | The reviewed increment covers table/memory types plus start and element sections. The file also carries the mechanically expanded remainder of the parser (see AGENTS.md, high-risk areas), which has not been reviewed section by section. Depends on the `m3_env` and `m3_compile` drafts |
-| `m3_exception.h` | `source/m3_exception.das` | Draft | Macro layer over `M3Result`; no dedicated test |
+| `m3_exception.h` | `source/m3_exception.das` | Draft | Documentation of the C try/catch macro layer over `M3Result`; the macros are expanded inline at call sites, so no module requires it. No dedicated test |
 | `m3_exec_defs.h` | `source/m3_exec_defs.das` | Draft | Threaded-interpreter ABI signature; no dedicated test |
 | `m3_env.c` | `source/m3_env.das` | Draft | Environment, runtime, memory, globals, module loading and calls are present. `CompileFunctionHook`/`ResizeMemoryHook` replace the C include cycle. Teardown `SIGSEGV` unresolved; tests cover only hook wiring |
 | `m3_compile.c` | `source/m3_compile.das` | Draft | Wasm-to-Wasm3 compiler; no dedicated test |

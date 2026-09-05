@@ -3,12 +3,11 @@ options indenting = 4
 
 module m3_env shared public
 
-require ./m3_core.das public
+require ./m3_core.das
 require ./m3_types.das public
-require ./m3_exception.das public
-require ./m3_exec_defs.das public
+require ./m3_exec_defs.das
 require ./m3_code.das public
-require ./m3_function.das public
+require ./m3_function.das
 require ./m3_module.das public
 require ./m3_compile.das public
 require ./m3_exec.das
