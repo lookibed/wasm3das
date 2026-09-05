@@ -356,23 +356,15 @@ blocker.
 Run:
 
 ```sh
-DASLANG="$PWD/tmp/daslang-toolchain/bin/daslang"
-export DAS_LINT_CONFIG_PATH="$PWD/.lint_config"
-
-# 1. Compiler diagnostics on every source and test
-for file in source/*.das tests/*.das; do
-    "$DASLANG" -compile-only "$file" || exit 1
-done
-
-# 2. All three lint profiles, zero findings (.lint_config disables only the
-#    rules whose findings are the faithful spelling of the C source)
-for profile in paranoid-only perf-only style-only; do
-    "$DASLANG" tmp/daslang-toolchain/utils/lint/main.das -- --"$profile" source tests || exit 1
-done
-
-# 3. Full component test suite
-"$DASLANG" tmp/daslang-toolchain/dastest/dastest.das -- --test tests
+scripts/gate.sh
 ```
+
+It is the single definition of the gate, used unchanged by CI and the
+pre-push hook: `-compile-only` on every file under `source/` and `tests/`; the
+three lint profiles with zero findings under `.lint_config` (which disables
+only the rules whose findings are the faithful spelling of the C source); the
+full dastest suite. `scripts/gate.sh <stage>` runs one stage (`compile`,
+`lint-paranoid`, `lint-perf`, `lint-style`, `test`).
 
 Also run the focused test for the changed layer. Runtime/lifecycle changes
 must additionally pass the real `fib32.wasm` regression through result

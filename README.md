@@ -29,7 +29,8 @@ The current file-by-file status and known blockers are recorded in
 | `tests/` | Component tests for completed porting increments |
 | `wasm3c/` | Vendored C reference tree |
 | `.github/workflows/daslang-quality.yml` | Required pull-request quality gate |
-| `.githooks/pre-push` | The same gate, run locally before every push |
+| `scripts/gate.sh` | The gate itself: compile, three lint profiles, tests; shared by CI and the hook |
+| `.githooks/pre-push` | Runs `scripts/gate.sh` locally before every push |
 | `.lint_config` | Repo lint policy consumed by the gate |
 | `docs/` | Design decisions (memory ownership) |
 | `notes/` | Dated working notes and session handoffs |
@@ -42,21 +43,14 @@ The project is currently verified with Daslang 0.6.4 from upstream commit
 `1524b3bf62e7decbfe530dc5f2e794b296fa1e68`.
 
 ```sh
-DASLANG_ROOT=/path/to/daScript
-DASLANG="$DASLANG_ROOT/bin/daslang"
-export DAS_LINT_CONFIG_PATH="$PWD/.lint_config"   # repo lint policy, see the file
-
-for file in source/*.das tests/*.das; do
-    "$DASLANG" -compile-only "$file"
-done
-
-for profile in paranoid-only perf-only style-only; do
-    "$DASLANG" "$DASLANG_ROOT/utils/lint/main.das" -- \
-        --"$profile" source tests
-done
-
-"$DASLANG" "$DASLANG_ROOT/dastest/dastest.das" -- --test tests
+DASLANG_ROOT=/path/to/daScript DASLANG="$DASLANG_ROOT/bin/daslang" scripts/gate.sh
 ```
+
+With the toolchain at `tmp/daslang-toolchain` (the default), plain
+`scripts/gate.sh` is enough. The script runs, in order: `-compile-only` on
+every file under `source/` and `tests/`, the three lint profiles with the repo
+policy in `.lint_config`, and the dastest suite. A single stage can be run by
+name: `scripts/gate.sh lint-style`.
 
 The same gate runs locally before every push once the repository hooks are
 enabled:
