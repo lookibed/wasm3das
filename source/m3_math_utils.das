@@ -1,7 +1,7 @@
 options gen2
 options indenting = 4
 
-module m3_math_utils public
+module m3_math_utils shared public
 
 require math
 require strings public
@@ -753,4 +753,17 @@ def max_f64(a : f64; b : f64) : f64 {
     }
 
     return b
+}
+
+// ============================================================================
+// Min, Max (C m3_math_utils.h: #define M3_MAX / #define M3_MIN)
+// ============================================================================
+
+
+def public M3_MAX(a : int; b : int) : int {
+    return a > b ? a : b
+}
+
+def public M3_MIN(a : int; b : int) : int {
+    return a < b ? a : b
 }

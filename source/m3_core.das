@@ -132,6 +132,62 @@ typedef public cbytes_t = u8?
 
 
 // ============================================================================
+// Code-page types (m3_core.h)
+// ============================================================================
+
+
+/*
+    C m3_core.h:
+
+        typedef void * code_t;
+        typedef code_t const * pc_t;
+
+    Раньше эти типы жили в m3_code.das; перенесены сюда, потому что в C
+    они объявлены в m3_core.h, а m3_types.das (общий слой типов) не может
+    требовать m3_code.das без цикла в графе модулей.
+*/
+
+/* C: typedef void * code_t; */
+typedef public code_t = void?
+
+/* C: typedef code_t const * pc_t; */
+typedef public pc_t = code_t?
+
+
+struct M3CodePageHeader {
+    next : M3CodePage?
+
+    lineIndex : u32
+    numLines : u32
+    sequence : u32        // this is just used for debugging; could be removed
+    usageCount : u32
+
+    // d_m3RecordBacktraces == false: поле mapping отсутствует, слой
+    // backtrace ещё не портирован.
+}
+
+
+struct M3CodePage {
+    info : M3CodePageHeader
+    code : code_t[1]
+
+    /*
+        Объявленное одноэлементное поле сохраняет C-имя/порядок полей и
+        якорит code[0] ровно на границе заголовка. NewCodePage выделяет
+        больше сырых байт после первого элемента, поэтому индексация за
+        пределами code[0] выполняется через pc_t, а не через fixed-array тип.
+    */
+}
+
+
+typedef public IM3CodePage = M3CodePage?
+
+
+/* C m3_core.h: #define d_m3CodePageFreeLinesThreshold 4+2 — max is: select _sss & CallIndirect + 2 for bridge */
+let public d_m3CodePageFreeLinesThreshold : u32 = 4u + 2u
+
+
+// ============================================================================
 // M3Result
 // ============================================================================
 
@@ -512,6 +568,21 @@ def public m3_Malloc_Impl(i_size : u64) : void? {
 }
 
 
+// ============================================================================
+// Allocation macro family (m3_core.h)
+// ============================================================================
+
+
+/* C m3_core.h macro family: m3_Free(P) expands to m3_Free_Impl((void*)(P))
+   plus (P) = NULL, m3_ReallocArray adds sizeof(STRUCT) scaling. The macros are
+   expanded at each call site: Daslang function values cannot express the
+   in-place NULL-ing generically without clashing with string fields, which the
+   port resets to empty (strings own their storage; C frees malloc'd chars). */
+
+/* C: #define m3_ReallocArray(STRUCT, PTR, NEW, OLD) expands to a sized
+   m3_Realloc_Impl call at each use site (sizeof(STRUCT) scaling). */
+
+
 def public m3_Free_Impl(i_ptr : void?) {
     if (i_ptr == null) {
         return
@@ -694,7 +765,7 @@ def public SizeOfType(i_m3Type : u8) : u32 {
 // ============================================================================
 
 
-def private m3_ptr_addr(ptr : cbytes_t) : u64 {
+def public m3_ptr_addr(ptr : cbytes_t) : u64 {
     if (ptr == null) {
         return 0ul
     }
