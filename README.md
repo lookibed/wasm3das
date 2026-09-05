@@ -19,7 +19,9 @@ The WASI integration layer is intentionally outside the current scope.
   test suite, and working Daslang MCP/LSP protocol tests.
 
 The current file-by-file status and known blockers are recorded in
-[`PORTING_MANIFEST.md`](PORTING_MANIFEST.md).
+[`PORTING_MANIFEST.md`](PORTING_MANIFEST.md). The stages every pull request
+passes, from intake to post-merge, are described in
+[`docs/development-pipeline.md`](docs/development-pipeline.md).
 
 ## Repository layout
 

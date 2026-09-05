@@ -324,6 +324,11 @@ produces pointer-to-pointer semantics and is incorrect.
 
 ## Porting workflow for a new C layer
 
+Every change, of any type, goes through the stages in
+`docs/development-pipeline.md`; that document defines the PR types, the
+definition of done per stage and what CI enforces. The layer-specific steps
+below are its "Reference" and "Implement" stages spelled out for a port.
+
 Runtime recovery takes priority until teardown correctness is proven. When a
 new layer is explicitly in scope:
 
@@ -408,8 +413,10 @@ and raw model logs never go into the tree; dated working notes go into
 - Make every proven runtime fix a separate commit. Keep separate commits for
   mechanical restoration, the pointer-value fix, allocator-pair fix, teardown
   root cause, and regression test when those are distinct changes.
-- Commit messages must state the proven invariant or C comparison, not only
-  describe the edit.
+- `main` receives one squash commit per PR, so the PR title and body are the
+  commit message that survives: the title must state the proven invariant or
+  C comparison, the body the verification. Individual branch commits stay
+  focused but need not repeat this.
 - Do not mix runtime fixes with lint/style cleanup.
 - One bounded port layer or focused fix per PR. State what was changed and
   intentionally deferred.
@@ -427,7 +434,9 @@ and raw model logs never go into the tree; dated working notes go into
 | `CLAUDE.md` | short entry point for Claude Code; defers to this file |
 | `.mcp.json`, `.claude/skills/` | Claude Code MCP servers, LSP plugin and skills |
 | `.lint_config` | repo lint policy and the reason for every disabled rule |
+| `docs/development-pipeline.md` | stages, PR types and definition of done for every change |
 | `docs/memory-ownership.md` | allocation-regime decision and migration order |
+| `.github/pull_request_template.md` | PR skeleton: scope, C references, verification, manifest transition, C checklist |
 | `.githooks/pre-push` | local form of the CI quality gate |
 | `notes/handoff_claude_code_2026-09-05.md` | latest session handoff |
 | `notes/runtime_recovery_context_2026-09.md` | provenance of `source/`, checkpoint commits, teardown state |

@@ -2,7 +2,8 @@
 
 Manual port of the Wasm3 WebAssembly interpreter from C to Daslang. The WASI
 integration layer is outside the current scope. `AGENTS.md` is the complete
-rulebook for agents; this file is the short entry point.
+rulebook for agents and `docs/development-pipeline.md` the order in which its
+rules apply to a change; this file is the short entry point.
 
 ## Tool discipline
 
