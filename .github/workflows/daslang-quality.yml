@@ -28,8 +28,39 @@ jobs:
     steps:
       - name: Check out wasm3das
         uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      # A change that touches none of the gate's inputs (docs, notes, README)
+      # ends here with a green status, so a required check is satisfied
+      # without building the toolchain. Every later step is conditional.
+      - name: Decide whether the gate has anything to check
+        id: changes
+        shell: bash
+        run: |
+          set -euo pipefail
+          case "${{ github.event_name }}" in
+            pull_request) base="${{ github.event.pull_request.base.sha }}" ;;
+            push)         base="${{ github.event.before }}" ;;
+            *)            base="" ;;
+          esac
+          if [[ -z "$base" ]] || ! git cat-file -e "$base^{commit}" 2>/dev/null; then
+            echo "no usable base commit; running the full gate"
+            echo "run_gate=true" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+          changed="$(git diff --name-only "$base" "${{ github.sha }}")"
+          echo "changed files:"
+          printf '  %s\n' $changed
+          if printf '%s\n' "$changed" | grep -Eq '^(source/|tests/|scripts/|\.githooks/|\.github/workflows/|\.lint_config$|PORTING_MANIFEST\.md$)'; then
+            echo "run_gate=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "no gate inputs changed; skipping the Daslang gate"
+            echo "run_gate=false" >> "$GITHUB_OUTPUT"
+          fi
 
       - name: Cache Daslang build
+        if: steps.changes.outputs.run_gate == 'true'
         id: cache-daslang
         uses: actions/cache/restore@v4
         with:
@@ -37,7 +68,7 @@ jobs:
           key: daslang-linux-${{ env.DASLANG_COMMIT }}
 
       - name: Build pinned Daslang toolchain
-        if: steps.cache-daslang.outputs.cache-hit != 'true'
+        if: steps.changes.outputs.run_gate == 'true' && steps.cache-daslang.outputs.cache-hit != 'true'
         shell: bash
         run: |
           set -euo pipefail
@@ -53,13 +84,14 @@ jobs:
           cmake --build "$DASLANG_ROOT/build" --target daslang --config Release --parallel 2
 
       - name: Save Daslang build
-        if: steps.cache-daslang.outputs.cache-hit != 'true'
+        if: steps.changes.outputs.run_gate == 'true' && steps.cache-daslang.outputs.cache-hit != 'true'
         uses: actions/cache/save@v4
         with:
           path: .ci/daScript
           key: daslang-linux-${{ env.DASLANG_COMMIT }}
 
       - name: Verify pinned compiler
+        if: steps.changes.outputs.run_gate == 'true'
         run: |
           test "$(git -C "$DASLANG_ROOT" rev-parse HEAD)" = "$DASLANG_COMMIT"
           "$DASLANG_BIN" --version
@@ -67,16 +99,25 @@ jobs:
       # The gate itself is defined once in scripts/gate.sh and shared with the
       # pre-push hook; the steps below only split it for readable CI output.
       - name: Compiler diagnostics
+        if: steps.changes.outputs.run_gate == 'true'
         run: scripts/gate.sh compile
 
       - name: Paranoid lint
+        if: steps.changes.outputs.run_gate == 'true'
         run: scripts/gate.sh lint-paranoid
 
       - name: Performance lint
+        if: steps.changes.outputs.run_gate == 'true'
         run: scripts/gate.sh lint-perf
 
       - name: Style lint
+        if: steps.changes.outputs.run_gate == 'true'
         run: scripts/gate.sh lint-style
 
       - name: Project tests
+        if: steps.changes.outputs.run_gate == 'true'
         run: scripts/gate.sh test
+
+      - name: Repository invariants
+        if: steps.changes.outputs.run_gate == 'true'
+        run: scripts/gate.sh invariants

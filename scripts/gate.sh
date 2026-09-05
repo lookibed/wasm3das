@@ -8,7 +8,7 @@
 #   DASLANG_ROOT   toolchain root with utils/ and dastest/ (default: tmp/daslang-toolchain)
 #
 # Usage: scripts/gate.sh [stage ...]
-#   stages: compile lint-paranoid lint-perf lint-style test
+#   stages: compile lint-paranoid lint-perf lint-style test invariants
 #   no argument runs every stage in that order.
 set -euo pipefail
 
@@ -42,6 +42,11 @@ stage_test() {
     "$DASLANG" "$DASLANG_ROOT/dastest/dastest.das" -- --test tests
 }
 
+stage_invariants() {
+    echo "gate: repository invariants"
+    DASLANG="$DASLANG" DASLANG_ROOT="$DASLANG_ROOT" "$repo_root/scripts/check_repo_invariants.sh" "$repo_root"
+}
+
 run_stage() {
     case "$1" in
         compile)        stage_compile ;;
@@ -49,12 +54,13 @@ run_stage() {
         lint-perf)      stage_lint perf-only ;;
         lint-style)     stage_lint style-only ;;
         test)           stage_test ;;
+        invariants)     stage_invariants ;;
         *) echo "gate: unknown stage '$1'" >&2; exit 2 ;;
     esac
 }
 
 if [[ $# -eq 0 ]]; then
-    set -- compile lint-paranoid lint-perf lint-style test
+    set -- compile lint-paranoid lint-perf lint-style test invariants
 fi
 
 for stage in "$@"; do
