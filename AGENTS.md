@@ -276,8 +276,12 @@ cleanup.
 
 ## Allocation and pointer semantics
 
-Never select a deallocator from an object's type or function name. Establish
-the allocation provenance of that exact pointer:
+The port currently mixes `new`/`delete` (environment, runtime, module) with
+the host allocator pair (everything else). `docs/memory-ownership.md` records
+the decision to move every C-owned object to the host allocator and the
+migration order; until that lands, never select a deallocator from an
+object's type or function name. Establish the allocation provenance of that
+exact pointer:
 
 ```text
 Daslang new T()      <-> delete
@@ -431,6 +435,7 @@ and raw model logs never go into the tree; dated working notes go into
 | `CLAUDE.md` | short entry point for Claude Code; defers to this file |
 | `.mcp.json`, `.claude/skills/` | Claude Code MCP servers, LSP plugin and skills |
 | `.lint_config` | repo lint policy and the reason for every disabled rule |
+| `docs/memory-ownership.md` | allocation-regime decision and migration order |
 | `.githooks/pre-push` | local form of the CI quality gate |
 | `notes/handoff_claude_code_2026-09-05.md` | latest session handoff |
 | `notes/runtime_recovery_context_2026-09.md` | provenance of `source/`, checkpoint commits, teardown state |

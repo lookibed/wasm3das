@@ -38,6 +38,10 @@ Status meanings:
 - The `fib32.wasm` regression that AGENTS.md requires for runtime changes is
   not part of `tests/`; it existed only as a temporary runner. Adding it as a
   regular dastest file is the first prerequisite for promoting any draft.
+- Environment, runtime and module objects are `new`-allocated while every
+  other C-owned object is `m3_Malloc_Impl`-allocated. The decision to move to
+  a single host-allocator regime and its migration order are recorded in
+  `docs/memory-ownership.md`.
 
 ## Acceptance boundary
 

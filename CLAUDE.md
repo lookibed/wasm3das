@@ -29,6 +29,7 @@ execution are not started. `wasm3c/` is the reference C source tree.
 | `source/` | Daslang port |
 | `tests/` | Component tests (dastest) |
 | `wasm3c/` | Reference Wasm3 C sources |
+| `docs/` | Design decisions that outlive a single session |
 | `notes/` | Dated working notes and handoffs |
 | `.lint_config` | Repo lint policy; exported as `DAS_LINT_CONFIG_PATH` by CI, the hook and the MCP server |
 | `.githooks/` | Local pre-push copy of the CI gate (`git config core.hooksPath .githooks`) |

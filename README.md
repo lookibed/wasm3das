@@ -31,6 +31,7 @@ The current file-by-file status and known blockers are recorded in
 | `.github/workflows/daslang-quality.yml` | Required pull-request quality gate |
 | `.githooks/pre-push` | The same gate, run locally before every push |
 | `.lint_config` | Repo lint policy consumed by the gate |
+| `docs/` | Design decisions (memory ownership) |
 | `notes/` | Dated working notes and session handoffs |
 | `AGENTS.md` | Rules for AI coding agents |
 | `PORTING_MANIFEST.md` | Port coverage and review state |
