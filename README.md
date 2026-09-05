@@ -29,6 +29,10 @@ The current file-by-file status and known blockers are recorded in
 | `tests/` | Component tests for completed porting increments |
 | `wasm3c/` | Vendored C reference tree |
 | `.github/workflows/daslang-quality.yml` | Required pull-request quality gate |
+| `.githooks/pre-push` | The same gate, run locally before every push |
+| `.lint_config` | Repo lint policy consumed by the gate |
+| `notes/` | Dated working notes and session handoffs |
+| `AGENTS.md` | Rules for AI coding agents |
 | `PORTING_MANIFEST.md` | Port coverage and review state |
 
 ## Local verification
