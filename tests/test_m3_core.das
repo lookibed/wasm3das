@@ -32,11 +32,11 @@ def private cursor_offset(start : bytes_t; cursor : bytes_t) : int {
 
 
 def private init_cursor(
-    var buf : array<u8>;
-    var start : bytes_t&;
-    var cursor : bytes_t&;
-    var end : cbytes_t&
-) {
+                        var buf : array<u8>;
+                        var start : bytes_t&;
+                        var cursor : bytes_t&;
+                        var end : cbytes_t&
+                        ) {
     check(!empty(buf), "test buffer must not be empty")
 
     unsafe {
@@ -63,13 +63,13 @@ def private f64_bits(value : f64) : u64 {
 
 
 def private check_uleb(
-    var buf : array<u8>;
-    max_bits : u32;
-    expected_value : u64;
-    expected_result : M3Result;
-    expected_pos : int;
-    case_name : string
-) {
+                       var buf : array<u8>;
+                       max_bits : u32;
+                       expected_value : u64;
+                       expected_result : M3Result;
+                       expected_pos : int;
+                       case_name : string
+                       ) {
     var start : bytes_t
     var cursor : bytes_t
     var end : cbytes_t
@@ -86,13 +86,13 @@ def private check_uleb(
 
 
 def private check_sleb(
-    var buf : array<u8>;
-    max_bits : u32;
-    expected_value : i64;
-    expected_result : M3Result;
-    expected_pos : int;
-    case_name : string
-) {
+                       var buf : array<u8>;
+                       max_bits : u32;
+                       expected_value : i64;
+                       expected_result : M3Result;
+                       expected_pos : int;
+                       case_name : string
+                       ) {
     var start : bytes_t
     var cursor : bytes_t
     var end : cbytes_t
@@ -109,11 +109,11 @@ def private check_sleb(
 
 
 def private check_normalize(
-    input : i8;
-    expected_type : u8;
-    expected_result : M3Result;
-    case_name : string
-) {
+                            input : i8;
+                            expected_type : u8;
+                            expected_result : M3Result;
+                            case_name : string
+                            ) {
     var output : u8 = 0u8
     let result = NormalizeType(output, input)
 

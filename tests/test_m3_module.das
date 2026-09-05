@@ -153,9 +153,9 @@ def private check_config_and_absent_fields() {
     check(d_m3EnableStrace == 0u, "accepted config keeps strace disabled")
     check(!d_m3EnableCodePageRefCounting, "accepted config keeps code page refcount disabled")
 
-    check(!typeinfo safe_has_field<importedGlobals>(default<M3Module>), "importedGlobals must stay absent")
-    check(!typeinfo safe_has_field<hasWasmCodeCopy>(default<M3Module>), "hasWasmCodeCopy must stay absent")
-    check(!typeinfo safe_has_field<value>(default<M3Global>), "widened nested union struct must stay absent")
+    check(!typeinfo safe_has_field < importedGlobals > (default<M3Module>), "importedGlobals must stay absent")
+    check(!typeinfo safe_has_field < hasWasmCodeCopy > (default<M3Module>), "hasWasmCodeCopy must stay absent")
+    check(!typeinfo safe_has_field < value > (default<M3Global>), "widened nested union struct must stay absent")
 }
 
 
