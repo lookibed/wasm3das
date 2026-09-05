@@ -29,3 +29,8 @@ Thumbs.db
 /lib/
 /run.sh
 /Текстовый документ.txt
+
+# Agent session transcripts and raw model logs: keep them out of the port history
+/codex-session-*.md
+/notes/codex-session-*.md
+/notes/wasm3das_*-flash-*.md
