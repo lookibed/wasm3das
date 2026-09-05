@@ -11,6 +11,15 @@ source through sed, a shell heredoc, or a throwaway Python script. This
 applies to every file in the repository, not only `.das`, and overrides any
 harness preference for shell-based editing.
 
+## Git discipline
+
+- Never rewrite history: no `git commit --amend`, no rebase of existing
+  commits, no force-push of any kind, even on your own branch. Fix a mistake
+  with a new commit on top.
+- Commit messages and pull request descriptions carry only the substantive
+  description of the change. No session URLs, no "Generated with Claude Code"
+  footers, no other agent metadata.
+
 ## Porting approach
 
 - Preserve the C source layout, function and variable names, and control flow.
