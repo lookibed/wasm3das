@@ -4,6 +4,13 @@ Manual port of the Wasm3 WebAssembly interpreter from C to Daslang. The WASI
 integration layer is outside the current scope. `AGENTS.md` is the complete
 rulebook for agents; this file is the short entry point.
 
+## Tool discipline
+
+Use the Edit tool for changing a file and Write for creating one. Never edit
+source through sed, a shell heredoc, or a throwaway Python script. This
+applies to every file in the repository, not only `.das`, and overrides any
+harness preference for shell-based editing.
+
 ## Porting approach
 
 - Preserve the C source layout, function and variable names, and control flow.
