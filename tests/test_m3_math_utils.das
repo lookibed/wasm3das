@@ -1,6 +1,7 @@
 options gen2
 options indenting = 4
 
+require dastest/testing_boost
 require ../source/m3_math_utils.das
 
 
@@ -35,10 +36,10 @@ require ../source/m3_math_utils.das
 */
 
 def expect_u32(
-    name : string;
-    actual : u32;
-    expected : u32
-) {
+               name : string;
+               actual : u32;
+               expected : u32
+               ) {
     if (actual != expected) {
         panic(
             "{name}: expected {expected}, got {actual}"
@@ -48,10 +49,10 @@ def expect_u32(
 
 
 def expect_u64(
-    name : string;
-    actual : u64;
-    expected : u64
-) {
+               name : string;
+               actual : u64;
+               expected : u64
+               ) {
     if (actual != expected) {
         panic(
             "{name}: expected {expected}, got {actual}"
@@ -144,6 +145,7 @@ def reference_rotr64(n : u64; c : uint) : u64 {
 */
 
 
+[test]
 def test_expected_32() { // nolint:STYLE038
 
     /*
@@ -354,6 +356,7 @@ def test_expected_32() { // nolint:STYLE038
 }
 
 
+[test]
 def test_expected_64() { // nolint:STYLE038
 
     /*
@@ -583,6 +586,7 @@ def test_expected_64() { // nolint:STYLE038
 */
 
 
+[test]
 def test_rotations_32() { // nolint:STYLE038
 
     /*
@@ -748,6 +752,7 @@ def test_rotations_32() { // nolint:STYLE038
 */
 
 
+[test]
 def test_rotations_64() { // nolint:STYLE038
 
     let values = fixed_array(
@@ -903,6 +908,7 @@ def test_rotations_64() { // nolint:STYLE038
 */
 
 
+[test]
 def test_cross_properties_32() {
     let values = fixed_array(
         0x00000000u,
@@ -955,6 +961,7 @@ def test_cross_properties_32() {
 }
 
 
+[test]
 def test_cross_properties_64() {
     let values = fixed_array(
         0x0000000000000000ul,
