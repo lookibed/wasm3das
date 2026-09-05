@@ -39,6 +39,7 @@ The project is currently verified with Daslang 0.6.4 from upstream commit
 ```sh
 DASLANG_ROOT=/path/to/daScript
 DASLANG="$DASLANG_ROOT/bin/daslang"
+export DAS_LINT_CONFIG_PATH="$PWD/.lint_config"   # repo lint policy, see the file
 
 for file in source/*.das tests/*.das; do
     "$DASLANG" -compile-only "$file"
@@ -50,6 +51,13 @@ for profile in paranoid-only perf-only style-only; do
 done
 
 "$DASLANG" "$DASLANG_ROOT/dastest/dastest.das" -- --test tests
+```
+
+The same gate runs locally before every push once the repository hooks are
+enabled:
+
+```sh
+git config core.hooksPath .githooks
 ```
 
 ## Contributions

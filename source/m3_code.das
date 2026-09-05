@@ -43,9 +43,9 @@ let private m3_u32_max : u64 = 0xfffffffful
 
 
 def public NewCodePage(
-    var i_runtime : IM3Runtime;
-    i_minNumLines : u32
-) : IM3CodePage {
+                       var i_runtime : IM3Runtime;
+                       i_minNumLines : u32
+                       ) : IM3CodePage {
     let codeSize = u64(typeinfo sizeof(type<code_t>))
     let headerSize = u64(typeinfo sizeof(type<M3CodePageHeader>))
     let alignSize = u64(d_m3CodePageAlignSize)
@@ -233,9 +233,9 @@ def public GetPagePC(var i_page : IM3CodePage) : pc_t {
 
 
 def public PushCodePage(
-    var io_list : IM3CodePage&;
-    var i_codePage : IM3CodePage
-) {
+                        var io_list : IM3CodePage&;
+                        var i_codePage : IM3CodePage
+                        ) {
     var next = io_list
     i_codePage.info.next = next
     io_list = i_codePage
@@ -263,9 +263,9 @@ def public PopCodePage(var io_list : IM3CodePage&) : IM3CodePage {
 
 
 def public FindCodePageEnd(
-    var i_list : IM3CodePage;
-    var o_end : IM3CodePage&
-) : u32 {
+                           var i_list : IM3CodePage;
+                           var o_end : IM3CodePage&
+                           ) : u32 {
     var numPages = 0u
     o_end = null
     while (i_list != null) {
@@ -389,7 +389,7 @@ def public Environment_ReleaseCodePages(var i_environment : IM3Environment; var 
 /* C m3_env.c: void ReleaseCodePageNoTrack (IM3Runtime i_runtime, IM3CodePage i_codePage) */
 def public ReleaseCodePageNoTrack(var i_runtime : IM3Runtime; var i_codePage : IM3CodePage) {
     if (i_codePage != null) {
-        var pageFull = NumFreeLines(i_codePage) < d_m3CodePageFreeLinesThreshold
+        let pageFull = NumFreeLines(i_codePage) < d_m3CodePageFreeLinesThreshold
 
         if (pageFull) {
             PushCodePage(i_runtime.pagesFull, i_codePage)

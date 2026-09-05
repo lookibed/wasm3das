@@ -14,7 +14,7 @@ require ./m3_exception.das public
 def Module_FreeFunctions(var i_module : IM3Module) {
     for (i in 0u..i_module.numFunctions) {
         unsafe {
-            var func : IM3Function = reinterpret<IM3Function>(addr(i_module.functions[i]))
+            var func : IM3Function = addr(i_module.functions[i])
             Function_Release(func)
         }
     }
@@ -44,9 +44,9 @@ def m3_FreeModule(var i_module : IM3Module) {
 
         for (i in 0u..i_module.numGlobals) {
             unsafe {
-                var globalPtr : IM3Global = reinterpret<IM3Global>(addr(i_module.globals[i]))
+                var globalPtr : IM3Global = addr(i_module.globals[i])
                 globalPtr.name = ""
-                var importInfo : IM3ImportInfo = reinterpret<IM3ImportInfo>(addr(i_module.globals[i].import))
+                var importInfo : IM3ImportInfo = addr(i_module.globals[i].import)
                 FreeImportInfo(importInfo[0])
             }
         }
@@ -57,7 +57,7 @@ def m3_FreeModule(var i_module : IM3Module) {
         i_module.table0ExportName = ""
 
         unsafe {
-            var memoryImport : IM3ImportInfo = reinterpret<IM3ImportInfo>(addr(i_module.memoryImport))
+            var memoryImport : IM3ImportInfo = addr(i_module.memoryImport)
             FreeImportInfo(memoryImport[0])
         }
 
@@ -84,7 +84,7 @@ def Module_AddGlobal(var io_module : IM3Module; var o_global : IM3Global&; i_typ
     }
 
     unsafe {
-        var global : IM3Global = reinterpret<IM3Global>(addr(io_module.globals[index]))
+        var global : IM3Global = addr(io_module.globals[index])
         global._type = i_type
         global.imported = i_isImported
         global.isMutable = i_mutable
@@ -117,7 +117,7 @@ def Module_AddFunction(var io_module : IM3Module; i_typeIndex : u32; i_importInf
     let index = io_module.numFunctions
     io_module.numFunctions++
 
-    var result = Module_PreallocFunctions(io_module, io_module.numFunctions)
+    let result = Module_PreallocFunctions(io_module, io_module.numFunctions)
     if (result != m3Err_none) {
         return result
     }
@@ -135,7 +135,7 @@ def Module_AddFunction(var io_module : IM3Module; i_typeIndex : u32; i_importInf
         func.funcType = ft
 
         if (i_importInfo != null && func.numNames == 0) {
-            var importCopy : M3ImportInfo = i_importInfo[0]
+            let importCopy : M3ImportInfo = i_importInfo[0]
             func.import = importCopy
             func.names[0] = importCopy.fieldUtf8
             func.numNames = 1
@@ -149,7 +149,7 @@ def Module_AddFunction(var io_module : IM3Module; i_typeIndex : u32; i_importInf
 def Module_GenerateNames(var i_module : IM3Module) {
     for (i in 0u..i_module.numFunctions) {
         unsafe {
-            var func : IM3Function = reinterpret<IM3Function>(addr(i_module.functions[i]))
+            var func : IM3Function = addr(i_module.functions[i])
 
             if (func.numNames == 0) {
                 let buff = "$func{i}"
@@ -161,7 +161,7 @@ def Module_GenerateNames(var i_module : IM3Module) {
 
     for (i in 0u..i_module.numGlobals) {
         unsafe {
-            var global : IM3Global = reinterpret<IM3Global>(addr(i_module.globals[i]))
+            var global : IM3Global = addr(i_module.globals[i])
 
             if (empty(global.name)) {
                 global.name = "$global{i}"
@@ -175,7 +175,7 @@ def Module_GetFunction(var i_module : IM3Module; i_functionIndex : u32) : IM3Fun
     var func : IM3Function = null
 
     if (i_functionIndex < i_module.numFunctions) {
-        unsafe { func = reinterpret<IM3Function>(addr(i_module.functions[i_functionIndex])) }
+        unsafe { func = addr(i_module.functions[i_functionIndex]) }
     }
 
     return func

@@ -411,13 +411,15 @@ Run:
 
 ```sh
 DASLANG="$PWD/tmp/daslang-toolchain/bin/daslang"
+export DAS_LINT_CONFIG_PATH="$PWD/.lint_config"
 
 # 1. Compiler diagnostics on every source and test
 for file in source/*.das tests/*.das; do
     "$DASLANG" -compile-only "$file" || exit 1
 done
 
-# 2. All three lint profiles, zero findings
+# 2. All three lint profiles, zero findings (.lint_config disables only the
+#    rules whose findings are the faithful spelling of the C source)
 for profile in paranoid-only perf-only style-only; do
     "$DASLANG" tmp/daslang-toolchain/utils/lint/main.das -- --"$profile" source tests || exit 1
 done

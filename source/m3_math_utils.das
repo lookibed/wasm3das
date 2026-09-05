@@ -182,10 +182,10 @@ def rint(arg : f64) : f64 {
 */
 
 def strtoull( // nolint:STYLE038
-    str : string;
-    var endptr : int&;
-    base_value : int
-) : u64 {
+             str : string;
+             var endptr : int&;
+             base_value : int
+             ) : u64 {
     var result = 0ul
     var p = 0
     var base = base_value
@@ -334,10 +334,10 @@ def rotr64(n : u64; c_value : uint) : u64 {
 
 
 def OP_DIV_U(
-    var RES : auto(TT)&;
-    A : TT;
-    B : TT
-) : M3Result {
+             var RES : auto(TT)&;
+             A : TT;
+             B : TT
+             ) : M3Result {
     if (B == TT(0)) {
         return m3Err_trapDivisionByZero
     }
@@ -349,10 +349,10 @@ def OP_DIV_U(
 
 
 def OP_REM_U(
-    var RES : auto(TT)&;
-    A : TT;
-    B : TT
-) : M3Result {
+             var RES : auto(TT)&;
+             A : TT;
+             B : TT
+             ) : M3Result {
     if (B == TT(0)) {
         return m3Err_trapDivisionByZero
     }
@@ -375,11 +375,11 @@ def OP_REM_U(
 */
 
 def OP_DIV_S(
-    var RES : auto(TT)&;
-    A : TT;
-    B : TT;
-    TYPE_MIN : TT
-) : M3Result {
+             var RES : auto(TT)&;
+             A : TT;
+             B : TT;
+             TYPE_MIN : TT
+             ) : M3Result {
     if (B == TT(0)) {
         return m3Err_trapDivisionByZero
     }
@@ -395,11 +395,11 @@ def OP_DIV_S(
 
 
 def OP_REM_S(
-    var RES : auto(TT)&;
-    A : TT;
-    B : TT;
-    TYPE_MIN : TT
-) : M3Result {
+             var RES : auto(TT)&;
+             A : TT;
+             B : TT;
+             TYPE_MIN : TT
+             ) : M3Result {
     if (B == TT(0)) {
         return m3Err_trapDivisionByZero
     }
@@ -426,11 +426,11 @@ def OP_REM_S(
 */
 
 def OP_TRUNC(
-    var RES : auto(TT)&;
-    A;
-    RMIN;
-    RMAX
-) : M3Result {
+             var RES : auto(TT)&;
+             A;
+             RMIN;
+             RMAX
+             ) : M3Result {
     if (is_nan(A)) {
         return m3Err_trapIntegerConversion
     }
@@ -530,13 +530,13 @@ def OP_U64_TRUNC_F64(var RES : u64&; A : f64) : M3Result {
 */
 
 def OP_TRUNC_SAT(
-    var RES : auto(TT)&;
-    A;
-    RMIN;
-    RMAX;
-    IMIN : TT;
-    IMAX : TT
-) {
+                 var RES : auto(TT)&;
+                 A;
+                 RMIN;
+                 RMAX;
+                 IMIN : TT;
+                 IMAX : TT
+                 ) {
     if (is_nan(A)) {
         RES = TT(0)
 
@@ -761,9 +761,9 @@ def max_f64(a : f64; b : f64) : f64 {
 
 
 def public M3_MAX(a : int; b : int) : int {
-    return a > b ? a : b
+    return max(a, b)
 }
 
 def public M3_MIN(a : int; b : int) : int {
-    return a < b ? a : b
+    return min(a, b)
 }
