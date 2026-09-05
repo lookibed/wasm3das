@@ -1,0 +1,19 @@
+# Repo-wide lint policy for wasm3das (TOML). Consumed by utils/lint/main.das,
+# the MCP `lint` tool and the LSP lint macros when DAS_LINT_CONFIG_PATH points
+# here (the toolchain reads its own root by default). Every rule below is
+# disabled because the construct it flags is the faithful spelling of the C
+# source in wasm3c/; all other rules stay on and the gate requires zero findings.
+
+[rules]
+# C locals `type`, `module`, `function`, `block` are Daslang keywords; the port
+# spells them `_type`, `_module`, `_function`, `_block` to keep the C names.
+LINT004 = false
+# Compiler-table and threaded-interpreter callbacks share fixed C signatures
+# (io_compilation, i_opcode / pc, sp, mem, r0, fp0); unused parameters are the
+# ABI, not an oversight.
+LINT012 = false
+# 64-bit locals mirror the C operand types (u64 operand narrowed at use).
+LINT021 = false
+# Function length and cyclomatic complexity follow the C functions one to one.
+STYLE037 = false
+STYLE038 = false

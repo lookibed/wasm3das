@@ -77,9 +77,7 @@ def test_env_runtime_releases_linked_module_without_owning_environment() {
     var runtime = m3_NewRuntime(env, 64u * 1024u, null)
     expect_true("runtime allocated for linked module", runtime != null)
 
-    var linkedModule : IM3Module = new M3Module()
-    linkedModule.environment = env
-    linkedModule.runtime = runtime
+    var linkedModule : IM3Module = new M3Module(environment = env, runtime = runtime)
     runtime.modules = linkedModule
 
     m3_FreeRuntime(runtime)

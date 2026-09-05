@@ -3,16 +3,14 @@ options indenting = 4
 
 module m3_env shared public
 
-require ./m3_core.das public
+require ./m3_core.das
 require ./m3_types.das public
-require ./m3_exception.das public
-require ./m3_exec_defs.das public
+require ./m3_exec_defs.das
 require ./m3_code.das public
-require ./m3_function.das public
+require ./m3_function.das
 require ./m3_module.das public
 require ./m3_compile.das public
 require ./m3_exec.das
-require math
 require strings
 
 let c_m3Type_none : u8 = u8(M3ValueType.c_m3Type_none)
@@ -39,56 +37,56 @@ def m3_value_type(i_type : u8) : M3ValueType {
 
 def tagged_get_i32(i_value : M3TaggedValue) : i32 {
     unsafe {
-        let p = reinterpret<i32 const?>(addr(i_value.valueBits))
+        let p = addr<i32 const?>(i_value.valueBits)
         return *p
     }
 }
 
 def tagged_get_i64(i_value : M3TaggedValue) : i64 {
     unsafe {
-        let p = reinterpret<i64 const?>(addr(i_value.valueBits))
+        let p = addr<i64 const?>(i_value.valueBits)
         return *p
     }
 }
 
 def tagged_get_f32(i_value : M3TaggedValue) : f32 {
     unsafe {
-        let p = reinterpret<f32 const?>(addr(i_value.valueBits))
+        let p = addr<f32 const?>(i_value.valueBits)
         return *p
     }
 }
 
 def tagged_get_f64(i_value : M3TaggedValue) : f64 {
     unsafe {
-        let p = reinterpret<f64 const?>(addr(i_value.valueBits))
+        let p = addr<f64 const?>(i_value.valueBits)
         return *p
     }
 }
 
 def tagged_set_i32(var io_value : M3TaggedValue&; i_value : i32) {
     unsafe {
-        var p = reinterpret<i32?>(addr(io_value.valueBits))
+        var p = addr<i32?>(io_value.valueBits)
         *p = i_value
     }
 }
 
 def tagged_set_i64(var io_value : M3TaggedValue&; i_value : i64) {
     unsafe {
-        var p = reinterpret<i64?>(addr(io_value.valueBits))
+        var p = addr<i64?>(io_value.valueBits)
         *p = i_value
     }
 }
 
 def tagged_set_f32(var io_value : M3TaggedValue&; i_value : f32) {
     unsafe {
-        var p = reinterpret<f32?>(addr(io_value.valueBits))
+        var p = addr<f32?>(io_value.valueBits)
         *p = i_value
     }
 }
 
 def tagged_set_f64(var io_value : M3TaggedValue&; i_value : f64) {
     unsafe {
-        var p = reinterpret<f64?>(addr(io_value.valueBits))
+        var p = addr<f64?>(io_value.valueBits)
         *p = i_value
     }
 }
@@ -109,8 +107,8 @@ def RunFunctionCode(var i_function : IM3Function) : M3Result {
     var sp : m3stack_t
     unsafe { sp = reinterpret<m3stack_t>(runtime.stack) }
     var mem = runtime.memory.mallocated
-    var r0 : m3reg_t = 0l
-    var fp0 : f64 = 0.0lf
+    let r0 : m3reg_t = 0l
+    let fp0 : f64 = 0.0lf
     return RunCode(pc, sp, mem, r0, fp0)
 }
 
@@ -130,7 +128,7 @@ def m3_NewEnvironment() : IM3Environment {
     CompileFunctionHook = @@CompileFunction
     ResizeMemoryHook = @@ResizeMemory
 
-    var env : IM3Environment = null
+    var env : IM3Environment
     unsafe {
         env = new M3Environment()
     }
@@ -139,7 +137,7 @@ def m3_NewEnvironment() : IM3Environment {
         var result : M3Result = m3Err_none
 
         for (ti in int(c_m3Type_none)..(int(c_m3Type_f64) + 1)) {
-            var t : u8 = u8(ti)
+            let t : u8 = u8(ti)
             var ftype : IM3FuncType = null
             result = AllocFuncType(ftype, 1u)
             if (result != m3Err_none) {
@@ -235,7 +233,7 @@ def Environment_AddFuncType(var i_environment : IM3Environment; var io_funcType 
 
 
 def m3_NewRuntime(var i_environment : IM3Environment; i_stackSizeInBytes : u32; i_userdata : void?) : IM3Runtime {
-    var runtime : IM3Runtime = null
+    var runtime : IM3Runtime
     unsafe {
         runtime = new M3Runtime()
     }
@@ -251,7 +249,7 @@ def m3_NewRuntime(var i_environment : IM3Environment; i_stackSizeInBytes : u32; 
         if (runtime.originStack != null) {
             runtime.stack = runtime.originStack
             runtime.numStackSlots = i_stackSizeInBytes / u32(typeinfo sizeof(type<m3slot_t>))
-            
+
         } else {
             unsafe { delete runtime }
             runtime = null
@@ -330,11 +328,8 @@ def m3_FreeRuntime(var i_runtime : IM3Runtime) {
 
 def EvaluateExpression(var i_module : IM3Module; o_expressed : void?; i_type : u8; var io_bytes : bytes_t&; i_end : cbytes_t) : M3Result {
     var result : M3Result = m3Err_none
-    var runtime = M3Runtime()
+    var runtime = M3Runtime(environment = i_module.runtime.environment, numStackSlots = i_module.runtime.numStackSlots, stack = i_module.runtime.stack)
 
-    runtime.environment = i_module.runtime.environment
-    runtime.numStackSlots = i_module.runtime.numStackSlots
-    runtime.stack = i_module.runtime.stack
 
     var stack = unsafe(reinterpret<m3stack_t>(runtime.stack))
     var savedRuntime = i_module.runtime
@@ -361,14 +356,14 @@ def EvaluateExpression(var i_module : IM3Module; o_expressed : void?; i_type : u
 
         if (result == m3Err_none) {
             var mem : M3MemoryHeader? = null
-            var r0 : m3reg_t = 0l
-            var fp0 : f64 = 0.0lf
+            let r0 : m3reg_t = 0l
+            let fp0 : f64 = 0.0lf
             let r = RunCode(m3code, stack, mem, r0, fp0)
             if (r == m3Err_none) {
                 unsafe {
                     if (SizeOfType(i_type) == u32(typeinfo sizeof(type<u32>))) {
                         var dst32 = reinterpret<u32?>(o_expressed)
-                        var src32 = reinterpret<u32?>(stack)
+                        var src32 = stack
                         *dst32 = *src32
                     } else {
                         var dst64 = reinterpret<u64?>(o_expressed)
@@ -415,7 +410,7 @@ def ResizeMemory(var io_runtime : IM3Runtime; i_numPages : u32) : M3Result {
     if (numPagesToAlloc <= memory.maxPages) {
         var numPageBytes = u64(numPagesToAlloc) * u64(io_runtime.memory.pageSize)
 
-        if (d_m3MaxLinearMemoryPages > 0 && numPagesToAlloc > u32(d_m3MaxLinearMemoryPages)) {
+        if (d_m3MaxLinearMemoryPages > 0 && numPagesToAlloc > d_m3MaxLinearMemoryPages) {
             return "linear memory limitation exceeded"
         }
 
@@ -429,7 +424,6 @@ def ResizeMemory(var io_runtime : IM3Runtime; i_numPages : u32) : M3Result {
             numPreviousBytes += u64(typeinfo sizeof(type<M3MemoryHeader>))
         }
 
-        let oldMallocated = memory.mallocated
         var oldMem : void?
         unsafe { oldMem = reinterpret<void?>(memory.mallocated) }
         let newMem = m3_Realloc_Impl(oldMem, numBytes, numPreviousBytes)
@@ -446,7 +440,7 @@ def ResizeMemory(var io_runtime : IM3Runtime; i_numPages : u32) : M3Result {
             memory.mallocated.maxStack = reinterpret<m3slot_t?>(io_runtime.stack) + int(io_runtime.numStackSlots)
         }
 
-        
+
     } else {
         result = m3Err_wasmMemoryOverflow
     }
@@ -463,20 +457,20 @@ def InitGlobals(var io_module : IM3Module) : M3Result {
             let i = u32(ii)
             var g : IM3Global
             unsafe { g = addr(io_module.globals[int(i)]) }
-            
+
 
             if (g.initExpr != null) {
                 var start = g.initExpr
                 var globalEnd : bytes_t
                 unsafe { globalEnd = g.initExpr + int(g.initExprSize) }
                 var valuePtr : void?
-                unsafe { valuePtr = reinterpret<void?>(addr(g.valueBits)) }
+                unsafe { valuePtr = addr<void?>(g.valueBits) }
                 result = EvaluateExpression(io_module, valuePtr, g._type, start, globalEnd)
                 if (result != m3Err_none) {
                     break
                 }
             } else {
-                
+
             }
         }
     }
@@ -497,20 +491,20 @@ def InitDataSegments(var io_memory : M3Memory&; var io_module : IM3Module) : M3R
         var segmentOffset : i32 = 0
         var start = segment.initExpr
         var segmentEnd : bytes_t
-        unsafe { segmentEnd = reinterpret<bytes_t>(segment.initExpr) + int(segment.initExprSize) }
+        unsafe { segmentEnd = segment.initExpr + int(segment.initExprSize) }
         var offsetPtr : void?
-        unsafe { offsetPtr = reinterpret<void?>(addr(segmentOffset)) }
+        unsafe { offsetPtr = addr<void?>(segmentOffset) }
         let result = EvaluateExpression(io_module, offsetPtr, c_m3Type_i32, start, segmentEnd)
         if (result != m3Err_none) {
             return result
         }
 
-        
+
 
         if (segmentOffset >= 0 && u64(segmentOffset) + u64(segment.size) <= io_memory.mallocated.length) {
             unsafe {
                 let dest = m3MemData(io_memory.mallocated) + segmentOffset
-                unsafe { memcpy(dest, segment.data, int(segment.size)) }
+                unsafe { memcpy(dest, segment.data, segment.size) }
             }
         } else {
             return "data segment out of bounds"
@@ -525,7 +519,7 @@ def InitElements(var io_module : IM3Module) : M3Result {
     var bytes : bytes_t = io_module.elementSection
     let end = io_module.elementSectionEnd
 
-    for (ii in 0..int(io_module.numElementSegments)) {
+    for (_ii in 0..int(io_module.numElementSegments)) {
         var index = 0u
         var result = ReadLEB_u32(index, bytes, end)
         if (result != m3Err_none) {
@@ -609,7 +603,7 @@ def m3_RunStart(var io_module : IM3Module) : M3Result {
 
     if (io_module != null && io_module.startFunction >= 0) {
         var _function : IM3Function
-        unsafe { _function = addr(io_module.functions[int(io_module.startFunction)]) }
+        unsafe { _function = addr(io_module.functions[io_module.startFunction]) }
 
         if (_function.compiled == null) {
             result = CompileFunction(_function)
@@ -624,7 +618,6 @@ def m3_RunStart(var io_module : IM3Module) : M3Result {
         }
 
         let _module = _function._module
-        let runtime = _module.runtime
         startFunctionTmp = io_module.startFunction
         io_module.startFunction = -1
 
@@ -727,7 +720,7 @@ def m3_GetGlobalType(var i_global : IM3Global) : M3ValueType {
 
 
 def v_FindFunction(var i_module : IM3Module; i_info : void?) : void? {
-    var i_name = ""
+    var i_name : string
     unsafe {
         let namePtr = reinterpret<string const?>(i_info)
         i_name = *namePtr
@@ -765,7 +758,7 @@ def v_FindFunction(var i_module : IM3Module; i_info : void?) : void? {
 
 def m3_FindFunction(var o_function : IM3Function&; var i_runtime : IM3Runtime; i_functionName : string) : M3Result {
     d_m3Assert(i_runtime != null)
-    var _function : IM3Function = null
+    var _function : IM3Function
 
     if (i_runtime.modules == null) {
         o_function = null
@@ -773,7 +766,7 @@ def m3_FindFunction(var o_function : IM3Function&; var i_runtime : IM3Runtime; i
     }
 
     unsafe {
-        _function = reinterpret<IM3Function>(ForEachModule(i_runtime, @@v_FindFunction, reinterpret<void?>(addr(i_functionName))))
+        _function = reinterpret<IM3Function>(ForEachModule(i_runtime, @@v_FindFunction, addr<void?>(i_functionName)))
     }
 
     var result : M3Result = m3Err_none
@@ -897,19 +890,19 @@ def m3_CallVL(var i_function : IM3Function; i_args : array<M3TaggedValue>) : M3R
             let arg = i_args[ii]
             if (_type == c_m3Type_i32) {
                 var dst = reinterpret<i32?>(s)
-                var value = tagged_get_i32(arg)
+                let value = tagged_get_i32(arg)
                 *dst = value
             } elif (_type == c_m3Type_i64) {
                 var dst = reinterpret<i64?>(s)
-                var value = tagged_get_i64(arg)
+                let value = tagged_get_i64(arg)
                 *dst = value
             } elif (d_m3HasFloat && _type == c_m3Type_f32) {
                 var dst = reinterpret<f32?>(s)
-                var value = tagged_get_f32(arg)
+                let value = tagged_get_f32(arg)
                 *dst = value
             } elif (d_m3HasFloat && _type == c_m3Type_f64) {
                 var dst = reinterpret<f64?>(s)
-                var value = tagged_get_f64(arg)
+                let value = tagged_get_f64(arg)
                 *dst = value
             } else {
                 return "unknown argument type"
@@ -960,22 +953,22 @@ def m3_Call(var i_function : IM3Function; i_argc : u32; i_argptrs : array<void c
             if (_type == c_m3Type_i32) {
                 var dst = reinterpret<i32?>(s)
                 let src = reinterpret<i32 const?>(p)
-                var value = *src
+                let value = *src
                 *dst = value
             } elif (_type == c_m3Type_i64) {
                 var dst = reinterpret<i64?>(s)
                 let src = reinterpret<i64 const?>(p)
-                var value = *src
+                let value = *src
                 *dst = value
             } elif (d_m3HasFloat && _type == c_m3Type_f32) {
                 var dst = reinterpret<f32?>(s)
                 let src = reinterpret<f32 const?>(p)
-                var value = *src
+                let value = *src
                 *dst = value
             } elif (d_m3HasFloat && _type == c_m3Type_f64) {
                 var dst = reinterpret<f64?>(s)
                 let src = reinterpret<f64 const?>(p)
-                var value = *src
+                let value = *src
                 *dst = value
             } else {
                 return "unknown argument type"
@@ -1012,19 +1005,19 @@ def m3_CallArgv(var i_function : IM3Function; i_argc : u32; i_argv : array<strin
             let _type = GetFuncTypeParamType(ftype, u16(i))
             if (_type == c_m3Type_i32) {
                 var dst = reinterpret<i32?>(s)
-                var value = i32(to_int(text))
+                let value = to_int(text)
                 *dst = value
             } elif (_type == c_m3Type_i64) {
                 var dst = reinterpret<i64?>(s)
-                var value = to_int64(text)
+                let value = to_int64(text)
                 *dst = value
             } elif (d_m3HasFloat && _type == c_m3Type_f32) {
                 var dst = reinterpret<f32?>(s)
-                var value = to_float(text)
+                let value = to_float(text)
                 *dst = value
             } elif (d_m3HasFloat && _type == c_m3Type_f64) {
                 var dst = reinterpret<f64?>(s)
-                var value = to_double(text)
+                let value = to_double(text)
                 *dst = value
             } else {
                 return "unknown argument type"
@@ -1056,22 +1049,22 @@ def m3_GetResults(var i_function : IM3Function; i_retc : u32; o_retptrs : array<
             if (_type == c_m3Type_i32) {
                 var dst = reinterpret<i32?>(p)
                 let src = reinterpret<i32 const?>(s)
-                var value = *src
+                let value = *src
                 *dst = value
             } elif (_type == c_m3Type_i64) {
                 var dst = reinterpret<i64?>(p)
                 let src = reinterpret<i64 const?>(s)
-                var value = *src
+                let value = *src
                 *dst = value
             } elif (d_m3HasFloat && _type == c_m3Type_f32) {
                 var dst = reinterpret<f32?>(p)
                 let src = reinterpret<f32 const?>(s)
-                var value = *src
+                let value = *src
                 *dst = value
             } elif (d_m3HasFloat && _type == c_m3Type_f64) {
                 var dst = reinterpret<f64?>(p)
                 let src = reinterpret<f64 const?>(s)
-                var value = *src
+                let value = *src
                 *dst = value
             } else {
                 return "unknown return type"

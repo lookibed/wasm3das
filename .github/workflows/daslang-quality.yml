@@ -22,6 +22,7 @@ jobs:
       DASLANG_COMMIT: 1524b3bf62e7decbfe530dc5f2e794b296fa1e68
       DASLANG_ROOT: ${{ github.workspace }}/.ci/daScript
       DASLANG_BIN: ${{ github.workspace }}/.ci/daScript/bin/daslang
+      DAS_LINT_CONFIG_PATH: ${{ github.workspace }}/.lint_config
 
     steps:
       - name: Check out wasm3das

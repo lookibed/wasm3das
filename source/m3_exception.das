@@ -4,7 +4,6 @@ options indenting = 4
 module m3_exception shared public
 
 require ./m3_config.das public
-require ./m3_core.das public
 
 
 /*

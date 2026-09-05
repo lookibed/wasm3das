@@ -11,6 +11,7 @@ if [[ ! -x "$toolchain_root/bin/daslang" ]]; then
 fi
 
 daslang="$toolchain_root/bin/daslang"
+export DAS_LINT_CONFIG_PATH="$repo_root/.lint_config"
 
 cd "$repo_root"
 

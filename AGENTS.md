@@ -24,80 +24,35 @@ Resolve uncertainty with these principles, in order:
 2. **Proof over assumption.** Compare with the actual C source and prove
    pointer, ownership, and allocator semantics. Compilation and existing unit
    tests alone do not prove that a port is correct.
-3. **Preserve evidence.** The working tree may contain important uncommitted
-   post-Qwen fixes. Never discard or overwrite it before identifying and
-   saving the current diff.
+3. **Preserve evidence.** The working tree may contain uncommitted fixes.
+   Never discard or overwrite it before identifying and saving the current
+   diff.
 4. **One invariant at a time.** For runtime bugs, move from observation to one
    ownership/control-flow invariant, prove it with DAP and the C source, make
    the smallest patch, and rerun the real regression.
 5. **Green tree at every accepted step.** Do not stack unrelated work on an
    unverified runtime fix or an unavailable module.
 6. **The manifest is a contract.** `PORTING_MANIFEST.md` is the source of
-   truth for accepted, in-revision, and unstarted coverage. Only a code owner
-   may mark work Accepted.
+   truth for accepted, in-revision, draft, and unstarted coverage. Only a code
+   owner may mark work Accepted.
 
-## Current recovery context — read before touching `source/`
+## Runtime recovery context
 
-The current `source/` tree has a complicated provenance. Before Qwen, GLM
-performed large mechanical C-to-Daslang merge/fix passes, including:
+`source/` carries drafts of the environment, compiler and executor whose
+provenance includes mechanical rewrites; see
+`notes/runtime_recovery_context_2026-09.md` for the history, the checkpoint
+commits on `origin/wip/runtime-layer`, and the fixes verified so far. The
+facts that still drive priorities:
 
-- Python/regex rewrites of `m3_parse.das` and `m3_module.das`;
-- an `m3log(...)` stripper that once truncated the starts of both files;
-- pointer-typedef rewrites that could turn an existing pointer alias into
-  effective pointer-to-pointer semantics;
-- generic emulations of `m3_Free` and `m3_ReallocArray`, later replaced with
-  explicit C-macro expansion;
-- function moves between `m3_env` and `m3_module` that temporarily produced
-  duplicate definitions.
-
-Many of those defects were subsequently fixed. Do **not** assume that the
-current tree is corrupt, and do **not** assume that it is canonical merely
-because it compiles. When code looks suspicious, establish its provenance
-before adding another workaround.
-
-Useful committed checkpoints are:
-
-```text
-7c25b78  Fix wasm magic byte order and module deallocation found via DAP stepping
-9a2058e  Phase 2: wire CompileFunctionHook/ResizeMemoryHook at m3_NewEnvironment
-5fb3c38  Record phase 1 outcome and lint findings distribution
-```
-
-`7c25b78` is a useful clean comparison point, not absolute semantic truth.
-Important fixes discovered after it may still be uncommitted.
-
-### Confirmed runtime state
-
-A real `fib32.wasm` run has already completed parse, load, compile, export
-lookup, execution, and result retrieval with these results:
-
-```text
-fib(2)  = 1
-fib(10) = 55
-fib(25) = 75025
-```
-
-Do not restart investigation at the parser/compiler without new evidence of a
-regression. The main unresolved issue is a teardown `SIGSEGV`, with the known
-path:
-
-```text
-m3_FreeRuntime
-    -> Runtime_Release
-        -> ForEachModule
-            -> _FreeModule
-                -> m3_FreeModule
-```
-
-The current priority is:
-
-```text
-real wasm correctness -> teardown correctness -> regression -> cleanup
-```
-
-The larger Daslang stack used by the temporary fib runner compensates for the
-absence of a C `M3_MUSTTAIL` equivalent. Trampoline/tail-call architecture is
-a separate future task and must not be mixed with teardown repair.
+- A real `fib32.wasm` run has reached result retrieval (`fib(25) = 75025`).
+  Do not restart investigation at the parser/compiler without new evidence of
+  a regression.
+- Teardown still ends in `SIGSEGV` on the path
+  `m3_FreeRuntime -> Runtime_Release -> ForEachModule -> _FreeModule ->
+  m3_FreeModule`.
+- Priority: `real wasm correctness -> teardown correctness -> regression ->
+  cleanup`. Trampoline/tail-call architecture (the missing `M3_MUSTTAIL`) is a
+  separate future task.
 
 ## Preserve the working tree before source changes
 
@@ -106,7 +61,7 @@ Before any edit to `source/`, capture the starting state:
 ```bash
 git status --short
 git diff --stat
-git diff > /tmp/codex-onboard-start.patch
+git diff > "$SCRATCH/start.patch"
 git log --oneline --decorate --graph -12
 ```
 
@@ -131,9 +86,9 @@ For example:
 
 ```bash
 git log --oneline -- source/m3_module.das
-git diff 7c25b78 -- source/m3_module.das
-git show 7c25b78:source/m3_module.das > /tmp/m3_module.7c25b78.das
-diff -u /tmp/m3_module.7c25b78.das source/m3_module.das
+git diff <commit> -- source/m3_module.das
+git show <commit>:source/m3_module.das > "$SCRATCH/m3_module.<commit>.das"
+diff -u "$SCRATCH/m3_module.<commit>.das" source/m3_module.das
 ```
 
 Use Git to recover previously tracked Daslang text and the C source to prove
@@ -170,11 +125,9 @@ diagnostics and obscures fidelity review.
 - Lint and formatting during development must use Daslang tools, not a
   shell-invoked system compiler.
 
-### Codex MCP/LSP/DAP configuration
+### Agent client configuration
 
-Codex uses the project-local `.codex/config.toml`, provided the project is
-trusted in `/root/.codex/config.toml`. It should expose three required STDIO
-servers:
+Three servers are required, whichever client is used:
 
 | Server | Purpose |
 |---|---|
@@ -182,37 +135,39 @@ servers:
 | `daslang-lsp` | native LSP diagnostics and navigation |
 | `daslang-dap` | stateful DAP client |
 
-The `daslang` and `daslang-lsp` servers must use the project-pinned compiler at
-`tmp/daslang-toolchain/bin/daslang`. The `daslang-dap` server currently uses
-the bridge and executable from the live `/root/daScript` checkout because that
-binary contains the repaired statement-stepping lifecycle. Do not silently
-switch DAP back to the older pinned binary until the fix is present in the
-pinned toolchain. The pinned compiler remains authoritative for the project
-verification gate.
+- **Claude Code** reads `.mcp.json` (servers `daslang` and `daslang-dap`,
+  relative paths, `DAS_LINT_CONFIG_PATH=.lint_config`) and the skills under
+  `.claude/skills/`; the LSP plugin lives in `.claude/skills/daslang-lsp/`.
+  Start the client from the repository root and restart it after any change
+  to `.mcp.json` or the plugin manifest; skills reload on the fly. Setup and
+  smoke checklist: `notes/claude_code_tooling_setup_2026-09-04.md`.
+- **Codex** uses a project-local `.codex/config.toml` that is not tracked
+  here; `notes/codex_tooling_smoke_test.md` describes its smoke test.
+- The `daslang` and `daslang-lsp` servers must use the project-pinned compiler
+  at `tmp/daslang-toolchain/bin/daslang`.
+- The `daslang-dap` server uses the bridge and executable from
+  `tmp/daslang-dap/`, a worktree of the upstream daScript pull request #3937
+  (`git fetch origin pull/3937/head:pr-3937`), because that build contains the
+  repaired statement-stepping lifecycle. Do not silently switch DAP back to
+  the pinned binary until the fix is present in the pinned toolchain. The
+  pinned compiler remains authoritative for the verification gate.
+- Before writing any new daslang tool (bridge, wrapper, script), check the open
+  pull requests of `GaijinEntertainment/daScript`: the owner maintains the
+  tooling there.
 
-If configuration or bridge schemas change, restart the Codex session; an
-existing session does not reload MCP schemas. Follow
-`notes/codex_tooling_smoke_test.md` to verify the connection and
-`notes/dap_tooling_update_2026-09-04.md` for the current DAP contract.
-
-`opencode.json` remains relevant to clients that consume it, but it is not a
-substitute for Codex's `.codex/config.toml` layers.
+If configuration or bridge schemas change, restart the session; an existing
+session does not reload MCP schemas. `notes/dap_tooling_update_2026-09-04.md`
+records the current DAP contract.
 
 ## Runtime-debugging policy
 
-Use only the configured `daslang-dap` tools. Do not restore, extend, or replace
-them with Qwen's custom harnesses such as:
-
-```text
-tools/dapdrive.py
-tools/dasdap_mcp.py
-logs/mcp_probe*.py
-logs/probe*.py
-```
+Use only the configured `daslang-dap` tools. Do not write or revive ad-hoc DAP
+harnesses (`tools/dapdrive.py`, `tools/dasdap_mcp.py`, `logs/probe*.py` and
+similar historical scripts).
 
 Do not use the wasm3 runtime itself as the smoke-test debuggee. Use
-`/root/daScript/utils/dap/_fixture.das` for connection smoke tests and the real
-wasm runner only for scoped runtime investigation.
+`tmp/daslang-dap/utils/dap/_fixture.das` for connection smoke tests and the
+real wasm runner only for scoped runtime investigation.
 
 ### DAP session contract
 
@@ -252,7 +207,7 @@ Resume with `debug_continue`, `debug_step_in`, `debug_step_over`, or
 `debug_step_out`, then consume `continued`, `stopped`, or `terminated` through
 `debug_wait_event`. Use default instrumentation mode for ordinary breakpoint
 investigation. Pass `stepping_debugger=true` when statement-level stepping is
-required; the live `/root/daScript/bin/daslang` contains the stepping-race fix.
+required; `tmp/daslang-dap/bin/daslang` contains the stepping-race fix.
 
 Omit `port` on `debug_launch`; the bridge allocates an available local port.
 Specify a port only when an external process must know it in advance. Never
@@ -316,13 +271,17 @@ observation
     -> focused commit
 ```
 
-Do not build many competing hypotheses or combine runtime work with mass
-lint/style cleanup.
+Do not build many competing hypotheses or combine runtime work with lint/style
+cleanup.
 
 ## Allocation and pointer semantics
 
-Never select a deallocator from an object's type or function name. Establish
-the allocation provenance of that exact pointer:
+The port currently mixes `new`/`delete` (environment, runtime, module) with
+the host allocator pair (everything else). `docs/memory-ownership.md` records
+the decision to move every C-owned object to the host allocator and the
+migration order; until that lands, never select a deallocator from an
+object's type or function name. Establish the allocation provenance of that
+exact pointer:
 
 ```text
 Daslang new T()      <-> delete
@@ -331,7 +290,10 @@ m3_Malloc_Impl(...)  <-> m3_Free_Impl(...)
 
 Known historical mistakes occurred in both directions: using `m3_Free_Impl`
 for `new M3Module()`, and using `delete` for an `M3FuncType` returned by
-`AllocFuncType`/`m3_Malloc_Impl`.
+`AllocFuncType`/`m3_Malloc_Impl`. Two invariants were verified during
+recovery and must be preserved: `Module_AddFunction` reads
+`funcTypes[i_typeIndex]` as a stored pointer value, and `Environment_Release`
+frees `M3FuncType` nodes with `m3_Free_Impl`.
 
 For C arrays, first determine whether the array stores structs or pointer
 values. Never transfer the `addr(array[i])` idiom between those cases. In
@@ -345,22 +307,6 @@ unsafe {
 
 Using `reinterpret<IM3FuncType>(addr(io_module.funcTypes[i_typeIndex]))`
 produces pointer-to-pointer semantics and is incorrect.
-
-## Required post-Qwen checks
-
-Before starting a new runtime hypothesis, independently verify these current
-working-tree fixes against their C allocation/pointer provenance:
-
-1. `Module_AddFunction` reads `funcTypes[i_typeIndex]` as the stored pointer
-   value, without `addr(slot)`. This preserves `function -> funcType ->
-   numArgs/numRets` and avoids false `local index out of bounds` failures.
-2. `Environment_Release` releases an `M3FuncType` allocated through
-   `m3_Malloc_Impl` with `m3_Free_Impl`, not `delete`. Trace
-   `AllocFuncType`, `Environment_AddFuncType`, and `Environment_Release`
-   against C `m3_env.c`.
-
-Do not assume these fixes are correct merely because they are present; verify
-them once, preserve them, and avoid overwriting them during restoration.
 
 ## High-risk source areas
 
@@ -390,16 +336,16 @@ new layer is explicitly in scope:
    convention.
 6. Run the full verification gate and compare the final diff against C again.
 
-Existing work-in-progress drafts such as `source/m3_compile.das` and
-`source/m3_exec.das` may depend on modules that are not yet ported. Treat them
-as drafts, not accepted code, and do not casually reformat them.
+Files marked **Draft** in the manifest (`m3_env`, `m3_compile`, `m3_exec`,
+`m3_exec_defs`, `m3_exception`) are not accepted code. Promoting one means
+reviewing it against C section by section and giving it a test file, not
+reformatting it.
 
 ## Verification policy
 
-During teardown investigation, lint is not a blocker for the short
-observation/patch/regression loop. The historical lint backlog must not pull
-the task into an unrelated mass cleanup. However, before claiming any source
-change complete, the full pinned gate remains mandatory.
+The tree is lint-clean under `.lint_config`; keep it that way. Do not mix
+lint/style changes with runtime fixes in one commit, and do not silence a
+fixable finding by adding a rule to `.lint_config`.
 
 All authoritative verification uses Daslang 0.6.4, commit
 `1524b3bf62e7decbfe530dc5f2e794b296fa1e68`, at
@@ -411,13 +357,15 @@ Run:
 
 ```sh
 DASLANG="$PWD/tmp/daslang-toolchain/bin/daslang"
+export DAS_LINT_CONFIG_PATH="$PWD/.lint_config"
 
 # 1. Compiler diagnostics on every source and test
 for file in source/*.das tests/*.das; do
     "$DASLANG" -compile-only "$file" || exit 1
 done
 
-# 2. All three lint profiles, zero findings
+# 2. All three lint profiles, zero findings (.lint_config disables only the
+#    rules whose findings are the faithful spelling of the C source)
 for profile in paranoid-only perf-only style-only; do
     "$DASLANG" tmp/daslang-toolchain/utils/lint/main.das -- --"$profile" source tests || exit 1
 done
@@ -427,56 +375,44 @@ done
 ```
 
 Also run the focused test for the changed layer. Runtime/lifecycle changes
-must additionally pass the established real `fib32.wasm` regression through
-result retrieval **and teardown without a crash**. If the runner is absent or
-cannot reproduce that lifecycle, report the missing verification rather than
-claiming completion.
+must additionally pass the real `fib32.wasm` regression through result
+retrieval **and teardown without a crash**. That regression is not yet in
+`tests/`; if the runner is absent or cannot reproduce that lifecycle, report
+the missing verification rather than claiming completion.
 
 The MCP compiler, LSP, lint, and test tools are development aids. The pinned
 CLI gate is authoritative even if the server is bound to another tree.
 
 ## Code conventions
 
-- Use Gen2 syntax: start every `.das` with `options gen2` and follow existing
-  sources with `options indenting = 4`.
-- Use `module <name> shared public`, relative local requires, and re-export
-  dependencies exposed by the corresponding C header.
+- Use Gen2 syntax: start every `.das` with `options gen2` and
+  `options indenting = 4`.
+- Use `module <name> shared public`, relative local requires
+  (`require ./m3_core.das`), and re-export (`public`) only the dependencies
+  that the corresponding C header itself includes.
 - Add a top-of-file C-origin comment, for example
   `// Conservative Gen2 port of m3_exec.h.`
 - Keep lint suppressions narrow and on the offending line when C fidelity
-  requires the flagged shape.
-- Do not rename ported identifiers; C names are part of the contract.
+  requires the flagged shape. Repo-wide exceptions live only in
+  `.lint_config`, each with its reason.
+- Do not rename ported identifiers; C names are part of the contract. Where a
+  C name is a Daslang keyword, use the established `_type`, `_module`,
+  `_function`, `_block` spelling.
 - Do not apply mass regex/Python transformations to pointer types, ownership,
   `unsafe`, allocator semantics, or C-macro adaptations. Prove a mechanical
   change at one call site, compile and regress it, then consider expansion.
 
-## Scratch cleanup
+## Scratch and session artefacts
 
-After preserving useful evidence, inspect and remove obsolete Qwen scratch if
-it still exists:
-
-```text
-tools/dapdrive.py
-tools/dasdap_mcp.py
-logs/mcp_probe*.py
-logs/probe*.py
-logs/run*.json
-logs/dasdap_*
-logs/cc*.das
-logs/callcount.das
-logs/free_probe.das
-```
-
-Remove a stale Qwen DAP MCP registration from `opencode.json` if present.
-For `tools/teardown_test.das`, either delete it or convert it into one normal
-regression test in the standard suite. Because ignored scratch is not
-recoverable from Git, first prove that it is not the only copy of important
-evidence. Do not delete user logs or active processes broadly.
+`tmp/`, `tools/` and `logs/` are ignored and machine-local. Agent transcripts
+and raw model logs never go into the tree; dated working notes go into
+`notes/` only when a later session needs them.
 
 ## Git workflow and commit discipline
 
 - Work on feature branches and open PRs into `main`; do not push directly to
-  `main`.
+  `main`. Enable the local gate once per clone:
+  `git config core.hooksPath .githooks`.
 - Make every proven runtime fix a separate commit. Keep separate commits for
   mechanical restoration, the pointer-value fix, allocator-pair fix, teardown
   root cause, and regression test when those are distinct changes.
@@ -496,13 +432,13 @@ evidence. Do not delete user logs or active processes broadly.
 |---|---|
 | `README.md` | project overview and local verification recipes |
 | `PORTING_MANIFEST.md` | per-file status and acceptance boundary |
-| `CLAUDE.md` | Claude-specific pointer to repository rules |
-| `.codex/config.toml` | project-local Codex MCP/LSP/DAP configuration |
-| `opencode.json` | project overrides for clients that consume it |
-| `notes/codex_tooling_smoke_test.md` | Codex tool connection smoke test |
+| `CLAUDE.md` | short entry point for Claude Code; defers to this file |
+| `.mcp.json`, `.claude/skills/` | Claude Code MCP servers, LSP plugin and skills |
+| `.lint_config` | repo lint policy and the reason for every disabled rule |
+| `docs/memory-ownership.md` | allocation-regime decision and migration order |
+| `.githooks/pre-push` | local form of the CI quality gate |
+| `notes/handoff_claude_code_2026-09-05.md` | latest session handoff |
+| `notes/runtime_recovery_context_2026-09.md` | provenance of `source/`, checkpoint commits, teardown state |
 | `notes/dap_tooling_update_2026-09-04.md` | current DAP lifecycle, fixes, and failure triage |
-| `notes/codex_onboard_after_shit.md` | GLM/Qwen recovery history and runtime context |
 | `wasm3c/source/` | read-only C semantic reference |
 | `source/`, `tests/` | the Daslang port and component tests |
-| `main.das`, `lib/`, `demo_*.das` | unrelated Daslang sandbox demos |
-| `.githooks/pre-push` | local form of the CI quality gate |

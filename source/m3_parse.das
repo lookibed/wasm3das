@@ -3,12 +3,11 @@ options indenting = 4
 
 module m3_parse shared public
 
-require ./m3_core.das public
-require ./m3_types.das public
+require ./m3_core.das
+require ./m3_types.das
 require ./m3_env.das public
-require ./m3_module.das public
-require ./m3_compile.das public
-require ./m3_exception.das public
+require ./m3_module.das
+require ./m3_compile.das
 
 // Conservative Gen2 port of m3_parse.c.
 // Parsing order, ownership transfers, partial-state side effects, and M3Result
@@ -64,7 +63,7 @@ def ParseSection_Type(var io_module : IM3Module; i_bytes : bytes_t; i_end : cbyt
 
     var result : M3Result = ReadLEB_u32(numTypes, bytes, i_end)
     if (result != m3Err_none) { return result }
-    
+
     if (numTypes > u32(d_m3MaxSaneTypesCount)) {
         return "too many types"
     }
@@ -139,7 +138,7 @@ def ParseSection_Type(var io_module : IM3Module; i_bytes : bytes_t; i_end : cbyt
                 unsafe { types[numRets + a] = argTypes[int(a)] }
             }
 
-            
+
             Environment_AddFuncType(io_module.environment, ftype)
             unsafe { io_module.funcTypes[i] = ftype }
             ftype = null
@@ -165,7 +164,7 @@ def ParseSection_Function(var io_module : IM3Module; i_bytes : bytes_t; i_end : 
     var numFunctions : u32 = 0
     var result : M3Result = ReadLEB_u32(numFunctions, bytes, i_end)
     if (result != m3Err_none) { return result }
-    
+
     if (numFunctions > u32(d_m3MaxSaneFunctionsCount)) {
         return "too many functions"
     }
@@ -173,7 +172,7 @@ def ParseSection_Function(var io_module : IM3Module; i_bytes : bytes_t; i_end : 
     result = Module_PreallocFunctions(io_module, io_module.numFunctions + numFunctions)
     if (result != m3Err_none) { return result }
 
-    for (i in 0u..numFunctions) {
+    for (_i in 0u..numFunctions) {
         var funcTypeIndex : u32 = 0
         result = ReadLEB_u32(funcTypeIndex, bytes, i_end)
         if (result != m3Err_none) { return result }
@@ -193,7 +192,7 @@ def ParseSection_Import(var io_module : IM3Module; i_bytes : bytes_t; i_end : cb
 
     var result : M3Result = ReadLEB_u32(numImports, bytes, i_end)
     if (result != m3Err_none) { return result }
-    
+
     if (numImports > u32(d_m3MaxSaneImportsCount)) {
         return "too many imports"
     }
@@ -201,7 +200,7 @@ def ParseSection_Import(var io_module : IM3Module; i_bytes : bytes_t; i_end : cb
     result = Module_PreallocFunctions(io_module, numImports)
     if (result != m3Err_none) { return result }
 
-    for (i in 0u..numImports) {
+    for (_i in 0u..numImports) {
         var importKind : u8 = 0
 
         result = Read_utf8(importInfo.moduleUtf8, bytes, i_end)
@@ -211,7 +210,7 @@ def ParseSection_Import(var io_module : IM3Module; i_bytes : bytes_t; i_end : cb
         result = Read_u8(importKind, bytes, i_end)
         if (result != m3Err_none) { break }
 
-        
+
         if (importKind == d_externalKind_function) {
             var typeIndex : u32 = 0
             result = ReadLEB_u32(typeIndex, bytes, i_end)
@@ -244,7 +243,7 @@ def ParseSection_Import(var io_module : IM3Module; i_bytes : bytes_t; i_end : cb
             if (result != m3Err_none) { break }
             result = ReadLEB_u7(isMutable, bytes, i_end)
             if (result != m3Err_none) { break }
-            
+
             var global : IM3Global = null
             result = Module_AddGlobal(io_module, global, _type, isMutable != 0, true)
             if (result != m3Err_none) { break }
@@ -271,12 +270,12 @@ def ParseSection_Export(var io_module : IM3Module; i_bytes : bytes_t; i_end : cb
 
     var result : M3Result = ReadLEB_u32(numExports, bytes, i_end)
     if (result != m3Err_none) { return result }
-    
+
     if (numExports > u32(d_m3MaxSaneExportsCount)) {
         return "too many exports"
     }
 
-    for (i in 0u..numExports) {
+    for (_i in 0u..numExports) {
         var exportKind : u8 = 0
         var index : u32 = 0
 
@@ -287,7 +286,7 @@ def ParseSection_Export(var io_module : IM3Module; i_bytes : bytes_t; i_end : cb
         result = ReadLEB_u32(index, bytes, i_end)
         if (result != m3Err_none) { break }
 
-        
+
         if (exportKind == d_externalKind_function) {
             if (index >= io_module.numFunctions) {
                 result = m3Err_wasmMalformed
@@ -331,9 +330,9 @@ def ParseSection_Export(var io_module : IM3Module; i_bytes : bytes_t; i_end : cb
 def ParseSection_Start(var io_module : IM3Module; i_bytes : bytes_t; i_end : cbytes_t) : M3Result {
     var bytes : bytes_t = unsafe(reinterpret<bytes_t>(i_bytes))
     var startFuncIndex : u32 = 0
-    var result : M3Result = ReadLEB_u32(startFuncIndex, bytes, i_end)
+    let result : M3Result = ReadLEB_u32(startFuncIndex, bytes, i_end)
     if (result != m3Err_none) { return result }
-    
+
     if (startFuncIndex < io_module.numFunctions) {
         io_module.startFunction = i32(startFuncIndex)
         return m3Err_none
@@ -352,7 +351,7 @@ def Parse_InitExpr(var io_module : IM3Module; var io_bytes : bytes_t&; i_end : c
     )
 
     var compilationPtr : IM3Compilation
-    unsafe { compilationPtr = reinterpret<IM3Compilation>(addr(compilation)) }
+    unsafe { compilationPtr = addr(compilation) }
     let result = CompileBlockStatements(compilationPtr)
     io_bytes = compilation.wasm
     return result
@@ -362,9 +361,9 @@ def Parse_InitExpr(var io_module : IM3Module; var io_bytes : bytes_t&; i_end : c
 def ParseSection_Element(var io_module : IM3Module; i_bytes : bytes_t; i_end : cbytes_t) : M3Result {
     var bytes : bytes_t = unsafe(reinterpret<bytes_t>(i_bytes))
     var numSegments : u32 = 0
-    var result : M3Result = ReadLEB_u32(numSegments, bytes, i_end)
+    let result : M3Result = ReadLEB_u32(numSegments, bytes, i_end)
     if (result != m3Err_none) { return result }
-    
+
     if (numSegments > u32(d_m3MaxSaneElementSegments)) {
         return "too many element segments"
     }
@@ -381,7 +380,7 @@ def ParseSection_Code(var io_module : IM3Module; i_bytes : bytes_t; i_end : cbyt
     var numFunctions : u32 = 0
     var result : M3Result = ReadLEB_u32(numFunctions, bytes, i_end)
     if (result != m3Err_none) { return result }
-    
+
     if (numFunctions != io_module.numFunctions - io_module.numFuncImports) {
         return "mismatched function count in code section"
     }
@@ -420,7 +419,7 @@ def ParseSection_Data(var io_module : IM3Module; i_bytes : bytes_t; i_end : cbyt
     var numDataSegments : u32 = 0
     var result : M3Result = ReadLEB_u32(numDataSegments, bytes, i_end)
     if (result != m3Err_none) { return result }
-    
+
     if (numDataSegments > u32(d_m3MaxSaneDataSegments)) {
         return "too many data segments"
     }
@@ -455,7 +454,7 @@ def ParseSection_Data(var io_module : IM3Module; i_bytes : bytes_t; i_end : cbyt
         if (result != m3Err_none) { break }
         segment.data = bytes
 
-        
+
         unsafe { bytes += segment.size }
         if (intptr(bytes) > intptr(i_end)) {
             result = "data segment underflow"
@@ -472,7 +471,7 @@ def ParseSection_Memory(var io_module : IM3Module; i_bytes : bytes_t; i_end : cb
     var numMemories : u32 = 0
     var result : M3Result = ReadLEB_u32(numMemories, bytes, i_end)
     if (result != m3Err_none) { return result }
-    
+
     if (numMemories > 1) {
         return m3Err_tooManyMemorySections
     }
@@ -487,12 +486,12 @@ def ParseSection_Global(var io_module : IM3Module; i_bytes : bytes_t; i_end : cb
     var numGlobals : u32 = 0
     var result : M3Result = ReadLEB_u32(numGlobals, bytes, i_end)
     if (result != m3Err_none) { return result }
-    
+
     if (numGlobals > u32(d_m3MaxSaneGlobalsCount)) {
         return "too many globals"
     }
 
-    for (i in 0u..numGlobals) {
+    for (_i in 0u..numGlobals) {
         var waType : i8 = 0
         // C local `type` renamed to `_type`: `type` is a daslang keyword.
         var _type : u8 = 0
@@ -505,7 +504,7 @@ def ParseSection_Global(var io_module : IM3Module; i_bytes : bytes_t; i_end : cb
         result = ReadLEB_u7(isMutable, bytes, i_end)
         if (result != m3Err_none) { break }
 
-        
+
         var global : IM3Global = null
         result = Module_AddGlobal(io_module, global, _type, isMutable != 0, false)
         if (result != m3Err_none) { break }
@@ -550,7 +549,7 @@ def ParseSection_Name(var io_module : IM3Module; i_bytes : bytes_t; i_end : cbyt
                 break
             }
 
-            for (i in 0u..numNames) {
+            for (_i in 0u..numNames) {
                 var index : u32 = 0
                 result = ReadLEB_u32(index, bytes, i_end)
                 if (result != m3Err_none) { break }
@@ -587,7 +586,7 @@ def ParseSection_Custom(var io_module : IM3Module; i_bytes : bytes_t; i_end : cb
         return result
     }
 
-    
+
     if (name == "name") {
         result = ParseSection_Name(io_module, bytes, i_end)
     } elif (io_module.environment.customSectionHandler != null) {
@@ -631,10 +630,10 @@ def ParseModuleSection(var o_module : IM3Module; i_sectionType : u8; i_bytes : b
 
 def public m3_ParseModule(var i_environment : IM3Environment; var o_module : IM3Module&; i_bytes : cbytes_t; i_numBytes : u32) : M3Result {
     // C local `module` renamed to `_module`: `module` is a daslang keyword.
-    var _module : IM3Module = null
-    var result : M3Result = m3Err_none
+    var _module : IM3Module
+    var result : M3Result
 
-    
+
     unsafe {
         _module = new M3Module()
     }

@@ -49,12 +49,12 @@ def public ConvertTypeCharToTypeId(i_code : int) : u8 {
 
 
 def private ParseSignatureTypeList(
-    var funcType : IM3FuncType;
-    i_signature : ccstr_t;
-    maxNumTypes : u32;
-    var sig : int&;
-    var typelist : u8?&
-) : M3Result {
+                                   var funcType : IM3FuncType;
+                                   i_signature : ccstr_t;
+                                   maxNumTypes : u32;
+                                   var sig : int&;
+                                   var typelist : u8?&
+                                   ) : M3Result {
     var result = m3Err_none
     var parsingRets = true
 

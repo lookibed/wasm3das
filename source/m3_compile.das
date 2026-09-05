@@ -3,15 +3,13 @@ options indenting = 4
 
 module m3_compile shared public
 
-require m3_core
-require m3_types
-require m3_code
-require m3_exec
-require m3_exec_defs
-require m3_math_utils
-require m3_function
-require m3_module
-require m3_exception
+require ./m3_core.das
+require ./m3_types.das
+require ./m3_code.das public
+require ./m3_exec.das
+require ./m3_exec_defs.das public
+require ./m3_function.das public
+require ./m3_module.das
 require math
 
 
@@ -69,7 +67,7 @@ struct M3OpInfo {
 
 /* C m3_compile.h: static const u16 + static inline helpers */
 def public IsRegisterAllocated(var o : IM3Compilation; i_register : u32) : bool {
-    return o.regStackIndexPlusOne[i_register] != int(c_m3RegisterUnallocated)
+    return o.regStackIndexPlusOne[i_register] != c_m3RegisterUnallocated
 }
 
 def public IsStackPolymorphic(var o : IM3Compilation) : bool {
@@ -77,15 +75,15 @@ def public IsStackPolymorphic(var o : IM3Compilation) : bool {
 }
 
 def public IsRegisterSlotAlias(i_slot : int) : bool {
-    return i_slot >= int(d_m3Reg0SlotAlias) && i_slot != int(c_slotUnused)
+    return i_slot >= d_m3Reg0SlotAlias && i_slot != c_slotUnused
 }
 
 def public IsFpRegisterSlotAlias(i_slot : int) : bool {
-    return i_slot == int(d_m3Fp0SlotAlias)
+    return i_slot == d_m3Fp0SlotAlias
 }
 
 def public IsIntRegisterSlotAlias(i_slot : int) : bool {
-    return i_slot == int(d_m3Reg0SlotAlias)
+    return i_slot == d_m3Reg0SlotAlias
 }
 
 
@@ -169,7 +167,7 @@ def EmitOp(var o : IM3Compilation; i_operation : IM3Operation) : M3Result {
     if (o.page != null) {
         // DEBUG-only numEmits tracking is compiled out when DEBUG is inactive.
 
-        result = EnsureCodePageNumLines(o, u32(d_m3CodePageFreeLinesThreshold))
+        result = EnsureCodePageNumLines(o, d_m3CodePageFreeLinesThreshold)
         if (result == m3Err_none) {
             // d_m3LogEmit/d_m3RecordBacktraces are inactive: the C log_emit
             // and EmitMappingEntry calls are compiled out.
@@ -182,7 +180,7 @@ def EmitOp(var o : IM3Compilation; i_operation : IM3Operation) : M3Result {
 
 def EmitConstant32(var o : IM3Compilation; i_immediate : u32) {
     if (o.page != null) {
-        EmitWord32(o.page, u32(i_immediate))
+        EmitWord32(o.page, i_immediate)
     }
 }
 
@@ -260,7 +258,7 @@ def GetTypeNumSlots(i_type : int) : int {
         }
         return 2
     }
-    if (d_m3Use32BitSlots && Is64BitType(u8(u8(i_type)))) {
+    if (d_m3Use32BitSlots && Is64BitType(u8(i_type))) {
         return 2
     }
     return 1
@@ -276,7 +274,7 @@ def AlignSlotToType(var io_slot : int&; i_type : int) {
 
 def GetStackTopIndex(var o : IM3Compilation) : int {
     d_m3Assert(o.stackIndex > o.stackFirstDynamicIndex || IsStackPolymorphic(o))
-    return int(o.stackIndex) - 1
+    return o.stackIndex - 1
 }
 
 
@@ -318,9 +316,9 @@ def IsSlotAllocated(var o : IM3Compilation; i_slot : int) : bool {
 
 
 def IsStackIndexInRegister(var o : IM3Compilation; i_stackIndex : i32) : bool {
-    d_m3Assert(i_stackIndex < i32(o.stackIndex) || IsStackPolymorphic(o))
-    if (i_stackIndex >= 0 && i_stackIndex < i32(o.stackIndex)) {
-        return o.wasmStack[i_stackIndex] >= int(d_m3Reg0SlotAlias)
+    d_m3Assert(i_stackIndex < o.stackIndex || IsStackPolymorphic(o))
+    if (i_stackIndex >= 0 && i_stackIndex < o.stackIndex) {
+        return o.wasmStack[i_stackIndex] >= d_m3Reg0SlotAlias
     }
     return false
 }
@@ -331,15 +329,15 @@ def GetNumBlockValuesOnStack(var o : IM3Compilation) : int {
 }
 
 def IsStackTopInRegister(var o : IM3Compilation) : bool {
-    return IsStackIndexInRegister(o, i32(GetStackTopIndex(o)))
+    return IsStackIndexInRegister(o, GetStackTopIndex(o))
 }
 
 def IsStackTopMinus1InRegister(var o : IM3Compilation) : bool {
-    return IsStackIndexInRegister(o, i32(GetStackTopIndex(o)) - 1)
+    return IsStackIndexInRegister(o, GetStackTopIndex(o) - 1)
 }
 
 def IsStackTopMinus2InRegister(var o : IM3Compilation) : bool {
-    return IsStackIndexInRegister(o, i32(GetStackTopIndex(o)) - 2)
+    return IsStackIndexInRegister(o, GetStackTopIndex(o) - 2)
 }
 
 def IsStackTopInSlot(var o : IM3Compilation) : bool {
@@ -458,8 +456,8 @@ def IncrementSlotUsageCount(var o : IM3Compilation; i_slot : int) : M3Result {
 
 
 def DeallocateSlot(var o : IM3Compilation; var i_slot : int; i_type : int) {
-    d_m3Assert(i_slot >= int(o.slotFirstDynamicIndex))
-    d_m3Assert(i_slot < int(o.slotMaxAllocatedIndexPlusOne))
+    d_m3Assert(i_slot >= o.slotFirstDynamicIndex)
+    d_m3Assert(i_slot < o.slotMaxAllocatedIndexPlusOne)
     var i : int = 0
     let count = GetTypeNumSlots(i_type)
     while (i < count) {
@@ -473,7 +471,7 @@ def DeallocateSlot(var o : IM3Compilation; var i_slot : int; i_type : int) {
 
 def IsRegisterTypeAllocated(var o : IM3Compilation; i_type : int) : bool {
     var regSelect : u32 = 0u
-    if (IsFpType(u8(u8(i_type)))) { regSelect = 1u }
+    if (IsFpType(u8(i_type))) { regSelect = 1u }
     return IsRegisterAllocated(o, regSelect)
 }
 
@@ -509,7 +507,7 @@ def GetMaxUsedSlotPlusOne(var o : IM3Compilation) : int {
 
 def PreserveRegisterIfOccupied(var o : IM3Compilation; i_registerType : int) : M3Result {
     var regSelect : u32 = 0u
-    if (IsFpType(u8(u8(i_registerType)))) { regSelect = 1u }
+    if (IsFpType(u8(i_registerType))) { regSelect = 1u }
     if (IsRegisterAllocated(o, regSelect)) {
         let stackIndex = GetRegisterStackIndex(o, regSelect)
         DeallocateRegister(o, regSelect)
@@ -525,7 +523,7 @@ def PreserveRegisterIfOccupied(var o : IM3Compilation; i_registerType : int) : M
         } else {
             return m3Err_functionStackOverflow
         }
-        EmitSlotOffset(o, i32(slot))
+        EmitSlotOffset(o, slot)
     }
     return m3Err_none
 }
@@ -542,11 +540,11 @@ def PreserveRegisters(var o : IM3Compilation) : M3Result {
 def PreserveNonTopRegisters(var o : IM3Compilation) : M3Result {
     let stackTop = GetStackTopIndex(o)
     if (stackTop >= 0) {
-        if (IsRegisterAllocated(o, 0u) && GetRegisterStackIndex(o, 0u) != int(stackTop)) {
+        if (IsRegisterAllocated(o, 0u) && GetRegisterStackIndex(o, 0u) != stackTop) {
             let result = PreserveRegisterIfOccupied(o, int(u8(M3ValueType.c_m3Type_i64)))
             if (result != m3Err_none) { return result }
         }
-        if (IsRegisterAllocated(o, 1u) && GetRegisterStackIndex(o, 1u) != int(stackTop)) {
+        if (IsRegisterAllocated(o, 1u) && GetRegisterStackIndex(o, 1u) != stackTop) {
             let result = PreserveRegisterIfOccupied(o, int(u8(M3ValueType.c_m3Type_f64)))
             if (result != m3Err_none) { return result }
         }
@@ -577,10 +575,10 @@ def Push(var o : IM3Compilation; i_type : int; i_slot : int) : M3Result {
 
 
 def PushRegister(var o : IM3Compilation; i_type : int) : M3Result {
-    d_m3Assert(int(d_m3Reg0SlotAlias) > int(d_m3MaxFunctionSlots))
+    d_m3Assert(d_m3Reg0SlotAlias > int(d_m3MaxFunctionSlots))
     d_m3Assert(i_type != 0 || IsStackPolymorphic(o))
     var slot : int = d_m3Reg0SlotAlias
-    if (IsFpType(u8(u8(i_type)))) { slot = d_m3Fp0SlotAlias }
+    if (IsFpType(u8(i_type))) { slot = d_m3Fp0SlotAlias }
     return Push(o, i_type, slot)
 }
 
@@ -597,7 +595,7 @@ def Pop(var o : IM3Compilation) : M3Result {
         } elif (slot >= o.slotMaxAllocatedIndexPlusOne) {
             return m3Err_functionStackUnderrun
         } elif (slot >= o.slotFirstDynamicIndex) {
-            var mutableSlot = int(slot)
+            let mutableSlot = slot
             DeallocateSlot(o, mutableSlot, _type)
         }
     } elif (!IsStackPolymorphic(o)) {
@@ -622,7 +620,7 @@ def _PushAllocatedSlotAndEmit(var o : IM3Compilation; i_type : int; i_doEmit : b
     if (result != m3Err_none) { return result }
     result = Push(o, i_type, slot)
     if (result != m3Err_none) { return result }
-    if (i_doEmit) { EmitSlotOffset(o, i32(slot)) }
+    if (i_doEmit) { EmitSlotOffset(o, slot) }
     return m3Err_none
 }
 
@@ -640,7 +638,7 @@ def PushConst(var o : IM3Compilation; i_word : u64; i_type : int) : M3Result {
     if (o.page == null) { return m3Err_none }
 
     var matchFound = false
-    let is64BitType = Is64BitType(u8(u8(i_type)))
+    let is64BitType = Is64BitType(u8(i_type))
     let numRequiredSlots = GetTypeNumSlots(i_type)
     let numUsedConstSlots = o.slotMaxConstIndex - o.slotFirstConstIndex
 
@@ -651,7 +649,7 @@ def PushConst(var o : IM3Compilation; i_word : u64; i_type : int) : M3Result {
         while (slot < o.slotMaxConstIndex - 1) {
             if (IsSlotAllocated(o, slot) && IsSlotAllocated(o, slot + 1)) {
                 var constant : u64
-                unsafe { memcpy(unsafe(addr(constant)), unsafe(addr(o.constants[slot - o.slotFirstConstIndex])), int(typeinfo sizeof(type<u64>))) }
+                unsafe { memcpy(unsafe(addr(constant)), unsafe(addr(o.constants[slot - o.slotFirstConstIndex])), (typeinfo sizeof(type<u64>))) }
                 if (constant == i_word) {
                     matchFound = true
                     let result = Push(o, i_type, slot)
@@ -664,16 +662,16 @@ def PushConst(var o : IM3Compilation; i_word : u64; i_type : int) : M3Result {
     } elif (numRequiredSlots == 1) {
         var i : int = 0
         while (i < numUsedConstSlots) {
-            var slot = o.slotFirstConstIndex + i
+            let slot = o.slotFirstConstIndex + i
             if (IsSlotAllocated(o, slot)) {
                 var matches = false
                 if (is64BitType) {
                     var constant : u64
-                    unsafe { memcpy(unsafe(addr(constant)), unsafe(addr(o.constants[i])), int(typeinfo sizeof(type<u64>))) }
+                    unsafe { memcpy(unsafe(addr(constant)), unsafe(addr(o.constants[i])), (typeinfo sizeof(type<u64>))) }
                     matches = constant == i_word
                 } else {
                     var constant : u32
-                    unsafe { memcpy(unsafe(addr(constant)), unsafe(addr(o.constants[i])), int(typeinfo sizeof(type<u32>))) }
+                    unsafe { memcpy(unsafe(addr(constant)), unsafe(addr(o.constants[i])), (typeinfo sizeof(type<u32>))) }
                     matches = constant == u32(i_word)
                 }
                 if (matches) {
@@ -707,10 +705,10 @@ def PushConst(var o : IM3Compilation; i_word : u64; i_type : int) : M3Result {
         let constTableIndex = slot - o.slotFirstConstIndex
         d_m3Assert(constTableIndex < int(d_m3MaxConstantTableSize))
         if (is64BitType) {
-            unsafe { memcpy(unsafe(addr(o.constants[constTableIndex])), unsafe(addr(i_word)), int(typeinfo sizeof(type<u64>))) }
+            unsafe { memcpy(unsafe(addr(o.constants[constTableIndex])), unsafe(addr(i_word)), (typeinfo sizeof(type<u64>))) }
         } else {
             let word32 = u32(i_word)
-            unsafe { memcpy(unsafe(addr(o.constants[constTableIndex])), unsafe(addr(word32)), int(typeinfo sizeof(type<u32>))) }
+            unsafe { memcpy(unsafe(addr(o.constants[constTableIndex])), unsafe(addr(word32)), (typeinfo sizeof(type<u32>))) }
         }
 
         result = Push(o, i_type, slot)
@@ -724,7 +722,7 @@ def PushConst(var o : IM3Compilation; i_word : u64; i_type : int) : M3Result {
 
 def EmitSlotNumOfStackTopAndPop(var o : IM3Compilation) : M3Result {
     if (IsStackTopInSlot(o)) {
-        EmitSlotOffset(o, i32(GetStackTopSlotNumber(o)))
+        EmitSlotOffset(o, GetStackTopSlotNumber(o))
     }
     return Pop(o)
 }
@@ -772,27 +770,27 @@ def PatchBranches(var o : IM3Compilation) {
 
 def CopyStackIndexToSlot(var o : IM3Compilation; i_destSlot : int; i_stackIndex : int) : M3Result {
     let _type = GetStackTypeFromBottom(o, i_stackIndex)
-    let inRegister = IsStackIndexInRegister(o, i32(i_stackIndex))
+    let inRegister = IsStackIndexInRegister(o, i_stackIndex)
     var op : IM3Operation
     if (inRegister) {
         op = c_setSetOps[_type]
-    } elif (Is64BitType(u8(u8(_type)))) {
+    } elif (Is64BitType(u8(_type))) {
         op = @@op_CopySlot_64
     } else {
         op = @@op_CopySlot_32
     }
     let result = EmitOp(o, op)
     if (result != m3Err_none) { return result }
-    EmitSlotOffset(o, i32(i_destSlot))
+    EmitSlotOffset(o, i_destSlot)
     if (!inRegister) {
-        EmitSlotOffset(o, i32(GetSlotForStackIndex(o, i_stackIndex)))
+        EmitSlotOffset(o, GetSlotForStackIndex(o, i_stackIndex))
     }
     return m3Err_none
 }
 
 
 def CopyStackTopToSlot(var o : IM3Compilation; i_destSlot : int) : M3Result {
-    return CopyStackIndexToSlot(o, i_destSlot, int(GetStackTopIndex(o)))
+    return CopyStackIndexToSlot(o, i_destSlot, GetStackTopIndex(o))
 }
 
 
@@ -802,16 +800,16 @@ def PreservedCopyTopSlot(var o : IM3Compilation; i_destSlot : int; i_preserveSlo
     var op : IM3Operation
     if (IsStackTopInRegister(o)) {
         op = c_preserveSetSlot[_type]
-    } elif (Is64BitType(u8(u8(_type)))) {
+    } elif (Is64BitType(u8(_type))) {
         op = @@op_PreserveCopySlot_64
     } else {
         op = @@op_PreserveCopySlot_32
     }
     let result = EmitOp(o, op)
     if (result != m3Err_none) { return result }
-    EmitSlotOffset(o, i32(i_destSlot))
-    if (IsStackTopInSlot(o)) { EmitSlotOffset(o, i32(GetStackTopSlotNumber(o))) }
-    EmitSlotOffset(o, i32(i_preserveSlot))
+    EmitSlotOffset(o, i_destSlot)
+    if (IsStackTopInSlot(o)) { EmitSlotOffset(o, GetStackTopSlotNumber(o)) }
+    EmitSlotOffset(o, i_preserveSlot)
     return m3Err_none
 }
 
@@ -823,7 +821,7 @@ def CopyStackTopToRegister(var o : IM3Compilation; i_updateStack : bool) : M3Res
         if (result != m3Err_none) { return result }
         result = EmitOp(o, c_setRegisterOps[_type])
         if (result != m3Err_none) { return result }
-        EmitSlotOffset(o, i32(GetStackTopSlotNumber(o)))
+        EmitSlotOffset(o, GetStackTopSlotNumber(o))
         if (i_updateStack) {
             result = PopType(o, _type)
             if (result != m3Err_none) { return result }
@@ -895,7 +893,7 @@ def CopyStackSlotsR(var o : IM3Compilation; i_targetSlotStackIndex : int; i_stac
                 let otherSlot2 = GetExtraSlotForStackIndex(o, checkIndex)
                 if (targetSlot == otherSlot1 || targetSlot == otherSlot2 || targetSlot + extraSlot == otherSlot1) {
                     if (i_tempSlot >= int(d_m3MaxFunctionSlots)) { return m3Err_functionStackOverflow }
-                    var result = CopyStackIndexToSlot(o, i_tempSlot, checkIndex)
+                    let result = CopyStackIndexToSlot(o, i_tempSlot, checkIndex)
                     if (result != m3Err_none) { return result }
                     o.wasmStack[checkIndex] = i_tempSlot
                     i_tempSlot += GetTypeNumSlots(int(u8(M3ValueType.c_m3Type_i64)))
@@ -941,7 +939,7 @@ def ResolveBlockResults(var o : IM3Compilation; var i_targetBlock : IM3Compilati
     }
 
     if (numValues != 0) {
-        var endIndex = int(GetStackTopIndex(o)) + 1
+        var endIndex = GetStackTopIndex(o) + 1
         var numRemValues = numValues
         if (!isLoop && IsFpType(u8(GetStackTopType(o)))) {
             let result = CopyStackTopToRegister(o, false)
@@ -972,13 +970,13 @@ def ReturnValues(var o : IM3Compilation; var i_functionBlock : IM3CompilationSco
         var stackTop = GetStackTopIndex(o)
         var i : int = 0
         while (i < numReturns) {
-            var returnType : int = int(GetFuncTypeResultType(i_functionBlock._type, u16(numReturns - 1 - i)))
+            let returnType : int = int(GetFuncTypeResultType(i_functionBlock._type, u16(numReturns - 1 - i)))
             var stackType = GetStackTypeFromTop(o, i)
-            if (IsStackPolymorphic(o) && stackType == int(u8(M3ValueType.c_m3Type_none))) { stackType = int(returnType) }
+            if (IsStackPolymorphic(o) && stackType == int(u8(M3ValueType.c_m3Type_none))) { stackType = returnType }
             if (returnType != stackType) { return m3Err_typeMismatch }
             if (!IsStackPolymorphic(o)) {
                 returnSlot -= c_ioSlotCount
-                let result = CopyStackIndexToSlot(o, returnSlot, int(stackTop))
+                let result = CopyStackIndexToSlot(o, returnSlot, stackTop)
                 if (result != m3Err_none) { return result }
                 stackTop--
             }
@@ -1017,7 +1015,7 @@ def Compile_Const_i64(var o : IM3Compilation; i_opcode : m3opcode_t) : M3Result 
 def Compile_Const_f32(var o : IM3Compilation; i_opcode : m3opcode_t) : M3Result {
     if (!d_m3ImplementFloat) { return m3Err_unknownOpcode }
     var value : f32
-    var result = Read_f32(value, o.wasm, o.wasmEnd)
+    let result = Read_f32(value, o.wasm, o.wasmEnd)
     if (result != m3Err_none) { return result }
     let bits = unsafe(reinterpret<u32>(value))
         return PushConst(o, u64(bits), int(u8(M3ValueType.c_m3Type_f32))) }
@@ -1026,7 +1024,7 @@ def Compile_Const_f32(var o : IM3Compilation; i_opcode : m3opcode_t) : M3Result 
 def Compile_Const_f64(var o : IM3Compilation; i_opcode : m3opcode_t) : M3Result {
     if (!d_m3ImplementFloat) { return m3Err_unknownOpcode }
     var value : f64
-    var result = Read_f64(value, o.wasm, o.wasmEnd)
+    let result = Read_f64(value, o.wasm, o.wasmEnd)
     if (result != m3Err_none) { return result }
     let bits = unsafe(reinterpret<u64>(value))
         return PushConst(o, bits, int(u8(M3ValueType.c_m3Type_f64))) }
@@ -1104,7 +1102,7 @@ def Compile_SetLocal(var o : IM3Compilation; i_opcode : m3opcode_t) : M3Result {
 
 def Compile_GetLocal(var o : IM3Compilation; i_opcode : m3opcode_t) : M3Result {
     var localIndex : u32
-    var result = ReadLEB_u32(localIndex, o.wasm, o.wasmEnd)
+    let result = ReadLEB_u32(localIndex, o.wasm, o.wasmEnd)
     if (result != m3Err_none) { return result }
     if (localIndex >= GetFunctionNumArgsAndLocals(o._function)) { return "local index out of bounds" }
     return Push(o, GetStackTypeFromBottom(o, int(localIndex)), GetSlotForStackIndex(o, int(localIndex)))
@@ -1113,7 +1111,7 @@ def Compile_GetLocal(var o : IM3Compilation; i_opcode : m3opcode_t) : M3Result {
 
 def Compile_GetGlobal(var o : IM3Compilation; i_global : M3Global?) : M3Result {
     var op : IM3Operation = @@op_GetGlobal_s32
-    if (Is64BitType(u8(u8(i_global._type)))) { op = @@op_GetGlobal_s64 }
+    if (Is64BitType(i_global._type)) { op = @@op_GetGlobal_s64 }
     let result = EmitOp(o, op)
     if (result != m3Err_none) { return result }
     EmitPointer(o, unsafe(addr(i_global.valueBits)))
@@ -1127,22 +1125,22 @@ def Compile_SetGlobal(var o : IM3Compilation; var i_global : M3Global?) : M3Resu
     var op : IM3Operation
     if (IsStackTopInRegister(o)) {
         op = c_setGlobalOps[_type]
-    } elif (Is64BitType(u8(u8(_type)))) {
+    } elif (Is64BitType(u8(_type))) {
         op = @@op_SetGlobal_s64
     } else {
         op = @@op_SetGlobal_s32
     }
-    var result = EmitOp(o, op)
+    let result = EmitOp(o, op)
     if (result != m3Err_none) { return result }
     EmitPointer(o, unsafe(addr(i_global.valueBits)))
-    if (IsStackTopInSlot(o)) { EmitSlotOffset(o, i32(GetStackTopSlotNumber(o))) }
+    if (IsStackTopInSlot(o)) { EmitSlotOffset(o, GetStackTopSlotNumber(o)) }
     return Pop(o)
 }
 
 
 def Compile_GetSetGlobal(var o : IM3Compilation; i_opcode : m3opcode_t) : M3Result {
     var globalIndex : u32
-    var result = ReadLEB_u32(globalIndex, o.wasm, o.wasmEnd)
+    let result = ReadLEB_u32(globalIndex, o.wasm, o.wasmEnd)
     if (result != m3Err_none) { return result }
     if (globalIndex >= o._module.numGlobals) { return m3Err_globaIndexOutOfBounds }
     if (o._module.globals == null) {
@@ -1271,7 +1269,7 @@ def Compile_BranchTable(var o : IM3Compilation; i_opcode : m3opcode_t) : M3Resul
     if (result != m3Err_none) { return result }
     result = EmitOp(o, @@op_BranchTable)
     if (result != m3Err_none) { return result }
-    EmitSlotOffset(o, i32(slot))
+    EmitSlotOffset(o, slot)
     EmitConstant32(o, targetCount)
 
     var continueOpPage : IM3CodePage = null
@@ -1378,7 +1376,7 @@ def Compile_Call(var o : IM3Compilation; i_opcode : m3opcode_t) : M3Result {
     result = EmitOp(o, op)
     if (result != m3Err_none) { return result }
     EmitPointer(o, operand)
-    EmitSlotOffset(o, i32(slotTop))
+    EmitSlotOffset(o, slotTop)
     return m3Err_none
 }
 
@@ -1404,10 +1402,10 @@ def Compile_CallIndirect(var o : IM3Compilation; i_opcode : m3opcode_t) : M3Resu
     if (result != m3Err_none) { return result }
     result = EmitOp(o, @@op_CallIndirect)
     if (result != m3Err_none) { return result }
-    EmitSlotOffset(o, i32(tableIndexSlot))
+    EmitSlotOffset(o, tableIndexSlot)
     EmitPointer(o, o._module)
     EmitPointer(o, _type)
-    EmitSlotOffset(o, i32(execTop))
+    EmitSlotOffset(o, execTop)
     return m3Err_none
 }
 
@@ -1488,17 +1486,17 @@ def PreserveArgsAndLocals(var o : IM3Compilation) : M3Result {
         while (i < numArgsAndLocals) {
             let slot = GetSlotForStackIndex(o, int(i))
             var preservedSlotNumber : int
-            var result = FindReferencedLocalWithinCurrentBlock(o, preservedSlotNumber, u32(slot))
+            let result = FindReferencedLocalWithinCurrentBlock(o, preservedSlotNumber, u32(slot))
             if (result != m3Err_none) { return result }
             if (preservedSlotNumber != slot) {
                 let _type = GetStackTypeFromBottom(o, int(i))
                 d_m3Assert(_type != int(u8(M3ValueType.c_m3Type_none)))
                 var op : IM3Operation = @@op_CopySlot_32
-                if (Is64BitType(u8(u8(_type)))) { op = @@op_CopySlot_64 }
+                if (Is64BitType(u8(_type))) { op = @@op_CopySlot_64 }
                 // Original C intentionally ignores EmitOp's result here.
                 EmitOp(o, op)
-                EmitSlotOffset(o, i32(preservedSlotNumber))
-                EmitSlotOffset(o, i32(slot))
+                EmitSlotOffset(o, preservedSlotNumber)
+                EmitSlotOffset(o, slot)
             }
             i++
         }
@@ -1522,7 +1520,7 @@ def Compile_LoopOrBlock(var o : IM3Compilation; i_opcode : m3opcode_t) : M3Resul
             let numValues = GetNumBlockValuesOnStack(o)
             d_m3Assert(numValues >= numParams)
             if (numValues >= numParams) {
-                let stackTop = int(GetStackTopIndex(o)) + 1
+                let stackTop = GetStackTopIndex(o) + 1
                 var i = stackTop - numParams
                 while (i < stackTop) {
                     let slot = GetSlotForStackIndex(o, i)
@@ -1609,7 +1607,7 @@ def Compile_Select(var o : IM3Compilation; i_opcode : m3opcode_t) : M3Result {
     var op : IM3Operation = c_opNull
     var result : M3Result = m3Err_none
 
-    if (IsFpType(u8(u8(_type)))) {
+    if (IsFpType(u8(_type))) {
         if (!d_m3HasFloat) { return m3Err_unknownOpcode }
         if (!IsStackTopMinus1InRegister(o) && !IsStackTopMinus2InRegister(o)) {
             result = PreserveRegisterIfOccupied(o, _type)
@@ -1630,7 +1628,7 @@ def Compile_Select(var o : IM3Compilation; i_opcode : m3opcode_t) : M3Result {
         var selectorIndex : u32 = 0u
         if (selectorInReg) { selectorIndex = 1u }
         op = c_fpSelectOps[_type - int(u8(M3ValueType.c_m3Type_f32))][selectorIndex][opIndex]
-    } elif (IsIntType(u8(u8(_type)))) {
+    } elif (IsIntType(u8(_type))) {
         if (!IsStackTopInRegister(o) && !IsStackTopMinus1InRegister(o) && !IsStackTopMinus2InRegister(o)) {
             result = PreserveRegisterIfOccupied(o, _type)
             if (result != m3Err_none) { return result }
@@ -1652,7 +1650,7 @@ def Compile_Select(var o : IM3Compilation; i_opcode : m3opcode_t) : M3Result {
     EmitOp(o, op)
     var i : u32 = 0u
     while (i < 3u) {
-        if (IsValidSlot(slots[i])) { EmitSlotOffset(o, i32(slots[i])) }
+        if (IsValidSlot(slots[i])) { EmitSlotOffset(o, slots[i]) }
         i++
     }
     return PushRegister(o, _type)
@@ -1686,7 +1684,7 @@ def Compile_Operator(var o : IM3Compilation; i_opcode : m3opcode_t) : M3Result {
     var result : M3Result = m3Err_none
     var op : IM3Operation = c_opNull
 
-    if (IsFpType(u8(GetStackTopType(o))) && IsIntType(u8(u8(opInfo._type)))) {
+    if (IsFpType(u8(GetStackTopType(o))) && IsIntType(u8(opInfo._type))) {
         result = PreserveRegisterIfOccupied(o, opInfo._type)
         if (result != m3Err_none) { return result }
     }
@@ -1743,7 +1741,7 @@ def Compile_Convert(var o : IM3Compilation; i_opcode : m3opcode_t) : M3Result {
     let sourceInSlot = IsStackTopInSlot(o)
     var opIndex : u32 = 0u
     if (destInSlot) { opIndex += 2u }
-    if (sourceInSlot) { opIndex += 1u }
+    if (sourceInSlot) { opIndex++ }
     let op = opInfo.operations[opIndex]
     var result = EmitOp(o, op)
     if (result != m3Err_none) { return result }
@@ -1763,7 +1761,7 @@ def Compile_Load_Store(var o : IM3Compilation; i_opcode : m3opcode_t) : M3Result
     if (result != m3Err_none) { return result }
         let opInfo = GetOpInfo(i_opcode)
     if (opInfo == null) { return m3Err_unknownOpcode }
-    if (IsFpType(u8(u8(opInfo._type)))) {
+    if (IsFpType(u8(opInfo._type))) {
         result = PreserveRegisterIfOccupied(o, int(u8(M3ValueType.c_m3Type_f64)))
         if (result != m3Err_none) { return result }
     }
@@ -1792,12 +1790,12 @@ def CompileRawFunction(var io_module : IM3Module; var io_function : IM3Function;
 // C preprocessor operation-list expansion, kept local to this table construction.
 def M3OP(name : string; stackOffset : int; _type : int; o0 : IM3Operation; o1 : IM3Operation; o2 : IM3Operation; o3 : IM3Operation; compiler : M3CompilerMutable) : M3OpInfo {
     /* C: #define M3OP(NAME, ...) { __VA_ARGS__ } — the array literal becomes the fixed argument list above. */
-    return M3OpInfo(stackOffset=stackOffset, _type=_type, operations=fixed_array(o0, o1, o2, o3), compiler=compiler)
+    return M3OpInfo(stackOffset = stackOffset, _type = _type, operations = fixed_array(o0, o1, o2, o3), compiler = compiler)
 }
 
 def M3OP_RESERVED() : M3OpInfo {
-    return M3OpInfo(stackOffset=0, _type = int(u8(M3ValueType.c_m3Type_none)),
-        operations=fixed_array(c_opNull, c_opNull, c_opNull, c_opNull), compiler=c_noCompiler)
+    return M3OpInfo(stackOffset = 0, _type = int(u8(M3ValueType.c_m3Type_none)),
+        operations = fixed_array(c_opNull, c_opNull, c_opNull, c_opNull), compiler = c_noCompiler)
 }
 
 def M3OP_F(name : string; stackOffset : int; _type : int; o0 : IM3Operation; o1 : IM3Operation; o2 : IM3Operation; o3 : IM3Operation; compiler : M3CompilerMutable) : M3OpInfo {
@@ -2156,10 +2154,10 @@ def PushBlockResults(var o : IM3Compilation) : M3Result {
     while (i < numResults) {
         var _type : int = int(GetFuncTypeResultType(o._block._type, u16(i)))
         var result : M3Result
-        if (i == numResults - 1 && IsFpType(u8(u8(_type)))) {
+        if (i == numResults - 1 && IsFpType(u8(_type))) {
             result = PushRegister(o, _type)
         } else {
-            result = PushAllocatedSlot(o, int(_type))
+            result = PushAllocatedSlot(o, _type)
         }
         if (result != m3Err_none) { return result }
         i++
@@ -2317,12 +2315,12 @@ def CompileFunction(var io_function : IM3Function) : M3Result {
     if (io_function.wasm == null) { return "function body is missing" }
 
     var funcType = io_function.funcType
-    
+
     var runtime = io_function._module.runtime
     runtime.compilation = M3Compilation()
     var o = unsafe(addr(runtime.compilation))
-    d_m3Assert(u32(d_m3MaxFunctionSlots) >=
-        u32(d_m3MaxFunctionStackHeight) * u32((d_m3Use32BitSlots ? 1u : 0u) + 1u))
+    d_m3Assert(d_m3MaxFunctionSlots >=
+        d_m3MaxFunctionStackHeight * ((d_m3Use32BitSlots ? 1u : 0u) + 1u))
     o.runtime = runtime
     o._module = io_function._module
     o._function = io_function
@@ -2330,7 +2328,7 @@ def CompileFunction(var io_function : IM3Function) : M3Result {
     o.wasmEnd = io_function.wasmEnd
     o._block._type = funcType
 
-    var result : M3Result = m3Err_none
+    var result : M3Result
     var size : u32
     var pc : pc_t = null
 
@@ -2371,7 +2369,7 @@ def CompileFunction(var io_function : IM3Function) : M3Result {
 
         if (result == m3Err_none) {
             let maxSlot = GetMaxUsedSlotPlusOne(o)
-            o._function.numLocalBytes = u16((maxSlot - o.slotFirstLocalIndex) * int(typeinfo sizeof(type<m3slot_t>)))
+            o._function.numLocalBytes = u16((maxSlot - o.slotFirstLocalIndex) * (typeinfo sizeof(type<m3slot_t>)))
             o.slotFirstConstIndex = maxSlot
             o.slotMaxConstIndex = maxSlot
             result = ReserveConstants(o)
@@ -2382,7 +2380,7 @@ def CompileFunction(var io_function : IM3Function) : M3Result {
             o.slotMaxAllocatedIndexPlusOne = o.slotFirstDynamicIndex
             o._block.blockStackIndex = o.stackIndex
             o.stackFirstDynamicIndex = o.stackIndex
-            
+
             result = EmitOp(o, @@op_Entry)
         }
         if (result == m3Err_none) {
@@ -2398,11 +2396,11 @@ def CompileFunction(var io_function : IM3Function) : M3Result {
             io_function.maxStackSlots = u16(o.maxStackSlots)
 
             let numConstantSlots = o.slotMaxConstIndex - o.slotFirstConstIndex
-            
-            io_function.numConstantBytes = u16(numConstantSlots * int(typeinfo sizeof(type<m3slot_t>)))
+
+            io_function.numConstantBytes = u16(numConstantSlots * (typeinfo sizeof(type<m3slot_t>)))
             if (numConstantSlots != 0) {
                 var constantsPtr : void?
-                unsafe { constantsPtr = reinterpret<void?>(addr(o.constants[0])) }
+                unsafe { constantsPtr = addr<void?>(o.constants[0]) }
                 io_function.constants = m3_CopyMem(constantsPtr, u64(io_function.numConstantBytes))
                 if (io_function.constants == null) {
                     result = m3Err_mallocFailed

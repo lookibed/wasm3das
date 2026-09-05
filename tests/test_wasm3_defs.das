@@ -1,6 +1,7 @@
 options gen2
 options indenting = 4
 
+require dastest/testing_boost
 require ../source/wasm3_defs.das
 
 
@@ -49,6 +50,7 @@ def expect_u64(name : string; actual : uint64; expected : uint64) {
 // ============================================================================
 
 
+[test]
 def test_m3_bswap16() {
     expect_u16("m3_bswap16 zero",
         m3_bswap16(uint16(0x0000)),
@@ -114,6 +116,7 @@ def test_m3_bswap16() {
 // ============================================================================
 
 
+[test]
 def test_m3_bswap32() {
     expect_u32("m3_bswap32 zero",
         m3_bswap32(0x00000000u),
@@ -163,6 +166,7 @@ def test_m3_bswap32() {
 // ============================================================================
 
 
+[test]
 def test_m3_bswap64() {
     expect_u64("m3_bswap64 zero",
         m3_bswap64(0x0000000000000000ul),
@@ -212,6 +216,7 @@ def test_m3_bswap64() {
 // ============================================================================
 
 
+[test]
 def test_m3_isBitSet_examples() {
     // Low bit set / clear.
     expect_true("m3_isBitSet u32 low set",
@@ -275,6 +280,7 @@ def test_m3_isBitSet_examples() {
 // ============================================================================
 
 
+[test]
 def test_m3_isBitSet_full_width_32() {
     for (set_pos in range(32)) {
         let value = 1u << uint(set_pos)
@@ -291,6 +297,7 @@ def test_m3_isBitSet_full_width_32() {
 }
 
 
+[test]
 def test_m3_isBitSet_full_width_64() {
     for (set_pos in range(64)) {
         let value = 1ul << uint64(set_pos)
@@ -318,6 +325,7 @@ def counted_bool(var evaluations : int&; value : bool) : bool {
 }
 
 
+[test]
 def test_likely_unlikely() {
     expect_true("M3_LIKELY true", M3_LIKELY(true))
     expect_false("M3_LIKELY false", M3_LIKELY(false))
@@ -347,6 +355,7 @@ def test_likely_unlikely() {
 // ============================================================================
 
 
+[test]
 def test_platform_information() {
     if (M3_COMPILER_VER == "") {
         panic("M3_COMPILER_VER must not be empty")
@@ -386,6 +395,7 @@ def observe_little_endian() : bool {
 }
 
 
+[test]
 def test_endianness() {
     let actual_little = observe_little_endian()
 
