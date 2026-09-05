@@ -32,10 +32,10 @@ def private cursor_offset(start : bytes_t; cursor : bytes_t) : int {
 
 
 def private init_bounds(
-    var buf : array<u8>;
-    var start : bytes_t&;
-    var end : cbytes_t&
-) {
+                        var buf : array<u8>;
+                        var start : bytes_t&;
+                        var end : cbytes_t&
+                        ) {
     check(!empty(buf), "test buffer must not be empty")
     start = unsafe(addr(buf[0]))
     end = unsafe(reinterpret<cbytes_t>(intptr(start) + u64(long_length(buf))))
@@ -43,14 +43,14 @@ def private init_bounds(
 
 
 def private check_memory_case(
-    var buf : array<u8>;
-    expected_result : M3Result;
-    expected_pos : int;
-    expected_init : u32;
-    expected_max : u32;
-    expected_page : u32;
-    case_name : string
-) {
+                              var buf : array<u8>;
+                              expected_result : M3Result;
+                              expected_pos : int;
+                              expected_init : u32;
+                              expected_max : u32;
+                              expected_page : u32;
+                              case_name : string
+                              ) {
     var start : bytes_t
     var cursor : bytes_t
     var end : cbytes_t
@@ -169,11 +169,11 @@ def private check_start_section() {
 
 
 def private check_element_case(
-    var buf : array<u8>;
-    expected_count : u32;
-    expected_prefix : int;
-    case_name : string
-) {
+                               var buf : array<u8>;
+                               expected_count : u32;
+                               expected_prefix : int;
+                               case_name : string
+                               ) {
     var start : bytes_t
     var cursor : bytes_t
     var end : cbytes_t
