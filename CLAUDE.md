@@ -48,6 +48,7 @@ execution are not started. `wasm3c/` is the reference C source tree.
 | `docs/` | Design decisions that outlive a single session |
 | `notes/` | Dated working notes and handoffs |
 | `.lint_config` | Repo lint policy; exported as `DAS_LINT_CONFIG_PATH` by CI, the hook and the MCP server |
-| `.githooks/` | Local pre-push copy of the CI gate (`git config core.hooksPath .githooks`) |
+| `scripts/gate.sh` | The verification gate, shared by CI and the pre-push hook |
+| `.githooks/` | Pre-push hook that runs the gate (`git config core.hooksPath .githooks`) |
 | `tmp/` | Local toolchain, ignored by Git |
 | `tools/` | Local development tools, ignored by Git |

@@ -22,6 +22,7 @@ jobs:
       DASLANG_COMMIT: 1524b3bf62e7decbfe530dc5f2e794b296fa1e68
       DASLANG_ROOT: ${{ github.workspace }}/.ci/daScript
       DASLANG_BIN: ${{ github.workspace }}/.ci/daScript/bin/daslang
+      DASLANG: ${{ github.workspace }}/.ci/daScript/bin/daslang
       DAS_LINT_CONFIG_PATH: ${{ github.workspace }}/.lint_config
 
     steps:
@@ -63,28 +64,19 @@ jobs:
           test "$(git -C "$DASLANG_ROOT" rev-parse HEAD)" = "$DASLANG_COMMIT"
           "$DASLANG_BIN" --version
 
+      # The gate itself is defined once in scripts/gate.sh and shared with the
+      # pre-push hook; the steps below only split it for readable CI output.
       - name: Compiler diagnostics
-        shell: bash
-        run: |
-          set -euo pipefail
-          while IFS= read -r file; do
-            echo "::group::compile $file"
-            "$DASLANG_BIN" -compile-only "$file"
-            echo "::endgroup::"
-          done < <(find source tests -type f -name '*.das' -print | sort)
+        run: scripts/gate.sh compile
 
       - name: Paranoid lint
-        run: |
-          "$DASLANG_BIN" "$DASLANG_ROOT/utils/lint/main.das" -- --paranoid-only source tests
+        run: scripts/gate.sh lint-paranoid
 
       - name: Performance lint
-        run: |
-          "$DASLANG_BIN" "$DASLANG_ROOT/utils/lint/main.das" -- --perf-only source tests
+        run: scripts/gate.sh lint-perf
 
       - name: Style lint
-        run: |
-          "$DASLANG_BIN" "$DASLANG_ROOT/utils/lint/main.das" -- --style-only source tests
+        run: scripts/gate.sh lint-style
 
       - name: Project tests
-        run: |
-          "$DASLANG_BIN" "$DASLANG_ROOT/dastest/dastest.das" -- --test tests
+        run: scripts/gate.sh test
