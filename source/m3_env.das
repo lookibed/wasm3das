@@ -170,11 +170,22 @@ def Environment_Release(var i_environment : IM3Environment) {
 
     while (ftype != null) {
         var next = ftype.next
-        unsafe { delete ftype }
+        // C: m3_Free (ftype) - host free; M3FuncType comes from AllocFuncType
+        // (m3_Malloc_Impl), so it is released with m3_Free_Impl, not `delete`.
+        m3_Free_Impl(unsafe(reinterpret<void?>(ftype)))
         ftype = next
     }
 
+    // C releases the environment with raw free. Its list head and ret-type
+    // entries are aliases to the nodes just released, so detach them before
+    // the managed M3Environment value is deleted.
+    i_environment.funcTypes = null
+    for (ti in range(int(M3ValueType.c_m3Type_unknown))) {
+        i_environment.retFuncTypes[ti] = null
+    }
+
     FreeCodePages(i_environment.pagesReleased)
+    i_environment.pagesReleased = null
 }
 
 
@@ -200,7 +211,8 @@ def Environment_AddFuncType(var i_environment : IM3Environment; var io_funcType 
 
     while (newType != null) {
         if (AreFuncTypesEqual(newType, addType)) {
-            unsafe { delete addType }
+            // C: m3_Free (addType) - see Environment_Release note (host malloc).
+            m3_Free_Impl(unsafe(reinterpret<void?>(addType)))
             break
         }
         newType = newType.next
@@ -285,17 +297,26 @@ def _FreeModule(var i_module : IM3Module; i_info : void?) : void? {
 
 def Runtime_Release(var i_runtime : IM3Runtime) {
     ForEachModule(i_runtime, @@_FreeModule, null)
+    i_runtime.modules = null
     d_m3Assert(i_runtime.numActiveCodePages == 0)
 
     Environment_ReleaseCodePages(i_runtime.environment, i_runtime.pagesOpen)
+    i_runtime.pagesOpen = null
     Environment_ReleaseCodePages(i_runtime.environment, i_runtime.pagesFull)
+    i_runtime.pagesFull = null
 
     if (i_runtime.originStack != null) {
         m3_Free_Impl(i_runtime.originStack)
+        i_runtime.originStack = null
+        i_runtime.stack = null
     }
     if (i_runtime.memory.mallocated != null) {
         m3_Free_Impl(unsafe(reinterpret<void?>(i_runtime.memory.mallocated)))
+        i_runtime.memory.mallocated = null
     }
+
+    i_runtime.lastCalled = null
+    i_runtime.environment = null
 }
 
 

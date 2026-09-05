@@ -24,6 +24,13 @@ def Module_FreeFunctions(var i_module : IM3Module) {
 def m3_FreeModule(var i_module : IM3Module) {
     if (i_module != null) {
 
+        // C frees this container without following its borrowed links. Detach
+        // them before releasing any owned child storage or finalizing the
+        // managed M3Module value.
+        i_module.runtime = null
+        i_module.environment = null
+        i_module.next = null
+
         Module_FreeFunctions(i_module)
 
         m3_Free_Impl(i_module.functions)
@@ -120,7 +127,10 @@ def Module_AddFunction(var io_module : IM3Module; i_typeIndex : u32; i_importInf
     }
 
     unsafe {
-        var ft : IM3FuncType = reinterpret<IM3FuncType>(addr(io_module.funcTypes[i_typeIndex]))
+        // C: IM3FuncType ft = io_module->funcTypes[i_typeIndex] - funcTypes is an
+        // ARRAY OF POINTERS (IM3FuncType *), so the element VALUE is the func type;
+        // addr(slot) would bind the slot itself and misread numRets/numArgs as 0.
+        var ft : IM3FuncType = io_module.funcTypes[i_typeIndex]
         var func : IM3Function = Module_GetFunction(io_module, index)
         func.funcType = ft
 

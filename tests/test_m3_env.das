@@ -69,10 +69,29 @@ def test_env_new_runtime_environment_survives_wiring() {
 }
 
 
+[test]
+def test_env_runtime_releases_linked_module_without_owning_environment() {
+    var env = m3_NewEnvironment()
+    expect_true("environment allocated for linked module", env != null)
+
+    var runtime = m3_NewRuntime(env, 64u * 1024u, null)
+    expect_true("runtime allocated for linked module", runtime != null)
+
+    var linkedModule : IM3Module = new M3Module()
+    linkedModule.environment = env
+    linkedModule.runtime = runtime
+    runtime.modules = linkedModule
+
+    m3_FreeRuntime(runtime)
+    m3_FreeEnvironment(env)
+}
+
+
 [export]
 def main() {
     test_env_new_environment_wires_hooks()
     test_env_hook_wiring_is_idempotent()
     test_env_new_runtime_environment_survives_wiring()
+    test_env_runtime_releases_linked_module_without_owning_environment()
     print("test_m3_env: all tests passed\n")
 }
