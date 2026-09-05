@@ -31,7 +31,8 @@ passes, from intake to post-merge, are described in
 | `tests/` | Component tests for completed porting increments |
 | `wasm3c/` | Vendored C reference tree |
 | `.github/workflows/daslang-quality.yml` | Required pull-request quality gate |
-| `scripts/gate.sh` | The gate itself: compile, three lint profiles, tests; shared by CI and the hook |
+| `scripts/gate.sh` | The gate itself: compile, three lint profiles, tests, repository invariants; shared by CI and the hook |
+| `scripts/check_repo_invariants.sh` | Formatter verify, test discovery, manifest consistency, file headers |
 | `.githooks/pre-push` | Runs `scripts/gate.sh` locally before every push |
 | `.lint_config` | Repo lint policy consumed by the gate |
 | `docs/` | Design decisions (memory ownership) |
@@ -51,8 +52,15 @@ DASLANG_ROOT=/path/to/daScript DASLANG="$DASLANG_ROOT/bin/daslang" scripts/gate.
 With the toolchain at `tmp/daslang-toolchain` (the default), plain
 `scripts/gate.sh` is enough. The script runs, in order: `-compile-only` on
 every file under `source/` and `tests/`, the three lint profiles with the repo
-policy in `.lint_config`, and the dastest suite. A single stage can be run by
-name: `scripts/gate.sh lint-style`.
+policy in `.lint_config`, the dastest suite, and the repository invariants
+(formatter verify, every test file has `[test]`, every source file has a
+manifest row, every file starts with the two `options` lines). A single stage
+can be run by name: `scripts/gate.sh lint-style`.
+
+CI runs the same script. A pull request that changes none of the gate's inputs
+(`source/`, `tests/`, `scripts/`, `.githooks/`, the workflow, `.lint_config`,
+`PORTING_MANIFEST.md`) reports a green status within seconds without building
+the toolchain.
 
 The same gate runs locally before every push once the repository hooks are
 enabled:
