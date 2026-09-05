@@ -71,3 +71,10 @@ Work in feature branches and open a pull request into `main`. Direct pushes to
 `main` are not part of the project workflow. A pull request is accepted only
 after the required Daslang quality gate passes and the code owner approves it.
 
+Pull requests are merged with **squash and merge**: `main` receives one commit
+per pull request, and the individual commits stay visible in the pull request
+itself. GitHub deletes the head branch automatically after the merge. Because
+squashed commits never appear in `main`, delete the local branch with
+`git branch -D <branch>` after `git pull`; `git branch --merged` will not list
+it.
+
