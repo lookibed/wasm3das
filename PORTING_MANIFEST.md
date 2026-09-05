@@ -35,6 +35,9 @@ Status meanings:
 
 ## Known gaps
 
+Each gap is closed by a pull request of the type given in
+`docs/development-pipeline.md`.
+
 - The `fib32.wasm` regression that AGENTS.md requires for runtime changes is
   not part of `tests/`; it existed only as a temporary runner. Adding it as a
   regular dastest file is the first prerequisite for promoting any draft.
