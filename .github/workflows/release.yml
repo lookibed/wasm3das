@@ -130,7 +130,11 @@ jobs:
           echo "$out"
           test "$out" = "Result: 75025"
           if [[ "${{ runner.os }}" != "Windows" ]]; then
-            printf ':load examples/fib64.wasm\n:invoke fib 20\n:exit\n' | ./wasm3 --repl | grep -q 'Result: 6765:i64'
+            # Capture first: `grep -q` closes the pipe on the first match and the
+            # REPL's next prompt then dies of SIGPIPE, which pipefail reports.
+            repl="$(printf ':load examples/fib64.wasm\n:invoke fib 20\n:exit\n' | ./wasm3 --repl)"
+            echo "$repl"
+            echo "$repl" | grep -q 'Result: 6765:i64'
           fi
 
       - name: Package
