@@ -132,7 +132,8 @@ jobs:
           if [[ "${{ runner.os }}" != "Windows" ]]; then
             # Capture first: `grep -q` closes the pipe on the first match and the
             # REPL's next prompt then dies of SIGPIPE, which pipefail reports.
-            repl="$(printf ':load examples/fib64.wasm\n:invoke fib 20\n:exit\n' | ./wasm3 --repl)"
+            # `Result:` lines go to stderr, as in C main.c (fprintf (stderr, ...)).
+            repl="$(printf ':load examples/fib64.wasm\n:invoke fib 20\n:exit\n' | ./wasm3 --repl 2>&1)"
             echo "$repl"
             echo "$repl" | grep -q 'Result: 6765:i64'
           fi
