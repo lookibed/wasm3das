@@ -14,24 +14,29 @@ options indenting = 4
 // wasm stack; a much larger `--stack-size` can still exhaust it first.
 options stack = 67_108_864
 
-// Conservative Gen2 port of the REPL subset of wasm3c/platforms/app/main.c.
+// Conservative Gen2 port of wasm3c/platforms/app/main.c.
 //
 // Scope: everything the original spec-test driver (wasm3c/test/run-spec-test.py)
 // drives through `--repl` — :init, :version, :exit, :load, :load-hex,
 // :invoke, :get-global, :set-global, :compile, :dump — plus the non-REPL
-// `wasm3 <file> --func <name> <args...>` path.
+// `wasm3 <file> [args...]` path that wasm3c/test/run-wasi-test.py drives,
+// including the `#if defined(LINK_WASI)` branch of repl_call.
 //
-// Out of scope, and marked at the site: WASI/libc/spectest linking
-// (link_all), gas metering, the tracer and backtrace recording. The gas
-// block of main.c is guarded by `#if defined(GAS_LIMIT)`; this port omits it
-// entirely, together with print_gas_used, because m3_LinkRawFunction and the
-// m3ApiRawFunction machinery are not ported yet.
+// Out of scope, and marked at the site: gas metering, the tracer and
+// backtrace recording. The gas block of main.c is guarded by
+// `#if defined(GAS_LIMIT)`; this port omits it entirely, together with
+// print_gas_used, because the module it meters ("metering"."usegas") is a
+// wasm-metering artefact no test in this repository uses.
+//
+// main.c has no stdin/stdout mode switching: the Windows `_setmode(_O_BINARY)`
+// dance lives in the WASI layer, not here, so there is nothing to port.
 
 require daslib/fio
 require math
 require strings
 require ../source/m3_parse.das
 require ../source/m3_api_libc.das
+require ../source/m3_api_wasi.das
 
 
 // C: #define MAX_MODULES 16
@@ -54,6 +59,16 @@ var runtime : IM3Runtime
 */
 var wasm_bins : array<array<u8>>
 var wasm_bins_qty = 0
+
+/*
+    C repl_call ends a WASI `_start` that trapped with m3Err_trapExit by
+    calling libc exit(wasi_ctx->exit_code), which leaves the process from
+    inside repl_call. Daslang has no exit(), so the request travels to main()
+    in these two variables and main() returns the code, skipping the _onfatal
+    epilogue exactly as exit() skips it.
+*/
+var exit_requested = false
+var exit_code = 0
 
 
 // ============================================================================
@@ -179,16 +194,22 @@ def private hex_value(c : int) : int {
 /*
     C link_all calls m3_LinkSpecTest, m3_LinkLibC and, when built with WASI,
     m3_LinkWASI, then binds the optional "metering"."usegas" raw function.
-    Only the spectest half of m3_api_libc.c is ported (source/m3_api_libc.das);
-    libc, WASI and gas metering are outside the current scope, so a module
-    importing them fails later with m3Err_functionImportMissing, exactly as
-    an unlinked module does in C.
+    The tracer (`#if defined(d_m3HasTracer)`) and the gas block
+    (`#if defined(GAS_LIMIT)`) are not part of this build, so only the three
+    linkers remain.
 */
 def link_all(var _module : IM3Module) : M3Result {
     if (_module == null) { return m3Err_moduleNotLinked }
-    let res = m3_LinkSpecTest(_module)
+    var res = m3_LinkSpecTest(_module)
     if (res != m3Err_none) { return res }
-    return m3Err_none
+
+    res = m3_LinkLibC(_module)
+    if (res != m3Err_none) { return res }
+
+    res = m3_LinkWASI(_module)
+    if (res != m3Err_none) { return res }
+
+    return res
 }
 
 
@@ -359,9 +380,36 @@ def repl_call(name : string; argc : int; argv : array<string>) : M3Result {
     }
 
     if (name == "_start") {
-        // C: #if defined(LINK_WASI) ... #else return "WASI not linked".
-        // The WASI layer is out of scope for this port.
-        return "WASI not linked"
+        // C: #if defined(LINK_WASI)
+        // C rewrites argv[0] in the caller's vector; the parameter is const
+        // here, so the vector is copied first. main.c never reads it again.
+        var wasi_argv <- argv_tail(argv, 0)
+
+        // Strip wasm file path
+        if (argc > 0) {
+            wasi_argv[0] = modname_from_fn(wasi_argv[0])
+        }
+
+        var wasi_ctx = m3_GetWasiContext()
+        wasi_ctx.argc = u32(argc)
+        wasi_ctx.argv := wasi_argv
+
+        // C: m3_CallArgv(func, 0, NULL) - _start takes no wasm arguments;
+        // argv reaches the module through the WASI context.
+        let no_argv : array<string>
+        result = m3_CallArgv(func, 0u, no_argv)
+
+        // print_gas_used() is compiled out with the gas block.
+
+        if (result == m3Err_trapExit) {
+            // C: exit (wasi_ctx->exit_code). Daslang has no libc exit(), so
+            // the request is recorded and main() returns the code without
+            // running the _onfatal epilogue, which is what exit() does.
+            exit_requested = true
+            exit_code = wasi_ctx.exit_code
+        }
+
+        return result
     }
 
     let arg_count = int(m3_GetArgCount(func))
@@ -669,6 +717,28 @@ def private split_argv(str : string) : array<string> {
 }
 
 
+/*
+    The option words the port still accepts *after* the file operand. C stops
+    scanning at the first word that does not start with '-' and never looks at
+    options again, so it has no need for this list; the port needs it for the
+    rescan documented in main_run. Only the long spellings are listed: the
+    `-h` and `-f` aliases stay pre-file options, because a wasm program's own
+    `-f` argument (Brotli's `-c -f`) must not be swallowed.
+*/
+let POST_FILE_OPTIONS = [
+    "--help", "--wasm3-help", "--version", "--repl", "--dump-on-trap",
+    "--compile", "--stack-size", "--gas-limit", "--dir", "--func"
+]
+
+
+def private is_post_file_option(arg : string) : bool {
+    for (opt in POST_FILE_OPTIONS) {
+        if (arg == opt) { return true }
+    }
+    return false
+}
+
+
 // C passes `argv + start`; Daslang has no pointer into an array<string>, so
 // the tail is copied.
 def private argv_tail(argv : array<string>; start : int) : array<string> {
@@ -756,7 +826,12 @@ def private main_run(var result : M3Result&) : int {
     while (scanning) {
         while (i_argc > 0) {
             let arg = i_argv[i_pos]
-            if (first_character(arg) != 45) { break }   // '-'
+            // C: `if (arg[0] != '-') break`. The second half is part of the
+            // rescan deviation below: once the file operand has been taken,
+            // every remaining word belongs to the wasm program, so only the
+            // option words main.c knows are still consumed and
+            // `wasm3 c-ray.wasm -s 32x32` reaches the module intact.
+            if (first_character(arg) != 45 || (haveFile && !is_post_file_option(arg))) { break }
 
             i_argc--
             i_pos++
@@ -821,8 +896,10 @@ def private main_run(var result : M3Result&) : int {
             pass "--func" as a function argument. The port rescans after the
             file operand so both C's `wasm3 --func fib file.wasm 25` and the
             file-first spelling used by this repository's smoke tests work.
+            The rescan is limited to the option words main.c knows, so a wasm
+            program's own `-s`, `-c`, `-f`-style arguments still reach it.
         */
-        scanning = i_argc > 0 && first_character(i_argv[i_pos]) == 45
+        scanning = i_argc > 0 && is_post_file_option(i_argv[i_pos])
     }
 
     if (!haveFile) {
@@ -857,6 +934,10 @@ def private main_run(var result : M3Result&) : int {
             } else {
                 result = repl_call(argFunc, i_argc, argv_tail(i_argv, i_pos))
             }
+
+            // C: repl_call already left the process through exit() when a
+            // WASI _start ended with m3Err_trapExit; nothing below runs.
+            if (exit_requested) { return -1 }
 
             if (result != m3Err_none) {
                 if (argDumpOnTrap) {
@@ -905,6 +986,7 @@ def private main_run(var result : M3Result&) : int {
             result = "no such command"
         } else {
             result = repl_call(unescape_argv(argv[0]), argc - 1, argv_tail(argv, 1))
+            if (exit_requested) { return -1 }
             if (result != m3Err_none) {
                 print_backtrace()
             }
@@ -934,6 +1016,16 @@ def main : int {
     // m3_PrintM3Info() is commented out in C as well.
 
     let early = main_run(result)
+
+    // C: repl_call ends a WASI _start that trapped with m3Err_trapExit by
+    // calling exit (wasi_ctx->exit_code), so neither the _onfatal epilogue
+    // nor m3_FreeRuntime/m3_FreeEnvironment runs.
+    if (exit_requested) {
+        fflush(fstdout())
+        fflush(fstderr())
+        return exit_code
+    }
+
     if (early >= 0) {
         fflush(fstdout())
         fflush(fstderr())
