@@ -38,9 +38,17 @@ Status meanings:
 Each gap is closed by a pull request of the type given in
 `docs/development-pipeline.md`.
 
-- The `fib32.wasm` regression that AGENTS.md requires for runtime changes is
-  not part of `tests/`; it existed only as a temporary runner. Adding it as a
-  regular dastest file is the first prerequisite for promoting any draft.
+- `tests/test_fib32_regression.das` covers parse, load, lazy compile and
+  execution of `wasm3c/test/lang/fib32.wasm` (fib(25) = 75025). Its teardown
+  half is skipped: `m3_FreeRuntime` still ends in `SIGSEGV` after a
+  successful run. Un-skipping it is the acceptance test for the memory
+  ownership migration below.
+- The compiler's operation table is filled by an `[init]` function in
+  `m3_compile.das`. Under dastest that `[init]` does not run when the test
+  file declares a `module` name (daslang 0.6.4 @ 1524b3bf), so the table
+  stays zeroed and compilation invokes a null function. Test files that reach
+  the compiler must not declare a module; a robust fix (initialising the
+  table from `m3_NewEnvironment`, like the hooks) is a separate `fix/` PR.
 - Environment, runtime and module objects are `new`-allocated while every
   other C-owned object is `m3_Malloc_Impl`-allocated. The decision to move to
   a single host-allocator regime and its migration order are recorded in

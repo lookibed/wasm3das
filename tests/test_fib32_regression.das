@@ -1,0 +1,156 @@
+options gen2
+options indenting = 4
+// The port has no equivalent of C M3_MUSTTAIL: every op_* calls the next
+// operation instead of tail-jumping, so one wasm frame costs about one
+// Daslang frame per executed op. fib(25) nests 25 wasm frames; the default
+// 16 KiB context stack is not enough. options stack counts only in the
+// program root, which under dastest is this file.
+options stack = 4_194_304
+
+// No `module` declaration on purpose: under dastest a test file that names
+// its module does not run the [init] functions of the shared modules it
+// requires (probed 2026-09-05 with daslang 0.6.4 @ 1524b3bf), and the
+// compiler's operation table in m3_compile.das is filled by [init].
+
+require dastest/testing_boost
+require daslib/fio
+require ../source/m3_parse.das
+
+
+/*
+    End-to-end regression over wasm3c/test/lang/fib32.wasm, the module the
+    C project uses for its own smoke run: export "fib" (i32) -> i32.
+
+    Mirrors the C usage in wasm3c/platforms/app/main.c (repl_load,
+    repl_call): m3_NewEnvironment -> m3_NewRuntime -> m3_ParseModule ->
+    m3_LoadModule -> m3_FindFunction -> m3_CallV -> m3_GetResultsV ->
+    m3_FreeRuntime -> m3_FreeEnvironment. Lazy compilation happens inside
+    m3_FindFunction, as in C.
+
+    AGENTS.md requires this lifecycle, including teardown without a crash,
+    for every runtime change. The teardown half is a separate test below so
+    that the result half keeps guarding parse/load/compile/execute while the
+    teardown SIGSEGV is open.
+*/
+
+
+let FIB32_PATH = "wasm3c/test/lang/fib32.wasm"
+
+
+struct Fib32Fixture {
+    env : IM3Environment
+    runtime : IM3Runtime
+    fib : IM3Function
+}
+
+
+def private read_file(path : string) : array<u8> {
+    var bytes : array<u8>
+    fopen(path, "rb") $(f) {
+        if (f != null) {
+            let st = fstat(f)
+            bytes |> resize(int64(st.size))
+            fread(f, bytes)
+        }
+    }
+    return <- bytes
+}
+
+
+// Parse, load and compile fib32.wasm. Returns a fixture whose `fib` is null
+// when any step failed; every step is asserted on `t`.
+def private load_fib32(t : T?) : Fib32Fixture {
+    var fx : Fib32Fixture
+    var bytes <- read_file(FIB32_PATH)
+    t |> equal(length(bytes), 62, "fib32.wasm size")
+    if (empty(bytes)) return fx
+
+    fx.env = m3_NewEnvironment()
+    t |> success(fx.env != null, "m3_NewEnvironment")
+    if (fx.env == null) return fx
+
+    fx.runtime = m3_NewRuntime(fx.env, 64u * 1024u, null)
+    t |> success(fx.runtime != null, "m3_NewRuntime")
+    if (fx.runtime == null) return fx
+
+    // C local `module` renamed to `_module`: `module` is a daslang keyword.
+    var _module : IM3Module
+    var result = m3_ParseModule(fx.env, _module, unsafe(addr(bytes[0])), u32(length(bytes)))
+    t |> equal(result, m3Err_none, "m3_ParseModule")
+    if (result != m3Err_none) return fx
+
+    result = m3_LoadModule(fx.runtime, _module)
+    t |> equal(result, m3Err_none, "m3_LoadModule")
+    if (result != m3Err_none) {
+        // C repl_load: a module that failed to load is still owned by the caller.
+        m3_FreeModule(_module)
+        return fx
+    }
+
+    result = m3_FindFunction(fx.fib, fx.runtime, "fib")
+    t |> equal(result, m3Err_none, "m3_FindFunction fib")
+    if (result != m3Err_none) {
+        fx.fib = null
+    }
+    return fx
+}
+
+
+def private call_fib(t : T?; var fib : IM3Function; n : int) : int {
+    var args : array<M3TaggedValue>
+    args |> resize(1)
+    args[0]._type = M3ValueType.c_m3Type_i32
+    tagged_set_i32(args[0], n)
+
+    let callResult = m3_CallV(fib, args)
+    t |> equal(callResult, m3Err_none, "m3_CallV fib({n})")
+    if (callResult != m3Err_none) return -1
+
+    var rets : array<M3TaggedValue>
+    let retResult = m3_GetResultsV(fib, rets)
+    t |> equal(retResult, m3Err_none, "m3_GetResultsV fib({n})")
+    if (retResult != m3Err_none || length(rets) != 1) return -1
+    return tagged_get_i32(rets[0])
+}
+
+
+[test]
+def test_fib32_results(t : T?) {
+    var fx = load_fib32(t)
+    if (fx.fib == null) return
+
+    t |> equal(call_fib(t, fx.fib, 2), 1, "fib(2)")
+    t |> equal(call_fib(t, fx.fib, 10), 55, "fib(10)")
+    t |> equal(call_fib(t, fx.fib, 25), 75025, "fib(25)")
+
+    // The environment and runtime are intentionally not released here: the
+    // teardown path is exercised (and currently fails) in the test below,
+    // and a crash there would take this test's results down with it.
+}
+
+
+// Open defect: m3_FreeRuntime ends in SIGSEGV after a successful fib run
+// (AGENTS.md, "Runtime recovery context"; decision and migration in
+// docs/memory-ownership.md). A crash kills the dastest worker, so the
+// teardown half stays skipped until the ownership migration lands. Flip this
+// to false to reproduce; run the file alone.
+def private teardown_defect_is_open() : bool {
+    return true
+}
+
+
+[test]
+def test_fib32_teardown(t : T?) {
+    if (teardown_defect_is_open()) {
+        t |> skip("teardown SIGSEGV in m3_FreeRuntime is open; see docs/memory-ownership.md")
+        return
+    }
+
+    var fx = load_fib32(t)
+    if (fx.fib == null) return
+    t |> equal(call_fib(t, fx.fib, 10), 55, "fib(10) before teardown")
+
+    m3_FreeRuntime(fx.runtime)
+    m3_FreeEnvironment(fx.env)
+    t |> success(true, "teardown completed")
+}

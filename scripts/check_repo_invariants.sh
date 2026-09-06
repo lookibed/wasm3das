@@ -54,7 +54,7 @@ for file in source/*.das; do
         fail "$file has no row in PORTING_MANIFEST.md"
     fi
 done
-integration_tests="test_m3_types_integration"
+integration_tests="test_m3_types_integration test_fib32_regression"
 for file in tests/test_*.das; do
     stem="$(basename "$file" .das)"
     layer="${stem#test_}"
