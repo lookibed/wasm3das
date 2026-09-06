@@ -92,6 +92,8 @@ def tagged_set_f64(var io_value : M3TaggedValue&; i_value : f64) {
 }
 
 
+// C: m3_ReallocArray (IM3Function, io_module->table0, endElement, io_module->table0Size)
+// in InitElements - the macro's sizeof(IM3Function) scaling, expanded once here.
 def m3_ReallocFunctionTable(var i_table : IM3Function?; i_newCount, i_oldCount : u32) : IM3Function? {
     var raw : void?
     unsafe { raw = reinterpret<void?>(i_table) }
@@ -101,6 +103,11 @@ def m3_ReallocFunctionTable(var i_table : IM3Function?; i_newCount, i_oldCount :
 }
 
 
+// C spells this inline at every call site (m3_RunStart, m3_CallVL, m3_Call,
+// m3_CallArgv): RunCode (i_function->compiled, (m3stack_t) runtime->stack,
+// runtime->memory.mallocated, d_m3OpDefaultArgs). d_m3OpDefaultArgs is
+// r0 = 0, fp0 = 0.0 under d_m3HasFloat; the profiling/tracing variant with
+// d_m3BaseCstr is compiled out.
 def RunFunctionCode(var i_function : IM3Function) : M3Result {
     var runtime = i_function._module.runtime
     var pc = i_function.compiled
@@ -542,12 +549,12 @@ def InitElements(var io_module : IM3Module) : M3Result {
             }
 
             if (endElement > u64(io_module.table0Size)) {
-                var newTable = m3_ReallocFunctionTable(io_module.table0, u32(endElement), io_module.table0Size)
-                if (newTable == null) {
-                    return m3Err_mallocFailed
-                }
-                io_module.table0 = newTable
+                io_module.table0 = m3_ReallocFunctionTable(io_module.table0, u32(endElement), io_module.table0Size)
                 io_module.table0Size = u32(endElement)
+            }
+            // C: _throwifnull (io_module->table0) - checked whether or not the table grew.
+            if (io_module.table0 == null) {
+                return m3Err_mallocFailed
             }
 
             for (ee in 0..int(numElements)) {
@@ -611,7 +618,7 @@ def m3_RunStart(var io_module : IM3Module) : M3Result {
             return m3Err_argumentCountMismatch
         }
 
-        let _module = _function._module
+        // C reads function->module->runtime here for RunCode; RunFunctionCode does the same.
         startFunctionTmp = io_module.startFunction
         io_module.startFunction = -1
 
@@ -857,6 +864,9 @@ def GetStackPointerForArgs(var i_function : IM3Function) : u8? {
 
 // Typed Gen2 replacement for C varargs. f32 values are represented in M3TaggedValue
 // directly instead of relying on C default argument promotion to f64.
+// Deviation: C m3_CallVL cannot count a va_list, so it has no argument-count
+// check; the typed array makes the m3_Call check (m3Err_argumentCountMismatch)
+// available here as well.
 def m3_CallVL(var i_function : IM3Function; i_args : array<M3TaggedValue>) : M3Result {
     var runtime = i_function._module.runtime
     var ftype = i_function.funcType
@@ -1116,6 +1126,9 @@ def m3_GetResultsV(var i_function : IM3Function; var o_rets : array<M3TaggedValu
 
 
 
+// C formats i_errorMessage with vsnprintf into runtime->error_message and the
+// ErrorModule/ErrorRuntime macros pass __FILE__/__LINE__; callers here pass
+// an already interpolated string and "", 0 for file and line.
 def m3Error(i_result : M3Result; var i_runtime : IM3Runtime; var i_module : IM3Module; var i_function : IM3Function;
             i_file : string; i_lineNum : u32; i_errorMessage : string) : M3Result {
     if (d_m3VerboseErrorMessages && i_runtime != null) {
@@ -1147,6 +1160,8 @@ def m3_ResetErrorInfo(var i_runtime : IM3Runtime) {
 }
 
 
+// Deviation: C dereferences i_runtime->memory.mallocated unconditionally; the
+// port treats a runtime without linear memory as size 0, no pointer.
 def m3_GetMemory(var i_runtime : IM3Runtime; var o_memorySizeInBytes : u32&; i_memoryIndex : u32) : u8? {
     d_m3Assert(i_memoryIndex == 0)
     var memory : u8? = null
@@ -1163,12 +1178,7 @@ def m3_GetMemory(var i_runtime : IM3Runtime; var o_memorySizeInBytes : u32&; i_m
 }
 
 
-def m3_GetMemory(var i_runtime : IM3Runtime; i_memoryIndex : u32) : u8? {
-    var ignored = 0u
-    return m3_GetMemory(i_runtime, ignored, i_memoryIndex)
-}
-
-
+// Deviation: same null guard as m3_GetMemory; C reads mallocated->length directly.
 def m3_GetMemorySize(var i_runtime : IM3Runtime) : u32 {
     if (i_runtime == null || i_runtime.memory.mallocated == null) {
         return 0u
