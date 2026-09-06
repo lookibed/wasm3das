@@ -469,14 +469,21 @@ def ParseSection_Data(var io_module : IM3Module; i_bytes : bytes_t; i_end : cbyt
 def ParseSection_Memory(var io_module : IM3Module; i_bytes : bytes_t; i_end : cbytes_t) : M3Result {
     var bytes : bytes_t = unsafe(reinterpret<bytes_t>(i_bytes))
     var numMemories : u32 = 0
-    var result : M3Result = ReadLEB_u32(numMemories, bytes, i_end)
+    // `let`, not `var`: since the ParseType_Memory result is discarded (see
+    // below), nothing reassigns this local.
+    let result : M3Result = ReadLEB_u32(numMemories, bytes, i_end)
     if (result != m3Err_none) { return result }
 
     if (numMemories > 1) {
         return m3Err_tooManyMemorySections
     }
 
-    result = ParseType_Memory(io_module.memoryInfo, bytes, i_end)
+    // C quirk, preserved: this is the one ParseType_Memory call site without
+    // the `_` error-propagating macro, so a truncated memory type leaves
+    // io_module->memoryInfo half-written and the section still succeeds.
+    // Assigning the result to `result` (which _catch would return) would make
+    // the port stricter than C.
+    ParseType_Memory(io_module.memoryInfo, bytes, i_end)
     return result
 }
 

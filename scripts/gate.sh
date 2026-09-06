@@ -28,13 +28,13 @@ stage_compile() {
     echo "gate: compiler diagnostics"
     while IFS= read -r file; do
         "$DASLANG" -compile-only "$file" >/dev/null
-    done < <(find source tests -type f -name '*.das' -print | sort)
+    done < <(find source tests app -type f -name '*.das' -print | sort)
 }
 
 stage_lint() {
     local profile="$1"
     echo "gate: lint --$profile"
-    "$DASLANG" "$DASLANG_ROOT/utils/lint/main.das" -- --"$profile" source tests
+    "$DASLANG" "$DASLANG_ROOT/utils/lint/main.das" -- --"$profile" source tests app
 }
 
 stage_test() {

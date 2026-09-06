@@ -1,0 +1,39 @@
+#!/usr/bin/env bash
+# wasm3 command line front end for the Daslang port: the drop-in replacement
+# for the C `wasm3` binary that wasm3c/test/run-spec-test.py drives with
+# `--exec "<repo>/scripts/wasm3 --repl"`.
+#
+# Environment:
+#   DASLANG   pinned compiler binary (default: tmp/daslang-toolchain/bin/daslang)
+set -euo pipefail
+
+repo_root="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")/.." && pwd)"
+
+DASLANG="${DASLANG:-$repo_root/tmp/daslang-toolchain/bin/daslang}"
+
+if [[ ! -x "$DASLANG" ]]; then
+    echo "wasm3: missing pinned Daslang compiler at $DASLANG" >&2
+    exit 1
+fi
+
+# The port has no M3_MUSTTAIL, so one wasm frame costs several interpreter
+# frames on the native C++ stack as well as on the Daslang context stack
+# (app/wasm3.das `options stack`). With the default 8 MiB thread stack an
+# unbounded wasm recursion kills the process with SIGSEGV before op_Entry can
+# report `[trap] stack overflow`, which the spec suite's assert_exhaustion
+# cases expect. Raise the limit when the shell is allowed to.
+ulimit -s 262144 2>/dev/null || true
+
+# The daslang CLI consumes --help and -h anywhere in argv, including after the
+# `--` separator, and prints its own usage instead of running the script. They
+# are forwarded under the alias --wasm3-help, which app/wasm3.das accepts as a
+# spelling of main.c's --help.
+args=()
+for arg in "$@"; do
+    case "$arg" in
+        --help|-h) args+=("--wasm3-help") ;;
+        *)         args+=("$arg") ;;
+    esac
+done
+
+exec "$DASLANG" "$repo_root/app/wasm3.das" -- ${args[@]+"${args[@]}"}

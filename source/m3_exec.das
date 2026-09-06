@@ -110,7 +110,11 @@ def c_memset(dst : u8?; value : u8; size : u32) {
 }
 
 // ============================================================================
-// libm replacements (C copysignf/copysign/nearbyintf/nearbyint)
+// libm replacements (C copysignf/copysign)
+//
+// fabsf/fabs/floorf/ceilf/rintf/rint live in m3_math_utils.das next to the
+// other libm-shaped helpers; see the comment there for why the `math` module
+// cannot be used for them.
 // ============================================================================
 
 
@@ -128,23 +132,6 @@ def copysign_f64(a : f64; b : f64) : f64 {
         let bbits = reinterpret<u64>(b)
         return reinterpret<f64>((abits & 0x7ffffffffffffffful) | (bbits & 0x8000000000000000ul))
     }
-}
-
-// C nearbyintf/nearbyint under the default FE_TONEAREST mode: round half to even.
-def nearest_f32(x : f32) : f32 {
-    let r = floor(f64(x))
-    let diff = f64(x) - r
-    if (diff < 0.5lf) { return x }
-    if (diff > 0.5lf) { return f32(r + 1.0lf) }
-    return f32(r + (fmod(r, 2.0lf) == 0.0lf ? 0.0lf : 1.0lf))
-}
-
-def nearest_f64(x : f64) : f64 {
-    let r = floor(x)
-    let diff = x - r
-    if (diff < 0.5lf) { return x }
-    if (diff > 0.5lf) { return r + 1.0lf }
-    return r + (fmod(r, 2.0lf) == 0.0lf ? 0.0lf : 1.0lf)
 }
 
 def bool_reg(value : bool) : m3reg_t {
@@ -1743,35 +1730,35 @@ def public op_f64_CopySign_ss(var _pc : pc_t; var _sp : m3stack_t; var _mem : M3
 }
 
 def public op_f32_Abs_r(var _pc : pc_t; var _sp : m3stack_t; var _mem : M3MemoryHeader?; var _r0 : m3reg_t; var _fp0 : f64) : M3Result {
-    _fp0 = f64((math::abs(f32(_fp0))))
+    _fp0 = f64(fabsf(f32(_fp0)))
     return nextOpDirect(_pc, _sp, _mem, _r0, _fp0)
 }
 
 def public op_f32_Abs_s(var _pc : pc_t; var _sp : m3stack_t; var _mem : M3MemoryHeader?; var _r0 : m3reg_t; var _fp0 : f64) : M3Result {
     let operand = slot_f32(_pc, _sp)
-    _fp0 = f64((math::abs(operand)))
+    _fp0 = f64(fabsf(operand))
     return nextOpDirect(_pc, _sp, _mem, _r0, _fp0)
 }
 
 def public op_f32_Ceil_r(var _pc : pc_t; var _sp : m3stack_t; var _mem : M3MemoryHeader?; var _r0 : m3reg_t; var _fp0 : f64) : M3Result {
-    _fp0 = f64((math::ceil(f32(_fp0))))
+    _fp0 = f64(ceilf(f32(_fp0)))
     return nextOpDirect(_pc, _sp, _mem, _r0, _fp0)
 }
 
 def public op_f32_Ceil_s(var _pc : pc_t; var _sp : m3stack_t; var _mem : M3MemoryHeader?; var _r0 : m3reg_t; var _fp0 : f64) : M3Result {
     let operand = slot_f32(_pc, _sp)
-    _fp0 = f64((math::ceil(operand)))
+    _fp0 = f64(ceilf(operand))
     return nextOpDirect(_pc, _sp, _mem, _r0, _fp0)
 }
 
 def public op_f32_Floor_r(var _pc : pc_t; var _sp : m3stack_t; var _mem : M3MemoryHeader?; var _r0 : m3reg_t; var _fp0 : f64) : M3Result {
-    _fp0 = f64((math::floor(f32(_fp0))))
+    _fp0 = f64(floorf(f32(_fp0)))
     return nextOpDirect(_pc, _sp, _mem, _r0, _fp0)
 }
 
 def public op_f32_Floor_s(var _pc : pc_t; var _sp : m3stack_t; var _mem : M3MemoryHeader?; var _r0 : m3reg_t; var _fp0 : f64) : M3Result {
     let operand = slot_f32(_pc, _sp)
-    _fp0 = f64((math::floor(operand)))
+    _fp0 = f64(floorf(operand))
     return nextOpDirect(_pc, _sp, _mem, _r0, _fp0)
 }
 
@@ -1798,13 +1785,13 @@ def public op_f32_Sqrt_s(var _pc : pc_t; var _sp : m3stack_t; var _mem : M3Memor
 }
 
 def public op_f32_Nearest_r(var _pc : pc_t; var _sp : m3stack_t; var _mem : M3MemoryHeader?; var _r0 : m3reg_t; var _fp0 : f64) : M3Result {
-    _fp0 = f64(nearest_f32(f32(_fp0)))
+    _fp0 = f64(rintf(f32(_fp0)))
     return nextOpDirect(_pc, _sp, _mem, _r0, _fp0)
 }
 
 def public op_f32_Nearest_s(var _pc : pc_t; var _sp : m3stack_t; var _mem : M3MemoryHeader?; var _r0 : m3reg_t; var _fp0 : f64) : M3Result {
     let operand = slot_f32(_pc, _sp)
-    _fp0 = f64(nearest_f32(operand))
+    _fp0 = f64(rintf(operand))
     return nextOpDirect(_pc, _sp, _mem, _r0, _fp0)
 }
 
@@ -1820,13 +1807,13 @@ def public op_f32_Negate_s(var _pc : pc_t; var _sp : m3stack_t; var _mem : M3Mem
 }
 
 def public op_f64_Abs_r(var _pc : pc_t; var _sp : m3stack_t; var _mem : M3MemoryHeader?; var _r0 : m3reg_t; var _fp0 : f64) : M3Result {
-    _fp0 = (math::abs(_fp0))
+    _fp0 = fabs(_fp0)
     return nextOpDirect(_pc, _sp, _mem, _r0, _fp0)
 }
 
 def public op_f64_Abs_s(var _pc : pc_t; var _sp : m3stack_t; var _mem : M3MemoryHeader?; var _r0 : m3reg_t; var _fp0 : f64) : M3Result {
     let operand = slot_f64(_pc, _sp)
-    _fp0 = (math::abs(operand))
+    _fp0 = fabs(operand)
     return nextOpDirect(_pc, _sp, _mem, _r0, _fp0)
 }
 
@@ -1881,7 +1868,7 @@ def public op_f64_Nearest_r(var _pc : pc_t; var _sp : m3stack_t; var _mem : M3Me
 
 def public op_f64_Nearest_s(var _pc : pc_t; var _sp : m3stack_t; var _mem : M3MemoryHeader?; var _r0 : m3reg_t; var _fp0 : f64) : M3Result {
     let operand = slot_f64(_pc, _sp)
-    _fp0 = nearest_f64(operand)
+    _fp0 = rint(operand)
     return nextOpDirect(_pc, _sp, _mem, _r0, _fp0)
 }
 

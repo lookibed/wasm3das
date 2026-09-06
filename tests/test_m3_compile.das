@@ -174,6 +174,29 @@ def test_compile_negative_i32_constants_keep_the_c_slot_behaviour(t : T?) {
 }
 
 
+// C CopyStackTopToSlot narrows the i16 GetStackTopIndex result to u16:
+// `CopyStackIndexToSlot (o, i_destSlot, (u16) stackTop)`. On a polymorphic
+// stack the top index is -1 and the cast makes it 65535, so every index helper
+// reads it as out of range. Both bodies below reach that path; without the
+// narrowing the port indexed typeStack[-1] and aborted the compilation.
+[test]
+def test_compile_stack_top_after_unreachable(t : T?) {
+    var fx = load_fib32(t)
+    if (fx.fib == null) return
+
+    // unreachable; local.set 0; local.get 0; end -> Compile_SetLocal takes the
+    // CopyStackTopToSlot branch (the local is not referenced in this block).
+    var setLocal <- [u8(0x00), u8(0x00), u8(0x21), u8(0x00), u8(0x20), u8(0x00), u8(0x0b)]
+    t |> equal(compile_body(fx, setLocal), m3Err_none, "local.set after unreachable")
+
+    // unreachable; call 0; end -> the argument copy in CompileCallArgsAndReturn.
+    var call <- [u8(0x00), u8(0x00), u8(0x10), u8(0x00), u8(0x0b)]
+    t |> equal(compile_body(fx, call), m3Err_none, "call after unreachable")
+
+    free_fixture(fx)
+}
+
+
 [test]
 def test_compile_rejects_reserved_and_unknown_opcodes(t : T?) {
     var fx = load_fib32(t)

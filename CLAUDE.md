@@ -33,11 +33,14 @@ harness preference for shell-based editing.
 
 `PORTING_MANIFEST.md` is the source of truth. In short: configuration,
 definitions, math utilities, core readers, code pages, function metadata,
-signature parsing, the shared type hub and the module layer are accepted; the
-parser is in revision; environment/runtime, compiler, executor and the
-exception/ABI helpers exist as drafts that compile and pass the gate but are
-not reviewed. `m3_info`, the public `wasm3.h` API and end-to-end `.wasm`
-execution are not started. `wasm3c/` is the reference C source tree.
+the shared type hub and the module layer are accepted; parser, binding,
+environment/runtime, compiler, executor, the spectest host module and the
+REPL app are in revision (reviewed against C, awaiting code-owner sign-off).
+End-to-end execution works: `scripts/wasm3` runs every `wasm3c/test/lang`
+fixture, and the original `wasm3c/test/run-spec-test.py` passes its whole
+default list against the port (`notes/spec_test_status.md`). `m3_info`, the
+libc half of `m3_api_libc.c` and the full public `wasm3.h` API are not
+started. `wasm3c/` is the reference C source tree.
 
 ## Layout
 
@@ -45,6 +48,7 @@ execution are not started. `wasm3c/` is the reference C source tree.
 |---|---|
 | `source/` | Daslang port |
 | `tests/` | Component tests (dastest) |
+| `app/` | Port of `platforms/app/main.c` (REPL and `--func` runner), run through `scripts/wasm3` |
 | `wasm3c/` | Reference Wasm3 C sources |
 | `docs/` | Design decisions that outlive a single session |
 | `notes/` | Dated working notes and handoffs |
