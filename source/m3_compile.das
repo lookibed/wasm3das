@@ -161,7 +161,8 @@ def EnsureCodePageNumLines(var o : IM3Compilation; var i_numLines : u32) : M3Res
 
 def EmitOp(var o : IM3Compilation; i_operation : IM3Operation) : M3Result {
     var result : M3Result = m3Err_none
-    d_m3Assert(i_operation != null || IsStackPolymorphic(o))
+    // C: d_m3Assert (i_operation or IsStackPolymorphic (o)); NULL is the c_opNull sentinel here.
+    d_m3Assert(!IsNoOp(i_operation) || IsStackPolymorphic(o))
 
     // page may be null when compile-walking bytecode without emitting.
     if (o.page != null) {
@@ -672,7 +673,9 @@ def PushConst(var o : IM3Compilation; i_word : u64; i_type : int) : M3Result {
                 } else {
                     var constant : u32
                     unsafe { memcpy(unsafe(addr(constant)), unsafe(addr(o.constants[i])), (typeinfo sizeof(type<u32>))) }
-                    matches = constant == u32(i_word)
+                    // C: matches = (constant == i_word) compares the zero-extended u32
+                    // with the full u64, so a sign-extended negative i32 never matches.
+                    matches = u64(constant) == i_word
                 }
                 if (matches) {
                     matchFound = true
@@ -740,8 +743,7 @@ def UnwindBlockStack(var o : IM3Compilation) : M3Result {
         if (result != m3Err_none) { return result }
         popCount++
     }
-    if (popCount != 0u) {
-            }
+    // compiled out under the active configuration: m3log (compile, "unwound stack top: %d", popCount)
     return m3Err_none
 }
 
@@ -998,8 +1000,11 @@ def Compile_Const_i32(var o : IM3Compilation; i_opcode : m3opcode_t) : M3Result 
     var value : i32
     var result = ReadLEB_i32(value, o.wasm, o.wasmEnd)
     if (result != m3Err_none) { return result }
-    result = PushConst(o, u64(u32(value)), int(u8(M3ValueType.c_m3Type_i32)))
-        return result
+    // C passes the i32 to the u64 parameter of PushConst: integer promotion
+    // sign-extends it, which is what makes the constant-slot search miss
+    // negative i32 constants (see PushConst). Kept as in C.
+    result = PushConst(o, u64(i64(value)), int(u8(M3ValueType.c_m3Type_i32)))
+    return result
 }
 
 
@@ -1039,7 +1044,8 @@ def Compile_ExtendedOpcode(var o : IM3Compilation; var i_opcode : m3opcode_t) : 
     let opInfo = GetOpInfo(i_opcode)
     if (opInfo == null) { return m3Err_unknownOpcode }
     let compiler = opInfo.compiler
-    if (compiler == null) { return m3Err_noCompiler }
+    // C: _throwif (m3Err_noCompiler, not compiler); NULL is the c_noCompiler sentinel here.
+    if (IsNoCompiler(compiler)) { return m3Err_noCompiler }
     result = compiler(o, i_opcode)
     if (result == m3Err_none) { o.previousOpcode = i_opcode }
     return result
@@ -1388,7 +1394,7 @@ def Compile_CallIndirect(var o : IM3Compilation; i_opcode : m3opcode_t) : M3Resu
     var tableIndex : u32
     result = ReadLEB_u32(tableIndex, o.wasm, o.wasmEnd)
     if (result != m3Err_none) { return result }
-    if (typeIndex >= o._module.numFuncTypes) { return "function call _type index out of range" }
+    if (typeIndex >= o._module.numFuncTypes) { return "function call type index out of range" }
 
     if (IsStackTopInRegister(o)) {
         result = PreserveRegisterIfOccupied(o, int(u8(M3ValueType.c_m3Type_i32)))
@@ -1472,7 +1478,7 @@ def ReadBlockType(var o : IM3Compilation; var o_blockType : IM3FuncType&) : M3Re
         if (result != m3Err_none) { return result }
                 o_blockType = o._module.environment.retFuncTypes[int(valueType)]
     } else {
-        if (u64(_type) >= u64(o._module.numFuncTypes)) { return "func _type out of bounds" }
+        if (u64(_type) >= u64(o._module.numFuncTypes)) { return "func type out of bounds" }
         unsafe { o_blockType = o._module.funcTypes[int(_type)] }
             }
     return m3Err_none
@@ -1714,7 +1720,8 @@ def Compile_Operator(var o : IM3Compilation; i_opcode : m3opcode_t) : M3Result {
         }
     }
 
-    if (op != null) {
+    // C: if (op) ... ; an absent table entry is the c_opNull sentinel here.
+    if (!IsNoOp(op)) {
         result = EmitOp(o, op)
         if (result != m3Err_none) { return result }
         result = EmitSlotNumOfStackTopAndPop(o)
@@ -1730,7 +1737,8 @@ def Compile_Operator(var o : IM3Compilation; i_opcode : m3opcode_t) : M3Result {
         return m3Err_none
     }
 
-    return ErrorCompile("no operation found for opcode {i_opcode}", o, "no operation found for opcode")
+    // C (non-DEBUG): ErrorCompile ("no operation found for opcode", o, "%x", i_opcode)
+    return ErrorCompile("no operation found for opcode", o, "{int(i_opcode):x}")
 }
 
 
@@ -2018,51 +2026,57 @@ def init_compile_operation_tables() {
     M3OP("i64.extend8_s", 0, i_64, @@op_i64_Extend8_s_r, @@op_i64_Extend8_s_s, c_opNull, c_opNull, c_noCompiler), // 0xc2
     M3OP("i64.extend16_s", 0, i_64, @@op_i64_Extend16_s_r, @@op_i64_Extend16_s_s, c_opNull, c_opNull, c_noCompiler), // 0xc3
     M3OP("i64.extend32_s", 0, i_64, @@op_i64_Extend32_s_r, @@op_i64_Extend32_s_s, c_opNull, c_opNull, c_noCompiler), // 0xc4
-    M3OP("Compile", 0, none, @@op_Compile, c_opNull, c_opNull, c_opNull, c_noCompiler), // 0xc5
-    M3OP("Entry", 0, none, @@op_Entry, c_opNull, c_opNull, c_opNull, c_noCompiler), // 0xc6
-    M3OP("End", 0, none, @@op_End, c_opNull, c_opNull, c_opNull, c_noCompiler), // 0xc7
-    M3OP("Unsupported", 0, none, @@op_Unsupported, c_opNull, c_opNull, c_opNull, c_noCompiler), // 0xc8
-    M3OP("CallRawFunction", 0, none, @@op_CallRawFunction, c_opNull, c_opNull, c_opNull, c_noCompiler), // 0xc9
-    M3OP("GetGlobal_s32", 0, none, @@op_GetGlobal_s32, c_opNull, c_opNull, c_opNull, c_noCompiler), // 0xca
-    M3OP("GetGlobal_s64", 0, none, @@op_GetGlobal_s64, c_opNull, c_opNull, c_opNull, c_noCompiler), // 0xcb
-    M3OP("ContinueLoop", 0, none, @@op_ContinueLoop, c_opNull, c_opNull, c_opNull, c_noCompiler), // 0xcc
-    M3OP("ContinueLoopIf", 0, none, @@op_ContinueLoopIf, c_opNull, c_opNull, c_opNull, c_noCompiler), // 0xcd
-    M3OP("CopySlot_32", 0, none, @@op_CopySlot_32, c_opNull, c_opNull, c_opNull, c_noCompiler), // 0xce
-    M3OP("PreserveCopySlot_32", 0, none, @@op_PreserveCopySlot_32, c_opNull, c_opNull, c_opNull, c_noCompiler), // 0xcf
-    M3OP("If_s", 0, none, @@op_If_s, c_opNull, c_opNull, c_opNull, c_noCompiler), // 0xd0
-    M3OP("BranchIfPrologue_s", 0, none, @@op_BranchIfPrologue_s, c_opNull, c_opNull, c_opNull, c_noCompiler), // 0xd1
-    M3OP("CopySlot_64", 0, none, @@op_CopySlot_64, c_opNull, c_opNull, c_opNull, c_noCompiler), // 0xd2
-    M3OP("PreserveCopySlot_64", 0, none, @@op_PreserveCopySlot_64, c_opNull, c_opNull, c_opNull, c_noCompiler), // 0xd3
-    M3OP("If_r", 0, none, @@op_If_r, c_opNull, c_opNull, c_opNull, c_noCompiler), // 0xd4
-    M3OP("BranchIfPrologue_r", 0, none, @@op_BranchIfPrologue_r, c_opNull, c_opNull, c_opNull, c_noCompiler), // 0xd5
-    M3OP("Select_i32_rss", 0, none, @@op_Select_i32_rss, c_opNull, c_opNull, c_opNull, c_noCompiler), // 0xd6
-    M3OP("Select_i32_srs", 0, none, @@op_Select_i32_srs, c_opNull, c_opNull, c_opNull, c_noCompiler), // 0xd7
-    M3OP("Select_i32_ssr", 0, none, @@op_Select_i32_ssr, c_opNull, c_opNull, c_opNull, c_noCompiler), // 0xd8
-    M3OP("Select_i32_sss", 0, none, @@op_Select_i32_sss, c_opNull, c_opNull, c_opNull, c_noCompiler), // 0xd9
-    M3OP("Select_i64_rss", 0, none, @@op_Select_i64_rss, c_opNull, c_opNull, c_opNull, c_noCompiler), // 0xda
-    M3OP("Select_i64_srs", 0, none, @@op_Select_i64_srs, c_opNull, c_opNull, c_opNull, c_noCompiler), // 0xdb
-    M3OP("Select_i64_ssr", 0, none, @@op_Select_i64_ssr, c_opNull, c_opNull, c_opNull, c_noCompiler), // 0xdc
-    M3OP("Select_i64_sss", 0, none, @@op_Select_i64_sss, c_opNull, c_opNull, c_opNull, c_noCompiler), // 0xdd
-    M3OP("Select_f32_sss", 0, none, @@op_Select_f32_sss, c_opNull, c_opNull, c_opNull, c_noCompiler), // 0xde
-    M3OP("Select_f32_srs", 0, none, @@op_Select_f32_srs, c_opNull, c_opNull, c_opNull, c_noCompiler), // 0xdf
-    M3OP("Select_f32_ssr", 0, none, @@op_Select_f32_ssr, c_opNull, c_opNull, c_opNull, c_noCompiler), // 0xe0
-    M3OP("Select_f32_rss", 0, none, @@op_Select_f32_rss, c_opNull, c_opNull, c_opNull, c_noCompiler), // 0xe1
-    M3OP("Select_f32_rrs", 0, none, @@op_Select_f32_rrs, c_opNull, c_opNull, c_opNull, c_noCompiler), // 0xe2
-    M3OP("Select_f32_rsr", 0, none, @@op_Select_f32_rsr, c_opNull, c_opNull, c_opNull, c_noCompiler), // 0xe3
-    M3OP("Select_f64_sss", 0, none, @@op_Select_f64_sss, c_opNull, c_opNull, c_opNull, c_noCompiler), // 0xe4
-    M3OP("Select_f64_srs", 0, none, @@op_Select_f64_srs, c_opNull, c_opNull, c_opNull, c_noCompiler), // 0xe5
-    M3OP("Select_f64_ssr", 0, none, @@op_Select_f64_ssr, c_opNull, c_opNull, c_opNull, c_noCompiler), // 0xe6
-    M3OP("Select_f64_rss", 0, none, @@op_Select_f64_rss, c_opNull, c_opNull, c_opNull, c_noCompiler), // 0xe7
-    M3OP("Select_f64_rrs", 0, none, @@op_Select_f64_rrs, c_opNull, c_opNull, c_opNull, c_noCompiler), // 0xe8
-    M3OP("Select_f64_rsr", 0, none, @@op_Select_f64_rsr, c_opNull, c_opNull, c_opNull, c_noCompiler), // 0xe9
-    M3OP("MemFill", 0, none, @@op_MemFill, c_opNull, c_opNull, c_opNull, c_noCompiler), // 0xea
-    M3OP("MemCopy", 0, none, @@op_MemCopy, c_opNull, c_opNull, c_opNull, c_noCompiler), // 0xeb
-    M3OP("SetGlobal", 0, none, @@op_SetGlobal_i32, @@op_SetGlobal_i64, @@op_SetGlobal_f32, @@op_SetGlobal_f64, c_noCompiler), // 0xec
-    M3OP("SetGlobal_s32", 0, none, @@op_SetGlobal_s32, c_opNull, c_opNull, c_opNull, c_noCompiler), // 0xed
-    M3OP("SetGlobal_s64", 0, none, @@op_SetGlobal_s64, c_opNull, c_opNull, c_opNull, c_noCompiler), // 0xee
-    M3OP("SetRegister", 0, none, @@op_SetRegister_i32, @@op_SetRegister_i64, @@op_SetRegister_f32, @@op_SetRegister_f64, c_noCompiler), // 0xef
-    M3OP("SetSlot", 0, none, @@op_SetSlot_i32, @@op_SetSlot_i64, @@op_SetSlot_f32, @@op_SetSlot_f64, c_noCompiler), // 0xf0
-    M3OP("PreserveSetSlot", 0, none, @@op_PreserveSetSlot_i32, @@op_PreserveSetSlot_i64, @@op_PreserveSetSlot_f32, @@op_PreserveSetSlot_f64, c_noCompiler), // 0xf1
+    // C: the d_m3DebugOp / d_m3DebugTypedOp rows that follow 0xc4 exist only
+    // under `#ifdef DEBUG` for code-page logging ("the order doesn't matter").
+    // In the release build the designated initialiser for 0xfc leaves
+    // 0xc5..0xfb zero-filled: no operations, no compiler. An earlier port
+    // placed those DEBUG rows at real opcode indices, so byte 0xc5 compiled
+    // to op_Compile; every wasm opcode in this range is invalid.
+    M3OP_RESERVED(), // 0xc5
+    M3OP_RESERVED(), // 0xc6
+    M3OP_RESERVED(), // 0xc7
+    M3OP_RESERVED(), // 0xc8
+    M3OP_RESERVED(), // 0xc9
+    M3OP_RESERVED(), // 0xca
+    M3OP_RESERVED(), // 0xcb
+    M3OP_RESERVED(), // 0xcc
+    M3OP_RESERVED(), // 0xcd
+    M3OP_RESERVED(), // 0xce
+    M3OP_RESERVED(), // 0xcf
+    M3OP_RESERVED(), // 0xd0
+    M3OP_RESERVED(), // 0xd1
+    M3OP_RESERVED(), // 0xd2
+    M3OP_RESERVED(), // 0xd3
+    M3OP_RESERVED(), // 0xd4
+    M3OP_RESERVED(), // 0xd5
+    M3OP_RESERVED(), // 0xd6
+    M3OP_RESERVED(), // 0xd7
+    M3OP_RESERVED(), // 0xd8
+    M3OP_RESERVED(), // 0xd9
+    M3OP_RESERVED(), // 0xda
+    M3OP_RESERVED(), // 0xdb
+    M3OP_RESERVED(), // 0xdc
+    M3OP_RESERVED(), // 0xdd
+    M3OP_RESERVED(), // 0xde
+    M3OP_RESERVED(), // 0xdf
+    M3OP_RESERVED(), // 0xe0
+    M3OP_RESERVED(), // 0xe1
+    M3OP_RESERVED(), // 0xe2
+    M3OP_RESERVED(), // 0xe3
+    M3OP_RESERVED(), // 0xe4
+    M3OP_RESERVED(), // 0xe5
+    M3OP_RESERVED(), // 0xe6
+    M3OP_RESERVED(), // 0xe7
+    M3OP_RESERVED(), // 0xe8
+    M3OP_RESERVED(), // 0xe9
+    M3OP_RESERVED(), // 0xea
+    M3OP_RESERVED(), // 0xeb
+    M3OP_RESERVED(), // 0xec
+    M3OP_RESERVED(), // 0xed
+    M3OP_RESERVED(), // 0xee
+    M3OP_RESERVED(), // 0xef
+    M3OP_RESERVED(), // 0xf0
+    M3OP_RESERVED(), // 0xf1
     M3OP_RESERVED(), // 0xf2
     M3OP_RESERVED(), // 0xf3
     M3OP_RESERVED(), // 0xf4
@@ -2132,7 +2146,7 @@ def CompileBlockStatements(var o : IM3Compilation) : M3Result {
 
         let opinfo = GetOpInfo(opcode)
         if (opinfo == null) {
-            return ErrorCompile(m3Err_unknownOpcode, o, "opcode '{opcode}' not available")
+            return ErrorCompile(m3Err_unknownOpcode, o, "opcode '{int(opcode):x}' not available")
         }
         if (!IsNoCompiler(opinfo.compiler)) {
             result = opinfo.compiler(o, opcode)
