@@ -1,0 +1,165 @@
+name: Release bundles
+
+# Builds self-contained wasm3das bundles (pinned daslang interpreter + the
+# port) for Linux x86_64, Linux arm64 and Windows x64, smoke-tests each one,
+# and attaches them to the GitHub release of the given tag.
+#
+# Triggers:
+#   * push of a tag v*: builds the tagged commit and uploads to its release
+#     when the release exists; otherwise the bundles stay as workflow artifacts.
+#   * workflow_dispatch with `tag`: builds the commit the workflow runs on
+#     (`gh workflow run release.yml --ref main -f tag=v0.1.0`), names the
+#     bundles after `tag` and attaches them to that release. Use it when the
+#     release was created before this workflow existed.
+
+on:
+  push:
+    tags: ['v*']
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: Release tag to build and attach bundles to (for example v0.1.0)
+        required: true
+        type: string
+
+permissions:
+  contents: write
+
+defaults:
+  run:
+    shell: bash
+
+env:
+  DASLANG_COMMIT: 1524b3bf62e7decbfe530dc5f2e794b296fa1e68
+  RELEASE_TAG: ${{ github.event_name == 'workflow_dispatch' && inputs.tag || github.ref_name }}
+
+jobs:
+  bundle:
+    name: ${{ matrix.name }}
+    runs-on: ${{ matrix.runner }}
+    timeout-minutes: 90
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - name: linux-x86_64
+            runner: ubuntu-24.04
+            ext: tar.gz
+          - name: linux-arm64
+            runner: ubuntu-24.04-arm
+            ext: tar.gz
+          - name: windows-x64
+            runner: windows-2022
+            ext: zip
+
+    steps:
+      - name: Check out wasm3das
+        uses: actions/checkout@v4
+
+      - name: Install CMake and Ninja
+        uses: lukka/get-cmake@latest
+
+      - name: Set up MSVC (Windows)
+        if: runner.os == 'Windows'
+        uses: ilammy/msvc-dev-cmd@v1
+        with:
+          arch: x64
+
+      - name: Check out pinned daslang
+        run: |
+          set -euo pipefail
+          git clone --filter=blob:none https://github.com/GaijinEntertainment/daScript.git daScript
+          git -C daScript checkout "$DASLANG_COMMIT"
+          git -C daScript submodule update --init --recursive --depth 1
+
+      - name: Cache daslang build
+        id: cache-daslang
+        uses: actions/cache@v4
+        with:
+          path: daScript/build
+          key: daslang-static-${{ matrix.name }}-${{ env.DASLANG_COMMIT }}-v1
+
+      - name: Build daslang (static, lean)
+        run: |
+          set -euo pipefail
+          # Only builtin modules and daslib are needed by the port: every
+          # external module is off, as in daScript's own lean tool builds.
+          MODULES_OFF="-DDAS_HV_DISABLED=ON -DDAS_LLVM_DISABLED=ON -DDAS_AUDIO_DISABLED=ON"
+          MODULES_OFF="$MODULES_OFF -DDAS_GLFW_DISABLED=ON -DDAS_PUGIXML_DISABLED=ON -DDAS_SQLITE_DISABLED=ON"
+          MODULES_OFF="$MODULES_OFF -DDAS_STBIMAGE_DISABLED=ON -DDAS_STDDLG_DISABLED=ON -DDAS_CLANG_BIND_DISABLED=ON"
+          MODULES_OFF="$MODULES_OFF -DDAS_TREE_SITTER_DISABLED=ON"
+          LEAN="-DDAS_TESTS_DISABLED=ON -DDAS_TUTORIAL_DISABLED=ON -DDAS_AOT_EXAMPLES_DISABLED=ON -DDAS_FLEX_BISON_DISABLED=ON"
+          if [[ "${{ runner.os }}" == "Linux" ]]; then
+            export CC=clang CXX=clang++
+          fi
+          cmake --no-warn-unused-cli -S daScript -B daScript/build -G Ninja \
+            -DCMAKE_BUILD_TYPE=Release $MODULES_OFF $LEAN
+          cmake --build daScript/build --target daslang_static --parallel
+
+      - name: Locate the daslang binary
+        id: bin
+        run: |
+          set -euo pipefail
+          if [[ "${{ runner.os }}" == "Windows" ]]; then
+            bin="$(ls daScript/bin/daslang_static.exe daScript/bin/Release/daslang_static.exe 2>/dev/null | head -1)"
+          else
+            bin="$(ls daScript/bin/daslang_static 2>/dev/null | head -1)"
+          fi
+          test -n "$bin"
+          echo "path=$bin" >> "$GITHUB_OUTPUT"
+          "$bin" --version || true
+
+      - name: Reserve a large native stack (Windows)
+        if: runner.os == 'Windows'
+        # The port has no M3_MUSTTAIL: deep wasm recursion costs native frames.
+        # Linux launchers raise ulimit -s; on Windows the limit is in the PE header.
+        run: editbin /STACK:268435456 "${{ steps.bin.outputs.path }}"
+
+      - name: Assemble bundle
+        run: scripts/make_release_bundle.sh daScript "${{ steps.bin.outputs.path }}" dist/wasm3das
+
+      - name: Smoke test
+        run: |
+          set -euo pipefail
+          cd dist/wasm3das
+          if [[ "${{ runner.os }}" == "Windows" ]]; then
+            out="$(./wasm3.cmd examples/fib32.wasm --func fib 25 | tr -d '\r')"
+          else
+            out="$(./wasm3 examples/fib32.wasm --func fib 25)"
+          fi
+          echo "$out"
+          test "$out" = "Result: 75025"
+          if [[ "${{ runner.os }}" != "Windows" ]]; then
+            printf ':load examples/fib64.wasm\n:invoke fib 20\n:exit\n' | ./wasm3 --repl | grep -q 'Result: 6765:i64'
+          fi
+
+      - name: Package
+        run: |
+          set -euo pipefail
+          mkdir -p artifacts
+          asset="wasm3das-${RELEASE_TAG}-${{ matrix.name }}.${{ matrix.ext }}"
+          if [[ "${{ matrix.ext }}" == "zip" ]]; then
+            (cd dist && 7z a "../artifacts/$asset" wasm3das >/dev/null)
+          else
+            tar -czf "artifacts/$asset" -C dist wasm3das
+          fi
+          (cd artifacts && sha256sum "$asset" > "$asset.sha256")
+          ls -l artifacts
+
+      - name: Upload workflow artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: wasm3das-${{ env.RELEASE_TAG }}-${{ matrix.name }}
+          path: artifacts/*
+          if-no-files-found: error
+
+      - name: Attach to the GitHub release
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          set -euo pipefail
+          if gh release view "$RELEASE_TAG" --repo "$GITHUB_REPOSITORY" >/dev/null 2>&1; then
+            gh release upload "$RELEASE_TAG" artifacts/* --repo "$GITHUB_REPOSITORY" --clobber
+          else
+            echo "no release named $RELEASE_TAG; bundles kept as workflow artifacts"
+          fi

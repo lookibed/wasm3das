@@ -70,6 +70,24 @@ $ python3 run-spec-test.py --exec "$PWD/../../../scripts/wasm3 --repl"
 
 ## Install and run
 
+### Release bundle
+
+Each [release](https://github.com/lookibed/wasm3das/releases) ships a
+self-contained bundle for Linux x86_64, Linux arm64 and Windows x64: the
+pinned Daslang interpreter, the port and the example modules. Unpack it and
+run:
+
+```sh
+tar -xzf wasm3das-v0.1.0-linux-x86_64.tar.gz
+wasm3das/wasm3 wasm3das/examples/fib32.wasm --func fib 25
+```
+
+```bat
+wasm3das\wasm3.cmd wasm3das\examples\fib32.wasm --func fib 25
+```
+
+### From source
+
 Requirements: Linux or macOS, `bash`, `git`, `cmake`, a C++17 compiler, and
 Python 3 for the spec-test driver.
 
