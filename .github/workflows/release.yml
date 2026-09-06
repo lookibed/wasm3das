@@ -100,11 +100,10 @@ jobs:
         id: bin
         run: |
           set -euo pipefail
-          if [[ "${{ runner.os }}" == "Windows" ]]; then
-            bin="$(ls daScript/bin/daslang_static.exe daScript/bin/Release/daslang_static.exe 2>/dev/null | head -1)"
-          else
-            bin="$(ls daScript/bin/daslang_static 2>/dev/null | head -1)"
-          fi
+          bin=""
+          for candidate in daScript/bin/daslang_static daScript/bin/daslang_static.exe daScript/bin/Release/daslang_static.exe; do
+            if [[ -f "$candidate" ]]; then bin="$candidate"; break; fi
+          done
           test -n "$bin"
           echo "path=$bin" >> "$GITHUB_OUTPUT"
           "$bin" --version || true
@@ -113,7 +112,8 @@ jobs:
         if: runner.os == 'Windows'
         # The port has no M3_MUSTTAIL: deep wasm recursion costs native frames.
         # Linux launchers raise ulimit -s; on Windows the limit is in the PE header.
-        run: editbin /STACK:268435456 "${{ steps.bin.outputs.path }}"
+        # Dash form: Git bash rewrites a leading `/STACK` into a Windows path.
+        run: editbin -STACK:268435456 "${{ steps.bin.outputs.path }}"
 
       - name: Assemble bundle
         run: scripts/make_release_bundle.sh daScript "${{ steps.bin.outputs.path }}" dist/wasm3das
