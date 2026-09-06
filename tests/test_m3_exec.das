@@ -234,6 +234,82 @@ def test_exec_division_traps_and_rem_s_quirk(t : T?) {
 }
 
 
+// The C d_m3UnaryOp_f rows call libm (fabsf/fabs/floorf/ceilf/rintf/rint).
+// Every body below pushes a constant, applies one float operation and returns
+// the raw bit pattern (i32.reinterpret_f32, or the sign bit of the f64 result),
+// so signed zero is visible in the i32 result of the fixture function.
+[test]
+def test_exec_float_unary_ops(t : T?) {
+    var fx = load_fib32(t)
+    if (fx.fib == null) return
+
+    // f32.const -0.0; f32.floor; i32.reinterpret_f32 -> floorf keeps -0.0.
+    let floorNegZero <- [u8(0x00), u8(0x43), u8(0x00), u8(0x00), u8(0x00), u8(0x80), u8(0x8e), u8(0xbc), u8(0x0b)]
+    var floorNegZeroWasm : array<u8>
+    if (compile_body(t, fx, floorNegZeroWasm, floorNegZero, "f32.floor(-0.0)")) {
+        expect_value(t, fx, 0, int(0x80000000u), "f32.floor(-0.0)")
+    }
+
+    // f32.const inf; f32.floor -> floorf returns the infinity unchanged.
+    let floorInf <- [u8(0x00), u8(0x43), u8(0x00), u8(0x00), u8(0x80), u8(0x7f), u8(0x8e), u8(0xbc), u8(0x0b)]
+    var floorInfWasm : array<u8>
+    if (compile_body(t, fx, floorInfWasm, floorInf, "f32.floor(inf)")) {
+        expect_value(t, fx, 0, 2139095040, "f32.floor(inf)")
+    }
+
+    // f32.const -0.5; f32.ceil -> ceilf returns -0.0, not +0.0.
+    let ceilHalf <- [u8(0x00), u8(0x43), u8(0x00), u8(0x00), u8(0x00), u8(0xbf), u8(0x8d), u8(0xbc), u8(0x0b)]
+    var ceilHalfWasm : array<u8>
+    if (compile_body(t, fx, ceilHalfWasm, ceilHalf, "f32.ceil(-0.5)")) {
+        expect_value(t, fx, 0, int(0x80000000u), "f32.ceil(-0.5)")
+    }
+
+    // f32.const 2.5; f32.nearest -> rintf rounds the half to even: 2.0.
+    let nearest25 <- [u8(0x00), u8(0x43), u8(0x00), u8(0x00), u8(0x20), u8(0x40), u8(0x90), u8(0xbc), u8(0x0b)]
+    var nearest25Wasm : array<u8>
+    if (compile_body(t, fx, nearest25Wasm, nearest25, "f32.nearest(2.5)")) {
+        expect_value(t, fx, 0, 1073741824, "f32.nearest(2.5)")
+    }
+
+    // f32.const -0.5; f32.nearest -> -0.0.
+    let nearestNegHalf <- [u8(0x00), u8(0x43), u8(0x00), u8(0x00), u8(0x00), u8(0xbf), u8(0x90), u8(0xbc), u8(0x0b)]
+    var nearestNegHalfWasm : array<u8>
+    if (compile_body(t, fx, nearestNegHalfWasm, nearestNegHalf, "f32.nearest(-0.5)")) {
+        expect_value(t, fx, 0, int(0x80000000u), "f32.nearest(-0.5)")
+    }
+
+    // f64.const -0.0; f64.abs; i64.reinterpret_f64; i64.const 63; i64.shr_u;
+    // i32.wrap_i64 -> the sign bit fabs clears.
+    let absNegZero <- [u8(0x00), u8(0x44),
+                       u8(0x00), u8(0x00), u8(0x00), u8(0x00), u8(0x00), u8(0x00), u8(0x00), u8(0x80),
+                       u8(0x99), u8(0xbd), u8(0x42), u8(0x3f), u8(0x88), u8(0xa7), u8(0x0b)]
+    var absNegZeroWasm : array<u8>
+    if (compile_body(t, fx, absNegZeroWasm, absNegZero, "f64.abs(-0.0)")) {
+        expect_value(t, fx, 0, 0, "f64.abs(-0.0) sign bit")
+    }
+
+    // f64.const 2.5; f64.nearest; i32.trunc_f64_s -> rint rounds the half to even.
+    let nearest25d <- [u8(0x00), u8(0x44),
+                       u8(0x00), u8(0x00), u8(0x00), u8(0x00), u8(0x00), u8(0x00), u8(0x04), u8(0x40),
+                       u8(0x9e), u8(0xaa), u8(0x0b)]
+    var nearest25dWasm : array<u8>
+    if (compile_body(t, fx, nearest25dWasm, nearest25d, "f64.nearest(2.5)")) {
+        expect_value(t, fx, 0, 2, "f64.nearest(2.5)")
+    }
+
+    // f64.const -0.5; f64.nearest -> -0.0: the sign bit survives.
+    let nearestNegHalfD <- [u8(0x00), u8(0x44),
+                            u8(0x00), u8(0x00), u8(0x00), u8(0x00), u8(0x00), u8(0x00), u8(0xe0), u8(0xbf),
+                            u8(0x9e), u8(0xbd), u8(0x42), u8(0x3f), u8(0x88), u8(0xa7), u8(0x0b)]
+    var nearestNegHalfDWasm : array<u8>
+    if (compile_body(t, fx, nearestNegHalfDWasm, nearestNegHalfD, "f64.nearest(-0.5)")) {
+        expect_value(t, fx, 0, 1, "f64.nearest(-0.5) sign bit")
+    }
+
+    free_fixture(fx)
+}
+
+
 [test]
 def test_exec_control_flow(t : T?) {
     var fx = load_fib32(t)

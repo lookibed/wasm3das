@@ -792,7 +792,14 @@ def CopyStackIndexToSlot(var o : IM3Compilation; i_destSlot : int; i_stackIndex 
 
 
 def CopyStackTopToSlot(var o : IM3Compilation; i_destSlot : int) : M3Result {
-    return CopyStackIndexToSlot(o, i_destSlot, GetStackTopIndex(o))
+    // C: `i16 stackTop = GetStackTopIndex (o); CopyStackIndexToSlot (o, i_destSlot, (u16) stackTop)`.
+    // On a polymorphic stack (after `unreachable`/`br`) the top index is -1 and the
+    // C cast turns it into 65535, which every index helper then reads as out of
+    // range: type c_m3Type_none, slot c_slotUnused, not in a register. Daslang ints
+    // do not wrap, so the narrowing is spelled out; without it the -1 indexes
+    // typeStack/wasmStack out of range.
+    let stackTop = GetStackTopIndex(o)
+    return CopyStackIndexToSlot(o, i_destSlot, stackTop & int(0xffff))
 }
 
 

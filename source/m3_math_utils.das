@@ -116,44 +116,147 @@ def signbit(x : f64) : bool {
 
 
 /*
-    AVR fallbacks
+    libm functions named by the C sources
 
-    В обычном Daslang эти платформенные fallback-функции вообще
-    не требуются. Они оставлены, чтобы сохранить структуру исходника.
+    C m3_math_utils.h defines `rintf`/`rint` only under `#if defined(__AVR__)`,
+    as `(float) lrint (arg)`; on every other platform, and therefore in the
+    active configuration, `m3_exec.h` calls the platform libm. The same holds
+    for `floorf`/`ceilf`/`fabsf`/`fabs`, which the C sources never define.
+
+    Daslang's `math` module is not a substitute for those functions:
+
+        math::floor(float) / math::ceil(float) / math::round(float)
+            go through an integer conversion, so floor(-0.0f) is +0.0f and
+            floor(inf) / floor(nan) / floor(FLT_MAX) are all -2147483648.0f;
+        math::abs(double)
+            is a comparison, so abs(-0.0) stays -0.0 instead of +0.0;
+        math::round
+            rounds halves away from zero, while libm rint under the default
+            FE_TONEAREST rounds halves to even.
+
+    The bodies below are the standard bit-exact formulations (musl), which is
+    what the C build links against. The double-precision `floor`/`ceil`/`trunc`
+    and the single-precision `trunc`/`sqrt`/`fmod` of the `math` module do
+    match libm and are used directly by m3_exec.das.
 */
 
-def rintf(arg : f32) : f32 {
-    var ux : u32
-
+def fabsf(x : f32) : f32 {
     unsafe {
-        ux = reinterpret<u32>(arg)
+        return reinterpret<f32>(reinterpret<u32>(x) & 0x7fffffffu)
     }
+}
 
-    ux &= 0x7FFFFFFFu
 
-    if (ux == 0u || ux > 0x5A000000u) {
+def fabs(x : f64) : f64 {
+    unsafe {
+        return reinterpret<f64>(reinterpret<u64>(x) & 0x7ffffffffffffffful)
+    }
+}
+
+
+def floorf(x : f32) : f32 {
+    unsafe {
+        var i = reinterpret<u32>(x)
+        let e = int((i >> 23u) & 0xffu) - 0x7f
+        if (e >= 23) {
+            return x
+        }
+        if (e >= 0) {
+            let m = 0x007fffffu >> uint(e)
+            if ((i & m) == 0u) {
+                return x
+            }
+            if ((i >> 31u) != 0u) {
+                i += m
+            }
+            i &= ~m
+        } elif ((i >> 31u) == 0u) {
+            i = 0u
+        } elif ((i << 1u) != 0u) {
+            i = 0xbf800000u // -1.0f
+        }
+        return reinterpret<f32>(i)
+    }
+}
+
+
+def ceilf(x : f32) : f32 {
+    unsafe {
+        var i = reinterpret<u32>(x)
+        let e = int((i >> 23u) & 0xffu) - 0x7f
+        if (e >= 23) {
+            return x
+        }
+        if (e >= 0) {
+            let m = 0x007fffffu >> uint(e)
+            if ((i & m) == 0u) {
+                return x
+            }
+            if ((i >> 31u) == 0u) {
+                i += m
+            }
+            i &= ~m
+        } elif ((i >> 31u) != 0u) {
+            i = 0x80000000u // -0.0f
+        } elif ((i << 1u) != 0u) {
+            i = 0x3f800000u // 1.0f
+        }
+        return reinterpret<f32>(i)
+    }
+}
+
+
+// 0x1p23f and 0x1p52: adding and subtracting them rounds in the current
+// (default FE_TONEAREST) mode, which is what libm rint uses.
+let private c_rintToIntF : f32 = 8388608.0f
+let private c_rintToIntD : f64 = 4503599627370496.0lf
+
+
+def rintf(arg : f32) : f32 {
+    var e : int
+    var s : bool
+    unsafe {
+        let i = reinterpret<u32>(arg)
+        e = int((i >> 23u) & 0xffu)
+        s = (i >> 31u) != 0u
+    }
+    if (e >= int(0x7f) + 23) {
         return arg
     }
-
-    return round(arg)
+    var y : f32
+    if (s) {
+        y = (arg - c_rintToIntF) + c_rintToIntF
+    } else {
+        y = (arg + c_rintToIntF) - c_rintToIntF
+    }
+    if (y == 0.0f) {
+        return s ? -0.0f : 0.0f
+    }
+    return y
 }
 
 
 def rint(arg : f64) : f64 {
-    var bits : u64
-
+    var e : int
+    var s : bool
     unsafe {
-        bits = reinterpret<u64>(arg)
+        let i = reinterpret<u64>(arg)
+        e = int((i >> 52ul) & 0x7fful)
+        s = (i >> 63ul) != 0ul
     }
-
-    let ux = u32(bits >> 32ul) & 0x7FFFFFFFu
-    let low = u32(bits & 0xFFFFFFFFul)
-
-    if ((ux == 0u && low == 0u) || ux > 0x433FFFFFu) {
+    if (e >= int(0x3ff) + 52) {
         return arg
     }
-
-    return round(arg)
+    var y : f64
+    if (s) {
+        y = (arg - c_rintToIntD) + c_rintToIntD
+    } else {
+        y = (arg + c_rintToIntD) - c_rintToIntD
+    }
+    if (y == 0.0lf) {
+        return s ? -0.0lf : 0.0lf
+    }
+    return y
 }
 
 

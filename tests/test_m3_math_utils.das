@@ -1012,6 +1012,130 @@ def test_cross_properties_64() {
 
 /*
     ------------------------------------------------------------
+    libm functions named by m3_exec.h
+    ------------------------------------------------------------
+
+    fabsf/fabs/floorf/ceilf/rintf/rint are the functions the
+    d_m3UnaryOp_f rows of C m3_exec.h call. They are compared here against
+    the C library results for the cases the daslang `math` module gets wrong:
+    signed zero, infinities, NaN, FLT_MAX and the half-way values, where
+    libm rint rounds to even and math::round rounds away from zero.
+*/
+
+
+def private bits_f32(value : f32) : u32 {
+    unsafe {
+        return reinterpret<u32>(value)
+    }
+}
+
+
+def private bits_f64(value : f64) : u64 {
+    unsafe {
+        return reinterpret<u64>(value)
+    }
+}
+
+
+def private as_f32(bits : u32) : f32 {
+    unsafe {
+        return reinterpret<f32>(bits)
+    }
+}
+
+
+def private as_f64(bits : u64) : f64 {
+    unsafe {
+        return reinterpret<f64>(bits)
+    }
+}
+
+
+[test]
+def test_fabs() { // nolint:STYLE038
+    expect_u32("fabsf(-0.0)", bits_f32(fabsf(as_f32(0x80000000u))), 0x00000000u)
+    expect_u32("fabsf(+0.0)", bits_f32(fabsf(as_f32(0x00000000u))), 0x00000000u)
+    expect_u32("fabsf(-1.5)", bits_f32(fabsf(as_f32(0xbfc00000u))), 0x3fc00000u)
+    expect_u32("fabsf(-inf)", bits_f32(fabsf(as_f32(0xff800000u))), 0x7f800000u)
+    expect_u32("fabsf(-nan)", bits_f32(fabsf(as_f32(0xffc00000u))), 0x7fc00000u)
+
+    expect_u64("fabs(-0.0)", bits_f64(fabs(as_f64(0x8000000000000000ul))), 0x0000000000000000ul)
+    expect_u64("fabs(-1.5)", bits_f64(fabs(as_f64(0xbff8000000000000ul))), 0x3ff8000000000000ul)
+    expect_u64("fabs(-inf)", bits_f64(fabs(as_f64(0xfff0000000000000ul))), 0x7ff0000000000000ul)
+}
+
+
+[test]
+def test_floorf() { // nolint:STYLE038
+    expect_u32("floorf(+0.0)", bits_f32(floorf(as_f32(0x00000000u))), 0x00000000u)
+    expect_u32("floorf(-0.0)", bits_f32(floorf(as_f32(0x80000000u))), 0x80000000u)
+    expect_u32("floorf(0.5)", bits_f32(floorf(as_f32(0x3f000000u))), 0x00000000u)
+    expect_u32("floorf(1.5)", bits_f32(floorf(as_f32(0x3fc00000u))), 0x3f800000u)
+    expect_u32("floorf(-0.5)", bits_f32(floorf(as_f32(0xbf000000u))), 0xbf800000u)
+    expect_u32("floorf(-1.5)", bits_f32(floorf(as_f32(0xbfc00000u))), 0xc0000000u)
+    expect_u32("floorf(2.0)", bits_f32(floorf(as_f32(0x40000000u))), 0x40000000u)
+    expect_u32("floorf(FLT_MAX)", bits_f32(floorf(as_f32(0x7f7fffffu))), 0x7f7fffffu)
+    expect_u32("floorf(-FLT_MAX)", bits_f32(floorf(as_f32(0xff7fffffu))), 0xff7fffffu)
+    expect_u32("floorf(inf)", bits_f32(floorf(as_f32(0x7f800000u))), 0x7f800000u)
+    expect_u32("floorf(-inf)", bits_f32(floorf(as_f32(0xff800000u))), 0xff800000u)
+    expect_u32("floorf(nan)", bits_f32(floorf(as_f32(0x7fc00000u))), 0x7fc00000u)
+}
+
+
+[test]
+def test_ceilf() { // nolint:STYLE038
+    expect_u32("ceilf(+0.0)", bits_f32(ceilf(as_f32(0x00000000u))), 0x00000000u)
+    expect_u32("ceilf(-0.0)", bits_f32(ceilf(as_f32(0x80000000u))), 0x80000000u)
+    expect_u32("ceilf(0.5)", bits_f32(ceilf(as_f32(0x3f000000u))), 0x3f800000u)
+    expect_u32("ceilf(1.5)", bits_f32(ceilf(as_f32(0x3fc00000u))), 0x40000000u)
+    // -0.5 rounds up to negative zero, not to +0.0.
+    expect_u32("ceilf(-0.5)", bits_f32(ceilf(as_f32(0xbf000000u))), 0x80000000u)
+    expect_u32("ceilf(-1.5)", bits_f32(ceilf(as_f32(0xbfc00000u))), 0xbf800000u)
+    expect_u32("ceilf(FLT_MAX)", bits_f32(ceilf(as_f32(0x7f7fffffu))), 0x7f7fffffu)
+    expect_u32("ceilf(inf)", bits_f32(ceilf(as_f32(0x7f800000u))), 0x7f800000u)
+    expect_u32("ceilf(-inf)", bits_f32(ceilf(as_f32(0xff800000u))), 0xff800000u)
+    expect_u32("ceilf(nan)", bits_f32(ceilf(as_f32(0x7fc00000u))), 0x7fc00000u)
+}
+
+
+[test]
+def test_rintf() { // nolint:STYLE038
+    // Halves round to even, unlike math::round which rounds away from zero.
+    expect_u32("rintf(0.5)", bits_f32(rintf(as_f32(0x3f000000u))), 0x00000000u)
+    expect_u32("rintf(1.5)", bits_f32(rintf(as_f32(0x3fc00000u))), 0x40000000u)
+    expect_u32("rintf(2.5)", bits_f32(rintf(as_f32(0x40200000u))), 0x40000000u)
+    expect_u32("rintf(4.5)", bits_f32(rintf(as_f32(0x40900000u))), 0x40800000u)
+    expect_u32("rintf(-0.5)", bits_f32(rintf(as_f32(0xbf000000u))), 0x80000000u)
+    expect_u32("rintf(-1.5)", bits_f32(rintf(as_f32(0xbfc00000u))), 0xc0000000u)
+    expect_u32("rintf(-2.5)", bits_f32(rintf(as_f32(0xc0200000u))), 0xc0000000u)
+    // The smallest denormal rounds to a zero of its own sign.
+    expect_u32("rintf(min denormal)", bits_f32(rintf(as_f32(0x00000001u))), 0x00000000u)
+    expect_u32("rintf(-min denormal)", bits_f32(rintf(as_f32(0x80000001u))), 0x80000000u)
+    expect_u32("rintf(-0.0)", bits_f32(rintf(as_f32(0x80000000u))), 0x80000000u)
+    expect_u32("rintf(FLT_MAX)", bits_f32(rintf(as_f32(0x7f7fffffu))), 0x7f7fffffu)
+    expect_u32("rintf(inf)", bits_f32(rintf(as_f32(0x7f800000u))), 0x7f800000u)
+    expect_u32("rintf(nan)", bits_f32(rintf(as_f32(0x7fc00000u))), 0x7fc00000u)
+}
+
+
+[test]
+def test_rint() { // nolint:STYLE038
+    expect_u64("rint(0.5)", bits_f64(rint(as_f64(0x3fe0000000000000ul))), 0x0000000000000000ul)
+    expect_u64("rint(1.5)", bits_f64(rint(as_f64(0x3ff8000000000000ul))), 0x4000000000000000ul)
+    expect_u64("rint(2.5)", bits_f64(rint(as_f64(0x4004000000000000ul))), 0x4000000000000000ul)
+    expect_u64("rint(-0.5)", bits_f64(rint(as_f64(0xbfe0000000000000ul))), 0x8000000000000000ul)
+    expect_u64("rint(-1.5)", bits_f64(rint(as_f64(0xbff8000000000000ul))), 0xc000000000000000ul)
+    expect_u64("rint(-2.5)", bits_f64(rint(as_f64(0xc004000000000000ul))), 0xc000000000000000ul)
+    expect_u64("rint(min denormal)", bits_f64(rint(as_f64(0x0000000000000001ul))), 0x0000000000000000ul)
+    expect_u64("rint(min normal)", bits_f64(rint(as_f64(0x0010000000000000ul))), 0x0000000000000000ul)
+    expect_u64("rint(-0.0)", bits_f64(rint(as_f64(0x8000000000000000ul))), 0x8000000000000000ul)
+    expect_u64("rint(inf)", bits_f64(rint(as_f64(0x7ff0000000000000ul))), 0x7ff0000000000000ul)
+    expect_u64("rint(nan)", bits_f64(rint(as_f64(0x7ff8000000000000ul))), 0x7ff8000000000000ul)
+}
+
+
+/*
+    ------------------------------------------------------------
     Main
     ------------------------------------------------------------
 */
@@ -1046,5 +1170,16 @@ def main {
     test_cross_properties_64()
 
 
-    print("test_m3_math_utils: all rotation tests passed\n")
+    /*
+        Наконец libm-функции из d_m3UnaryOp_f.
+    */
+
+    test_fabs()
+    test_floorf()
+    test_ceilf()
+    test_rintf()
+    test_rint()
+
+
+    print("test_m3_math_utils: all rotation and libm tests passed\n")
 }
