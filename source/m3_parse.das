@@ -634,8 +634,10 @@ def public m3_ParseModule(var i_environment : IM3Environment; var o_module : IM3
     var result : M3Result
 
 
+    // C: module = m3_AllocStruct (M3Module) - zeroed host allocation; released
+    // with m3_Free_Impl in m3_FreeModule (docs/memory-ownership.md).
     unsafe {
-        _module = new M3Module()
+        _module = reinterpret<IM3Module>(m3_Malloc_Impl(u64(typeinfo sizeof(type<M3Module>))))
     }
     if (_module == null) {
         o_module = null

@@ -77,7 +77,12 @@ def test_env_runtime_releases_linked_module_without_owning_environment() {
     var runtime = m3_NewRuntime(env, 64u * 1024u, null)
     expect_true("runtime allocated for linked module", runtime != null)
 
-    var linkedModule : IM3Module = new M3Module(environment = env, runtime = runtime)
+    // The runtime frees its modules with m3_Free_Impl (C: m3_Free), so the
+    // linked module must come from the host allocator, as in m3_ParseModule.
+    var linkedModule : IM3Module = unsafe(reinterpret<IM3Module>(m3_Malloc_Impl(u64(typeinfo sizeof(type<M3Module>)))))
+    expect_true("linked module allocated", linkedModule != null)
+    linkedModule.environment = env
+    linkedModule.runtime = runtime
     runtime.modules = linkedModule
 
     m3_FreeRuntime(runtime)

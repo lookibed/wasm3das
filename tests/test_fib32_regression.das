@@ -7,10 +7,10 @@ options indenting = 4
 // program root, which under dastest is this file.
 options stack = 4_194_304
 
-// No `module` declaration on purpose: under dastest a test file that names
-// its module does not run the [init] functions of the shared modules it
-// requires (probed 2026-09-05 with daslang 0.6.4 @ 1524b3bf), and the
-// compiler's operation table in m3_compile.das is filled by [init].
+// No `module` declaration, like tests/test_m3_env.das: under dastest a test
+// file that names its module does not run the [init] functions of required
+// shared modules. m3_NewEnvironment fills the compiler's operation table
+// itself since PR #11, so this is convention rather than a workaround.
 
 require dastest/testing_boost
 require daslib/fio
@@ -28,9 +28,8 @@ require ../source/m3_parse.das
     m3_FindFunction, as in C.
 
     AGENTS.md requires this lifecycle, including teardown without a crash,
-    for every runtime change. The teardown half is a separate test below so
-    that the result half keeps guarding parse/load/compile/execute while the
-    teardown SIGSEGV is open.
+    for every runtime change. Results and teardown are separate tests so a
+    teardown crash cannot take the result assertions down with it.
 */
 
 
@@ -123,29 +122,17 @@ def test_fib32_results(t : T?) {
     t |> equal(call_fib(t, fx.fib, 10), 55, "fib(10)")
     t |> equal(call_fib(t, fx.fib, 25), 75025, "fib(25)")
 
-    // The environment and runtime are intentionally not released here: the
-    // teardown path is exercised (and currently fails) in the test below,
-    // and a crash there would take this test's results down with it.
+    m3_FreeRuntime(fx.runtime)
+    m3_FreeEnvironment(fx.env)
 }
 
 
-// Open defect: m3_FreeRuntime ends in SIGSEGV after a successful fib run
-// (AGENTS.md, "Runtime recovery context"; decision and migration in
-// docs/memory-ownership.md). A crash kills the dastest worker, so the
-// teardown half stays skipped until the ownership migration lands. Flip this
-// to false to reproduce; run the file alone.
-def private teardown_defect_is_open() : bool {
-    return true
-}
-
-
+// Teardown after a successful run. Environment, runtime and module are host
+// allocations released with m3_Free_Impl, as in C; a Daslang `delete` would
+// walk their pointer fields (runtime.compilation.runtime is a cycle) and
+// overflow the stack, which is what this test used to skip.
 [test]
 def test_fib32_teardown(t : T?) {
-    if (teardown_defect_is_open()) {
-        t |> skip("teardown SIGSEGV in m3_FreeRuntime is open; see docs/memory-ownership.md")
-        return
-    }
-
     var fx = load_fib32(t)
     if (fx.fib == null) return
     t |> equal(call_fib(t, fx.fib, 10), 55, "fib(10) before teardown")

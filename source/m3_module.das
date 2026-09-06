@@ -22,13 +22,7 @@ def Module_FreeFunctions(var i_module : IM3Module) {
 
 def m3_FreeModule(var i_module : IM3Module) {
     if (i_module != null) {
-
-        // C frees this container without following its borrowed links. Detach
-        // them before releasing any owned child storage or finalizing the
-        // managed M3Module value.
-        i_module.runtime = null
-        i_module.environment = null
-        i_module.next = null
+        // compiled out under the active configuration: m3log module summary
 
         Module_FreeFunctions(i_module)
 
@@ -60,11 +54,9 @@ def m3_FreeModule(var i_module : IM3Module) {
             FreeImportInfo(memoryImport[0])
         }
 
-        // C: m3_Free(i_module) - host free of m3_AllocStruct. In this port the
-        // module object is created with Daslang `new M3Module()` by
-        // m3_ParseModule (managed struct with string fields, mirroring
-        // m3_NewRuntime), so it must be released with Daslang `delete`.
-        unsafe { delete i_module }
+        // C: m3_Free (i_module) - the module comes from m3_AllocStruct in
+        // m3_ParseModule (m3_Malloc_Impl here); the macro also nulls the local.
+        m3_Free_Impl(unsafe(reinterpret<void?>(i_module)))
         i_module = null
     }
 }

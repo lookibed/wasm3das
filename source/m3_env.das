@@ -132,9 +132,11 @@ def m3_NewEnvironment() : IM3Environment {
     // skip for required modules; the call is idempotent.
     init_compile_operation_tables()
 
+    // C: m3_AllocStruct (M3Environment) - zeroed host allocation; released
+    // with m3_Free_Impl in m3_FreeEnvironment (docs/memory-ownership.md).
     var env : IM3Environment
     unsafe {
-        env = new M3Environment()
+        env = reinterpret<IM3Environment>(m3_Malloc_Impl(u64(typeinfo sizeof(type<M3Environment>))))
     }
 
     if (env != null) {
@@ -172,29 +174,21 @@ def Environment_Release(var i_environment : IM3Environment) {
 
     while (ftype != null) {
         var next = ftype.next
-        // C: m3_Free (ftype) - host free; M3FuncType comes from AllocFuncType
-        // (m3_Malloc_Impl), so it is released with m3_Free_Impl, not `delete`.
+        // C: m3_Free (ftype)
         m3_Free_Impl(unsafe(reinterpret<void?>(ftype)))
         ftype = next
     }
 
-    // C releases the environment with raw free. Its list head and ret-type
-    // entries are aliases to the nodes just released, so detach them before
-    // the managed M3Environment value is deleted.
-    i_environment.funcTypes = null
-    for (ti in range(int(M3ValueType.c_m3Type_unknown))) {
-        i_environment.retFuncTypes[ti] = null
-    }
-
+    // compiled out under the active configuration: m3log page count
     FreeCodePages(i_environment.pagesReleased)
-    i_environment.pagesReleased = null
 }
 
 
 def m3_FreeEnvironment(var i_environment : IM3Environment) {
     if (i_environment != null) {
         Environment_Release(i_environment)
-        unsafe { delete i_environment }
+        // C: m3_Free (i_environment)
+        m3_Free_Impl(unsafe(reinterpret<void?>(i_environment)))
     }
 }
 
@@ -237,9 +231,11 @@ def Environment_AddFuncType(var i_environment : IM3Environment; var io_funcType 
 
 
 def m3_NewRuntime(var i_environment : IM3Environment; i_stackSizeInBytes : u32; i_userdata : void?) : IM3Runtime {
+    // C: m3_AllocStruct (M3Runtime) - zeroed host allocation; released with
+    // m3_Free_Impl in m3_FreeRuntime (docs/memory-ownership.md).
     var runtime : IM3Runtime
     unsafe {
-        runtime = new M3Runtime()
+        runtime = reinterpret<IM3Runtime>(m3_Malloc_Impl(u64(typeinfo sizeof(type<M3Runtime>))))
     }
 
     if (runtime != null) {
@@ -255,7 +251,8 @@ def m3_NewRuntime(var i_environment : IM3Environment; i_stackSizeInBytes : u32; 
             runtime.numStackSlots = i_stackSizeInBytes / u32(typeinfo sizeof(type<m3slot_t>))
 
         } else {
-            unsafe { delete runtime }
+            // C: m3_Free (runtime)
+            m3_Free_Impl(unsafe(reinterpret<void?>(runtime)))
             runtime = null
         }
     }
@@ -299,33 +296,26 @@ def _FreeModule(var i_module : IM3Module; i_info : void?) : void? {
 
 def Runtime_Release(var i_runtime : IM3Runtime) {
     ForEachModule(i_runtime, @@_FreeModule, null)
-    i_runtime.modules = null
     d_m3Assert(i_runtime.numActiveCodePages == 0)
 
     Environment_ReleaseCodePages(i_runtime.environment, i_runtime.pagesOpen)
-    i_runtime.pagesOpen = null
     Environment_ReleaseCodePages(i_runtime.environment, i_runtime.pagesFull)
-    i_runtime.pagesFull = null
 
-    if (i_runtime.originStack != null) {
-        m3_Free_Impl(i_runtime.originStack)
-        i_runtime.originStack = null
-        i_runtime.stack = null
-    }
-    if (i_runtime.memory.mallocated != null) {
-        m3_Free_Impl(unsafe(reinterpret<void?>(i_runtime.memory.mallocated)))
-        i_runtime.memory.mallocated = null
-    }
-
-    i_runtime.lastCalled = null
-    i_runtime.environment = null
+    // C: m3_Free (i_runtime->originStack) - the macro also nulls the field.
+    m3_Free_Impl(i_runtime.originStack)
+    i_runtime.originStack = null
+    // C: m3_Free (i_runtime->memory.mallocated)
+    m3_Free_Impl(unsafe(reinterpret<void?>(i_runtime.memory.mallocated)))
+    i_runtime.memory.mallocated = null
 }
 
 
 def m3_FreeRuntime(var i_runtime : IM3Runtime) {
     if (i_runtime != null) {
+        // compiled out under the active configuration: m3_PrintProfilerInfo
         Runtime_Release(i_runtime)
-        unsafe { delete i_runtime }
+        // C: m3_Free (i_runtime)
+        m3_Free_Impl(unsafe(reinterpret<void?>(i_runtime)))
     }
 }
 
