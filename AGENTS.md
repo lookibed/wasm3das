@@ -44,15 +44,15 @@ provenance includes mechanical rewrites; see
 commits on `origin/wip/runtime-layer`, and the fixes verified so far. The
 facts that still drive priorities:
 
-- A real `fib32.wasm` run has reached result retrieval (`fib(25) = 75025`).
-  Do not restart investigation at the parser/compiler without new evidence of
-  a regression.
-- Teardown still ends in `SIGSEGV` on the path
-  `m3_FreeRuntime -> Runtime_Release -> ForEachModule -> _FreeModule ->
-  m3_FreeModule`.
-- Priority: `real wasm correctness -> teardown correctness -> regression ->
-  cleanup`. Trampoline/tail-call architecture (the missing `M3_MUSTTAIL`) is a
-  separate future task.
+- `tests/test_fib32_regression.das` runs `fib32.wasm` through parse, load,
+  lazy compile, execution (`fib(25) = 75025`) and teardown. It is the
+  regression every runtime change must keep green.
+- The teardown `SIGSEGV` is closed: its cause was Daslang `delete` walking
+  the pointer fields of `new`-allocated runtime objects (see "Allocation and
+  pointer semantics").
+- Priority now: review of the drafts against C (`m3_env`, `m3_compile`,
+  `m3_exec`), then the remaining layers. Trampoline/tail-call architecture
+  (the missing `M3_MUSTTAIL`) is a separate future task.
 
 ## Preserve the working tree before source changes
 
@@ -276,24 +276,26 @@ cleanup.
 
 ## Allocation and pointer semantics
 
-The port currently mixes `new`/`delete` (environment, runtime, module) with
-the host allocator pair (everything else). `docs/memory-ownership.md` records
-the decision to move every C-owned object to the host allocator and the
-migration order; until that lands, never select a deallocator from an
-object's type or function name. Establish the allocation provenance of that
-exact pointer:
+Every C-owned object (`M3Environment`, `M3Runtime`, `M3Module`, function
+types, function and global arrays, code pages, stacks, linear memory) is a
+host allocation, exactly as in C: obtained with `m3_Malloc_Impl` (zeroed,
+like `m3_AllocStruct`/`m3_AllocArray`) and released with `m3_Free_Impl`.
+`new`/`delete` are not used for `M3*` structs anywhere in `source/` or
+`tests/`; the decision and its history are in `docs/memory-ownership.md`.
 
-```text
-Daslang new T()      <-> delete
-m3_Malloc_Impl(...)  <-> m3_Free_Impl(...)
-```
+The reason is not style: a Daslang `delete` on a struct pointer finalizes
+every pointer field, freeing the pointees and following cycles.
+`M3Runtime.compilation.runtime` and `M3Runtime.error.runtime` point back at
+the runtime, `M3Function._module` at the module, `M3Module.wasmStart` into
+the caller's byte buffer, so `delete` on any of these overflows the stack or
+frees foreign memory. That was the teardown `SIGSEGV`. Never reintroduce
+`new` for an `M3*` object, and never `delete` one; a borrowed pointer field
+needs no annotation because nothing walks it.
 
-Known historical mistakes occurred in both directions: using `m3_Free_Impl`
-for `new M3Module()`, and using `delete` for an `M3FuncType` returned by
-`AllocFuncType`/`m3_Malloc_Impl`. Two invariants were verified during
-recovery and must be preserved: `Module_AddFunction` reads
-`funcTypes[i_typeIndex]` as a stored pointer value, and `Environment_Release`
-frees `M3FuncType` nodes with `m3_Free_Impl`.
+Two invariants verified during recovery must be preserved:
+`Module_AddFunction` reads `funcTypes[i_typeIndex]` as a stored pointer
+value, and `Environment_Release` frees `M3FuncType` nodes with
+`m3_Free_Impl`.
 
 For C arrays, first determine whether the array stores structs or pointer
 values. Never transfer the `addr(array[i])` idiom between those cases. In
