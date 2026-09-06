@@ -19,17 +19,20 @@ like Wasm3 and is verified with Wasm3's own test suite.
   (`opam-1.1.1`) and 17526 / 17526 on the previous one (`v1.1`), with no
   crashes. Per-file numbers are in `notes/spec_test_status.md`.
 - Runs every module in `wasm3c/test/lang`.
+- Runs WASI programs (`wasi_snapshot_preview1` and `wasi_unstable`, the
+  same function set as Wasm3): Wasm3's own `run-wasi-test.py --fast` passes
+  all 7 programs (a C test suite, mandelbrot, C-Ray, two smallpt builds, the
+  mal Lisp interpreter, Brotli) with byte-exact output.
 - Links host functions into a module (`m3_LinkRawFunction`) and provides the
-  `spectest` host module.
+  `spectest` and libc (`env.*`) host modules.
 - Command line front end with the same commands and output as the C `wasm3`
   binary: `--func`, `--repl`, `--stack-size`.
 
 ## What it does not do
 
-- No WASI: modules that import `wasi_snapshot_preview1` do not run. The
-  Wasm3 WASI apps (CoreMark, Brotli, the self-hosted `wasm3.wasm`) are out of
-  scope.
-- No libc host module (`m3_LinkLibC`).
+- WASI covers what Wasm3 covers: no `fd_readdir`, `fd_filestat_get`,
+  `poll_oneoff`, sockets or `environ` contents. File access goes through the
+  preopened directory `.` (the working directory), as in Wasm3.
 - No imported memories, imported tables or host globals, the same as Wasm3.
 - Speed: this is an interpreter running inside the Daslang interpreter,
   roughly two orders of magnitude slower than the C build.
@@ -44,6 +47,16 @@ Run an exported function:
 ```sh
 $ scripts/wasm3 wasm3c/test/lang/fib32.wasm --func fib 25
 Result: 75025
+```
+
+Run a WASI program (the exported `_start` is the default function; the words
+after the file are its arguments, and paths are resolved through the
+preopened `.` directory, so they start with `./`):
+
+```sh
+$ scripts/wasm3 wasm3c/test/wasi/mal/mal.wasm ./wasm3c/test/wasi/mal/test-fib.mal 10
+55
+$ scripts/wasm3 wasm3c/test/wasi/mandelbrot/mandel.wasm 32 4e5 > mandel.ppm
 ```
 
 Interactive session, the same protocol the spec-test driver speaks:

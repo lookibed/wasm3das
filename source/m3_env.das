@@ -1179,7 +1179,7 @@ def m3_GetMemory(var i_runtime : IM3Runtime; var o_memorySizeInBytes : u32&; i_m
 
 
 // Deviation: same null guard as m3_GetMemory; C reads mallocated->length directly.
-def m3_GetMemorySize(var i_runtime : IM3Runtime) : u32 {
+def m3_GetMemorySize(i_runtime : IM3Runtime) : u32 {
     if (i_runtime == null || i_runtime.memory.mallocated == null) {
         return 0u
     }

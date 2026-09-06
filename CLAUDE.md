@@ -1,7 +1,7 @@
 # wasm3das
 
-Manual port of the Wasm3 WebAssembly interpreter from C to Daslang. The WASI
-integration layer is outside the current scope. `AGENTS.md` is the complete
+Manual port of the Wasm3 WebAssembly interpreter from C to Daslang, including
+the plain WASI host layer of `m3_api_wasi.c`. `AGENTS.md` is the complete
 rulebook for agents and `docs/development-pipeline.md` the order in which its
 rules apply to a change; this file is the short entry point.
 
@@ -34,13 +34,14 @@ harness preference for shell-based editing.
 `PORTING_MANIFEST.md` is the source of truth. In short: configuration,
 definitions, math utilities, core readers, code pages, function metadata,
 the shared type hub and the module layer are accepted; parser, binding,
-environment/runtime, compiler, executor, the spectest host module and the
-REPL app are in revision (reviewed against C, awaiting code-owner sign-off).
-End-to-end execution works: `scripts/wasm3` runs every `wasm3c/test/lang`
-fixture, and the original `wasm3c/test/run-spec-test.py` passes its whole
-default list against the port (`notes/spec_test_status.md`). `m3_info`, the
-libc half of `m3_api_libc.c` and the full public `wasm3.h` API are not
-started. `wasm3c/` is the reference C source tree.
+environment/runtime, compiler, executor, the host modules (spectest, libc,
+WASI) and the app are in revision (reviewed against C, awaiting code-owner
+sign-off). End-to-end execution works: `scripts/wasm3` runs every
+`wasm3c/test/lang` fixture, the original `wasm3c/test/run-spec-test.py`
+passes its whole default list (`notes/spec_test_status.md`) and
+`wasm3c/test/run-wasi-test.py --fast` passes 7/7 (`notes/wasi_test_status.md`).
+`m3_info`, the tracer and the full public `wasm3.h` API are not started.
+`wasm3c/` is the reference C source tree.
 
 ## Layout
 
