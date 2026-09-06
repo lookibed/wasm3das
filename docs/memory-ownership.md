@@ -1,14 +1,14 @@
 # Memory ownership in the Daslang port
 
-Status: **decided 2026-09-05, not yet implemented.** Implementation is a
-runtime change and must follow the migration order below, one step per commit,
-with the `fib32.wasm` regression in place first.
+Status: **decided 2026-09-05, implemented 2026-09-06.** The fib32 regression
+(`tests/test_fib32_regression.das`) passes through teardown; the table below
+describes the state before the migration and is kept as the record of why.
 
-## The problem
+## The problem (before the migration)
 
 C Wasm3 has one allocation regime: every runtime object comes from
 `m3_AllocStruct`/`m3_AllocArray` (zeroed `malloc`) and goes back through
-`m3_Free`. The port currently has three:
+`m3_Free`. The port had three:
 
 | Object | C | Port allocates with | Port frees with |
 |---|---|---|---|
@@ -27,8 +27,18 @@ per pointer, which regime created it; `m3_FreeModule` deletes the module but
 boundary: `m3_Free_Impl` on a `new M3Module()` (glibc `free(): invalid
 pointer`) and `delete` on an `M3FuncType` from `m3_Malloc_Impl`. Tests inherit
 the same burden: `tests/test_m3_code.das` and `tests/test_m3_module.das`
-construct runtimes with `new` and must delete them themselves. The unresolved
-teardown `SIGSEGV` lives on this boundary.
+construct runtimes with `new` and must delete them themselves.
+
+The teardown `SIGSEGV` itself was located with the DAP bridge on 2026-09-06:
+the process died at the first stop after `m3_FreeModule` freed the module's
+arrays, and a probe with two mutually linked `new` structs reproduced the
+mechanism. A Daslang `delete` on a struct pointer runs the generated
+finalizer, which finalizes and frees every pointer field and follows cycles.
+`M3Runtime.compilation.runtime` and `M3Runtime.error.runtime` point back at
+the runtime, `M3Function._module` at its module, and `M3Module.wasmStart`
+into the caller's byte buffer, so `delete i_runtime` recursed until the stack
+overflowed (the fault address was a stack page). The detach-before-delete
+workarounds in the release functions only postponed it.
 
 ## Decision
 
@@ -70,25 +80,22 @@ the adapted sites:
    If that ever changes, names inside `malloc`-owned memory become invisible
    roots and must move to `bytes_t` buffers owned through `m3_Malloc_Impl`.
 
-## Migration order
+## Migration (done)
 
-Each step is one commit and must pass the full gate. Steps 2 to 4 are
-runtime/lifecycle changes and additionally require step 1's regression to
-reach result retrieval and teardown without a crash; use `daslang-dap` per the
-`AGENTS.md` contract when it does not.
-
-1. Add `tests/test_fib32_regression.das`: parse `wasm3c/test/lang/fib32.wasm`,
-   load, call `fib(25)`, expect `75025`, free runtime and environment.
+1. `tests/test_fib32_regression.das` (PR #10): parse, load, `fib(25)`,
+   teardown; the teardown half was skipped until step 4.
 2. `m3_NewEnvironment` / `m3_FreeEnvironment`: `m3_Malloc_Impl` /
-   `m3_Free_Impl`; drop the detach-before-delete workaround in
-   `Environment_Release` only if the regression proves it unnecessary.
+   `m3_Free_Impl`; the detach-before-delete block in `Environment_Release`
+   is gone, the function mirrors C again.
 3. `m3_NewRuntime` (including the `originStack` failure path) /
-   `m3_FreeRuntime`.
-4. `m3_ParseModule` / `m3_FreeModule`; remove the ownership comment that
-   explains the `new` exception.
-5. Tests that build runtimes or modules by hand (`test_m3_code.das`,
-   `test_m3_module.das`, `test_m3_env.das`) construct them through the port
-   API or through `m3_Malloc_Impl`, never through `new`.
-6. `AGENTS.md`, "Allocation and pointer semantics": replace the two-pair rule
-   with the single-regime rule and keep the pointer-value versus
-   `addr(array[i])` guidance.
+   `m3_FreeRuntime`; `Runtime_Release` mirrors C, it no longer nulls the
+   borrowed links because nothing walks them any more.
+4. `m3_ParseModule` / `m3_FreeModule`; the detach block and the ownership
+   comment that explained the `new` exception are gone.
+5. `tests/test_m3_code.das`, `tests/test_m3_module.das`, `tests/test_m3_env.das`
+   allocate hand-built runtimes and modules with `m3_Malloc_Impl` and release
+   them with `m3_Free_Impl`.
+6. `AGENTS.md`, "Allocation and pointer semantics", states the single regime
+   and why `delete` on an `M3*` object is fatal.
+
+The acceptance test is `test_fib32_teardown`, no longer skipped.

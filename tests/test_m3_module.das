@@ -97,8 +97,9 @@ def private check_module_names() {
 
 def private check_module_runtime() {
     // M3Runtime carries the full m3_env.h layout (compilation scratch space);
-    // C heap-allocates it in m3_NewRuntime, so the test does the same.
-    var runtimePtr : IM3Runtime = new M3Runtime()
+    // C heap-allocates it in m3_NewRuntime with m3_AllocStruct, so the test
+    // does the same through the host allocator (docs/memory-ownership.md).
+    var runtimePtr : IM3Runtime = unsafe(reinterpret<IM3Runtime>(m3_Malloc_Impl(u64(typeinfo sizeof(type<M3Runtime>)))))
     var moduleValue : M3Module
     var modulePtr : IM3Module = unsafe(addr(moduleValue))
 
@@ -107,7 +108,7 @@ def private check_module_runtime() {
 
     moduleValue.runtime = runtimePtr
     check(m3_GetModuleRuntime(modulePtr) == runtimePtr, "stored module runtime")
-    unsafe { delete runtimePtr }
+    m3_Free_Impl(unsafe(reinterpret<void?>(runtimePtr)))
 }
 
 

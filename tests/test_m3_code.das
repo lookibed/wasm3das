@@ -40,6 +40,13 @@ def private expected_num_lines(i_minNumLines : u32) : u32 {
 }
 
 
+// C m3_NewRuntime: m3_AllocStruct (M3Runtime) - a zeroed host allocation, so
+// the test allocates the runtime the same way (docs/memory-ownership.md).
+def private alloc_runtime() : M3Runtime? {
+    return unsafe(reinterpret<M3Runtime?>(m3_Malloc_Impl(u64(typeinfo sizeof(type<M3Runtime>)))))
+}
+
+
 def private new_page(var runtime : M3Runtime?; min_lines : u32) : IM3CodePage {
     unsafe {
         var page = NewCodePage(runtime, min_lines)
@@ -104,7 +111,7 @@ def test_new_code_page() {
     check(d_m3CodePageAlignSize == 32768u, "default code page alignment must be 32 KiB")
 
     // Full m3_env.h runtime layout: heap-allocate like C m3_NewRuntime does.
-    var runtime : M3Runtime? = new M3Runtime()
+    var runtime : M3Runtime? = alloc_runtime()
 
     var p0 = new_page(runtime, 0u)
     check_page_initial_state(p0, 1u, 0u)
@@ -143,14 +150,14 @@ def test_new_code_page() {
     }
     check(runtime.newCodePageSequence == sequence_before,
         "alignment-overflow page must not consume a sequence number")
-    unsafe { delete runtime }
+    m3_Free_Impl(unsafe(reinterpret<void?>(runtime)))
 }
 
 
 [test]
 def test_emit_words_and_pc() {
     // Full m3_env.h runtime layout: heap-allocate like C m3_NewRuntime does.
-    var runtime : M3Runtime? = new M3Runtime()
+    var runtime : M3Runtime? = alloc_runtime()
     var page = new_page(runtime, 8u)
 
     let start_addr = intptr(GetPageStartPC(page))
@@ -200,14 +207,14 @@ def test_emit_words_and_pc() {
 
     free_page(page)
     check(GetPagePC(null) == null, "GetPagePC(null) must return null")
-    unsafe { delete runtime }
+    m3_Free_Impl(unsafe(reinterpret<void?>(runtime)))
 }
 
 
 [test]
 def test_emit_last_slot_and_overflow() {
     // Full m3_env.h runtime layout: heap-allocate like C m3_NewRuntime does.
-    var runtime : M3Runtime? = new M3Runtime()
+    var runtime : M3Runtime? = alloc_runtime()
 
     // EmitWord32 succeeds in the last slot and fails on the next write.
     var page32 = new_page(runtime, 1u)
@@ -261,7 +268,7 @@ def test_emit_last_slot_and_overflow() {
     }
     check(overflow_ptr, "EmitWord_impl overflow must assert")
     free_page(page_ptr)
-    unsafe { delete runtime }
+    m3_Free_Impl(unsafe(reinterpret<void?>(runtime)))
 }
 
 
@@ -276,7 +283,7 @@ def test_code_page_list() {
     check(end == null, "empty FindCodePageEnd end")
 
     // Full m3_env.h runtime layout: heap-allocate like C m3_NewRuntime does.
-    var runtime : M3Runtime? = new M3Runtime()
+    var runtime : M3Runtime? = alloc_runtime()
     var list : IM3CodePage
     var pages : array<IM3CodePage>
     pages |> reserve(5)
@@ -321,7 +328,7 @@ def test_code_page_list() {
     unsafe {
         delete pages
     }
-    unsafe { delete runtime }
+    m3_Free_Impl(unsafe(reinterpret<void?>(runtime)))
 }
 
 
@@ -332,7 +339,7 @@ def test_free_code_pages() {
     check(empty_list == null, "freeing empty list must leave null head")
 
     // Full m3_env.h runtime layout: heap-allocate like C m3_NewRuntime does.
-    var runtime : M3Runtime? = new M3Runtime()
+    var runtime : M3Runtime? = alloc_runtime()
 
     // Raw malloc/free are not represented by Daslang container ownership.
     // heap_allocation_count is the available runtime counter; on runtimes where
@@ -365,7 +372,7 @@ def test_free_code_pages() {
         FreeCodePages(stress_list)
         check(stress_list == null, "stress FreeCodePages must clear head")
     }
-    unsafe { delete runtime }
+    m3_Free_Impl(unsafe(reinterpret<void?>(runtime)))
 }
 
 

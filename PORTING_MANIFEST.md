@@ -25,7 +25,7 @@ Status meanings:
 | `m3_parse.c` | `source/m3_parse.das` | Revision | The reviewed increment covers table/memory types plus start and element sections. The file also carries the mechanically expanded remainder of the parser (see AGENTS.md, high-risk areas), which has not been reviewed section by section. Depends on the `m3_env` and `m3_compile` drafts |
 | `m3_exception.h` | `source/m3_exception.das` | Draft | Documentation of the C try/catch macro layer over `M3Result`; the macros are expanded inline at call sites, so no module requires it. No dedicated test |
 | `m3_exec_defs.h` | `source/m3_exec_defs.das` | Draft | Threaded-interpreter ABI signature; no dedicated test |
-| `m3_env.c` | `source/m3_env.das` | Draft | Environment, runtime, memory, globals, module loading and calls are present. `CompileFunctionHook`/`ResizeMemoryHook` replace the C include cycle. Teardown `SIGSEGV` unresolved; tests cover only hook wiring |
+| `m3_env.c` | `source/m3_env.das` | Draft | Environment, runtime, memory, globals, module loading and calls are present. `CompileFunctionHook`/`ResizeMemoryHook` replace the C include cycle. Lifecycle covered end to end by the fib32 regression; `tests/test_m3_env.das` covers only hook wiring |
 | `m3_compile.c` | `source/m3_compile.das` | Draft | Wasm-to-Wasm3 compiler. `tests/test_m3_compile.das` covers only the operation table (filled by `[init]` and, for hosts that skip it, by `m3_NewEnvironment`); the compiler itself is exercised end to end by the fib32 regression |
 | `m3_exec.h`, `m3_exec.c` | `source/m3_exec.das` | Draft | 510 `op_*` functions hand-expanded from the C macros; backtrace layer absent; no dedicated test |
 | `m3_info.c` | — | Not started | Diagnostic and formatting helpers |
@@ -38,21 +38,14 @@ Status meanings:
 Each gap is closed by a pull request of the type given in
 `docs/development-pipeline.md`.
 
-- `tests/test_fib32_regression.das` covers parse, load, lazy compile and
-  execution of `wasm3c/test/lang/fib32.wasm` (fib(25) = 75025). Its teardown
-  half is skipped: `m3_FreeRuntime` still ends in `SIGSEGV` after a
-  successful run. Un-skipping it is the acceptance test for the memory
-  ownership migration below.
-- The compiler's operation table is filled by an `[init]` function in
-  `m3_compile.das`. Under dastest that `[init]` does not run when the test
-  file declares a `module` name (daslang 0.6.4 @ 1524b3bf), so the table
-  stays zeroed and compilation invokes a null function. Test files that reach
-  the compiler must not declare a module; a robust fix (initialising the
-  table from `m3_NewEnvironment`, like the hooks) is a separate `fix/` PR.
-- Environment, runtime and module objects are `new`-allocated while every
-  other C-owned object is `m3_Malloc_Impl`-allocated. The decision to move to
-  a single host-allocator regime and its migration order are recorded in
-  `docs/memory-ownership.md`.
+- `tests/test_fib32_regression.das` covers parse, load, lazy compile,
+  execution (fib(25) = 75025) and teardown of `wasm3c/test/lang/fib32.wasm`.
+  It is the only end-to-end test; the drafts below still lack per-layer
+  review and tests.
+- Names (`cstr_t`) are Daslang strings stored inside host-allocated structs.
+  This is safe only while the string heap is never collected during a
+  runtime's lifetime (`docs/memory-ownership.md`, "Strings stay Daslang
+  strings").
 
 ## Acceptance boundary
 
