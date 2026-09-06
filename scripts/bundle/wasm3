@@ -1,0 +1,6 @@
+#!/usr/bin/env bash
+# Launcher of the wasm3das release bundle. The bundle root is the directory
+# holding this file: bin/daslang, daslib/, app/, source/, scripts/.
+set -euo pipefail
+here="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)"
+DASLANG="$here/bin/daslang" exec "$here/scripts/wasm3" "$@"
