@@ -37,6 +37,12 @@ def forwardTrap(err : M3Result) : M3Result {
     return err
 }
 
+// C m3ret_t is `const void *`: an operation returns NULL, an error string, or
+// (op_ContinueLoop/op_ContinueLoopIf) the pc of the loop to continue. The
+// port keeps M3Result for the first two and reinterprets the loop pc into the
+// same M3Result; only op_Loop consumes it, comparing pointers. Nothing else
+// may compare such a value by content.
+
 
 
 /*
@@ -903,6 +909,14 @@ def OP_SHL_32(x, n : u32) : u32 { return x << (n % 32u) }
 def OP_SHL_64(x, n : u64) : u64 { return x << (n % 64ul) }
 def OP_SHR_32(x, n : u32) : u32 { return x >> (n % 32u) }
 def OP_SHR_64(x, n : u64) : u64 { return x >> (n % 64ul) }
+
+// C: "clz(0), ctz(0) results are undefined for rest platforms, fix it" - the
+// portable branch of the OP_CLZ_*/OP_CTZ_* macros. The Daslang builtins share
+// the hardware quirk (clz(0u) is 31 here), so the guard is mandatory.
+def OP_CLZ_32(x : u32) : u32 { return x == 0u ? 32u : clz(x) }
+def OP_CTZ_32(x : u32) : u32 { return x == 0u ? 32u : ctz(x) }
+def OP_CLZ_64(x : u64) : u64 { return x == 0ul ? 64ul : clz(x) }
+def OP_CTZ_64(x : u64) : u64 { return x == 0ul ? 64ul : ctz(x) }
 
 def public op_i32_Add_rs(var _pc : pc_t; var _sp : m3stack_t; var _mem : M3MemoryHeader?; var _r0 : m3reg_t; var _fp0 : f64) : M3Result {
     let operand = slot_i32(_pc, _sp)
@@ -1905,24 +1919,24 @@ def public op_i64_EqualToZero_s(var _pc : pc_t; var _sp : m3stack_t; var _mem : 
 }
 
 def public op_u32_Clz_r(var _pc : pc_t; var _sp : m3stack_t; var _mem : M3MemoryHeader?; var _r0 : m3reg_t; var _fp0 : f64) : M3Result {
-    _r0 = m3reg_t(clz(u32(_r0)))
+    _r0 = m3reg_t(OP_CLZ_32(u32(_r0)))
     return nextOpDirect(_pc, _sp, _mem, _r0, _fp0)
 }
 
 def public op_u32_Clz_s(var _pc : pc_t; var _sp : m3stack_t; var _mem : M3MemoryHeader?; var _r0 : m3reg_t; var _fp0 : f64) : M3Result {
     let operand = slot_u32(_pc, _sp)
-    _r0 = m3reg_t(clz(operand))
+    _r0 = m3reg_t(OP_CLZ_32(operand))
     return nextOpDirect(_pc, _sp, _mem, _r0, _fp0)
 }
 
 def public op_u32_Ctz_r(var _pc : pc_t; var _sp : m3stack_t; var _mem : M3MemoryHeader?; var _r0 : m3reg_t; var _fp0 : f64) : M3Result {
-    _r0 = m3reg_t(ctz(u32(_r0)))
+    _r0 = m3reg_t(OP_CTZ_32(u32(_r0)))
     return nextOpDirect(_pc, _sp, _mem, _r0, _fp0)
 }
 
 def public op_u32_Ctz_s(var _pc : pc_t; var _sp : m3stack_t; var _mem : M3MemoryHeader?; var _r0 : m3reg_t; var _fp0 : f64) : M3Result {
     let operand = slot_u32(_pc, _sp)
-    _r0 = m3reg_t(ctz(operand))
+    _r0 = m3reg_t(OP_CTZ_32(operand))
     return nextOpDirect(_pc, _sp, _mem, _r0, _fp0)
 }
 
@@ -1938,24 +1952,24 @@ def public op_u32_Popcnt_s(var _pc : pc_t; var _sp : m3stack_t; var _mem : M3Mem
 }
 
 def public op_u64_Clz_r(var _pc : pc_t; var _sp : m3stack_t; var _mem : M3MemoryHeader?; var _r0 : m3reg_t; var _fp0 : f64) : M3Result {
-    _r0 = m3reg_t(clz(u64(_r0)))
+    _r0 = m3reg_t(OP_CLZ_64(u64(_r0)))
     return nextOpDirect(_pc, _sp, _mem, _r0, _fp0)
 }
 
 def public op_u64_Clz_s(var _pc : pc_t; var _sp : m3stack_t; var _mem : M3MemoryHeader?; var _r0 : m3reg_t; var _fp0 : f64) : M3Result {
     let operand = slot_u64(_pc, _sp)
-    _r0 = m3reg_t(clz(operand))
+    _r0 = m3reg_t(OP_CLZ_64(operand))
     return nextOpDirect(_pc, _sp, _mem, _r0, _fp0)
 }
 
 def public op_u64_Ctz_r(var _pc : pc_t; var _sp : m3stack_t; var _mem : M3MemoryHeader?; var _r0 : m3reg_t; var _fp0 : f64) : M3Result {
-    _r0 = m3reg_t(ctz(u64(_r0)))
+    _r0 = m3reg_t(OP_CTZ_64(u64(_r0)))
     return nextOpDirect(_pc, _sp, _mem, _r0, _fp0)
 }
 
 def public op_u64_Ctz_s(var _pc : pc_t; var _sp : m3stack_t; var _mem : M3MemoryHeader?; var _r0 : m3reg_t; var _fp0 : f64) : M3Result {
     let operand = slot_u64(_pc, _sp)
-    _r0 = m3reg_t(ctz(operand))
+    _r0 = m3reg_t(OP_CTZ_64(operand))
     return nextOpDirect(_pc, _sp, _mem, _r0, _fp0)
 }
 
@@ -2956,10 +2970,10 @@ def public op_CallIndirect(var _pc : pc_t; var _sp : m3stack_t; var _mem : M3Mem
         let _function = unsafe(_module.table0[tableIndex])
         if (_function != null) {
             if (_type == _function.funcType) {
-                var compiled : pc_t = unsafe(reinterpret<pc_t>(_function.compiled))
-                if (compiled == null) { r = CompileFunction(_function) }
+                if (_function.compiled == null) { r = CompileFunction(_function) }
                 if (r == m3Err_none) {
-                    r = Call(compiled, sp, _mem, 0l, 0.0lf)
+                    // C: Call (function->compiled, ...) - read after the lazy compile, not before.
+                    r = Call(unsafe(reinterpret<pc_t>(_function.compiled)), sp, _mem, 0l, 0.0lf)
                     _mem = unsafe(reinterpret<M3MemoryHeader?>(memory.mallocated))
                     if (r == m3Err_none) { return nextOpDirect(_pc, _sp, _mem, _r0, _fp0) }
                     pushBacktraceFrame(_pc, _mem)
@@ -3083,7 +3097,10 @@ def public op_Loop(var _pc : pc_t; var _sp : m3stack_t; var _mem : M3MemoryHeade
     while (true) {
         r = nextOpImpl(_pc, _sp, _mem, _r0, _fp0)
         _mem = unsafe(reinterpret<M3MemoryHeader?>(memory.mallocated))
-        if (r != unsafe(reinterpret<M3Result>(_pc))) { break }
+        // C: while (r == _pc). m3ret_t is a void*, so a loop id returned by
+        // op_ContinueLoop is the loop's pc itself; compare the pointers, not
+        // the string contents an M3Result would otherwise be compared by.
+        if (unsafe(reinterpret<void?>(r)) != unsafe(reinterpret<void?>(_pc))) { break }
     }
     return forwardTrap(r)
 }
@@ -3224,13 +3241,7 @@ def public op_PreserveCopySlot_64(var _pc : pc_t; var _sp : m3stack_t; var _mem 
     return nextOpDirect(_pc, _sp, _mem, _r0, _fp0)
 }
 
-def public op_DumpStack(var _pc : pc_t; var _sp : m3stack_t; var _mem : M3MemoryHeader?; var _r0 : m3reg_t; var _fp0 : f64) : M3Result {
-    let opcodeIndex = immediate_u32(_pc)
-    let stackHeight = immediate_u32(_pc)
-    let _function = immediate_function(_pc)
-    // d_m3EnableOpTracing == false: the C op tracing print is compiled out.
-    return nextOpDirect(_pc, _sp, _mem, _r0, _fp0)
-}
+// compiled out under the active configuration: d_m3EnableOpTracing == false (op_DumpStack)
 
 def public op_Select_i32_rss(var _pc : pc_t; var _sp : m3stack_t; var _mem : M3MemoryHeader?; var _r0 : m3reg_t; var _fp0 : f64) : M3Result {
     let condition = i32(_r0)
@@ -4213,10 +4224,6 @@ def public op_i64_Store_i64_ss(var _pc : pc_t; var _sp : m3stack_t; var _mem : M
     return newTrap(_pc, _mem, m3Err_trapOutOfBoundsMemoryAccess)
 }
 
-def debugOp(var _pc : pc_t; var _sp : m3stack_t; var _mem : M3MemoryHeader?; var _r0 : m3reg_t; var _fp0 : f64; i_opcode : string) : M3Result {
-    if (d_m3EnableOpTracing) { print("{i_opcode}\n") }
-    return nextOpDirect(_pc, _sp, _mem, _r0, _fp0)
-}
-
-// profileOp (d_m3EnableOpProfiling) is compiled out under the active
+// debugOp (d_m3EnableOpTracing) and profileOp (d_m3EnableOpProfiling) are
+// compiled out under the active configuration.
 // configuration, together with its C definition in m3_exec_defs.h.
