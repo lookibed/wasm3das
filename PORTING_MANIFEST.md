@@ -26,7 +26,7 @@ Status meanings:
 | `m3_exception.h` | `source/m3_exception.das` | Draft | Documentation of the C try/catch macro layer over `M3Result`; the macros are expanded inline at call sites, so no module requires it. No dedicated test |
 | `m3_exec_defs.h` | `source/m3_exec_defs.das` | Draft | Threaded-interpreter ABI signature; no dedicated test |
 | `m3_env.c` | `source/m3_env.das` | Draft | Environment, runtime, memory, globals, module loading and calls are present. `CompileFunctionHook`/`ResizeMemoryHook` replace the C include cycle. Teardown `SIGSEGV` unresolved; tests cover only hook wiring |
-| `m3_compile.c` | `source/m3_compile.das` | Draft | Wasm-to-Wasm3 compiler; no dedicated test |
+| `m3_compile.c` | `source/m3_compile.das` | Draft | Wasm-to-Wasm3 compiler. `tests/test_m3_compile.das` covers only the operation table (filled by `[init]` and, for hosts that skip it, by `m3_NewEnvironment`); the compiler itself is exercised end to end by the fib32 regression |
 | `m3_exec.h`, `m3_exec.c` | `source/m3_exec.das` | Draft | 510 `op_*` functions hand-expanded from the C macros; backtrace layer absent; no dedicated test |
 | `m3_info.c` | — | Not started | Diagnostic and formatting helpers |
 | public `wasm3.h` API | — | Not started | Complete public runtime API (partial entry points live in `m3_env.das`) |

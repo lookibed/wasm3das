@@ -127,6 +127,10 @@ def m3_NewEnvironment() : IM3Environment {
     // registered once before any runtime can execute. Idempotent.
     CompileFunctionHook = @@CompileFunction
     ResizeMemoryHook = @@ResizeMemory
+    // C: `const M3OpInfo c_operations []` (m3_compile.c) is a static
+    // initialiser. The Daslang table is filled by [init], which some hosts
+    // skip for required modules; the call is idempotent.
+    init_compile_operation_tables()
 
     var env : IM3Environment
     unsafe {
