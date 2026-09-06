@@ -133,6 +133,18 @@ jobs:
           echo "$out"
           test "$out" = "Result: 75025"
           if [[ "${{ runner.os }}" != "Windows" ]]; then
+            # Diagnostics first, uncaptured, so the log shows what the REPL does
+            # on this runner (the interpreter answers, the REPL stays silent on
+            # every Linux runner so far while it works locally).
+            echo "--- ulimit -s: $(ulimit -s)"
+            echo "--- version:"; ./wasm3 --version || echo "version exit=$?"
+            echo "--- repl :version via wrapper:"
+            printf ':version\n:exit\n' | ./wasm3 --repl || echo "repl exit=$?"
+            echo "--- repl :version via daslang directly:"
+            printf ':version\n:exit\n' | ./bin/daslang app/wasm3.das -- --repl || echo "direct exit=$?"
+            echo "--- repl with a here-string:"
+            ./wasm3 --repl <<< $':load examples/fib64.wasm\n:invoke fib 20\n:exit' || echo "heredoc exit=$?"
+            echo "--- end diagnostics"
             # Capture first: `grep -q` closes the pipe on the first match and the
             # REPL's next prompt then dies of SIGPIPE, which pipefail reports.
             # `Result:` lines go to stderr, as in C main.c (fprintf (stderr, ...)).
