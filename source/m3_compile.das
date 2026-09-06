@@ -1809,9 +1809,17 @@ def M3OP_F(name : string; stackOffset : int; _type : int; o0 : IM3Operation; o1 
 
 var c_operations : M3OpInfo[253]
 var c_operationsFC : M3OpInfo[12]
+var c_operationsInitialized : bool = false
 
+// C: `const M3OpInfo c_operations []` is a static initialiser (m3_compile.c).
+// Daslang fills the table at context start through [init]. A host that does
+// not run [init] for required shared modules (dastest with a test file that
+// declares a module) reaches it through m3_NewEnvironment instead, so the
+// fill is guarded and idempotent.
 [init]
 def init_compile_operation_tables() {
+    if (c_operationsInitialized) return
+    c_operationsInitialized = true
     c_operations = fixed_array(
     M3OP("unreachable", 0, none, @@op_Unreachable, c_opNull, c_opNull, c_opNull, @@Compile_Unreachable), // 0x00
     M3OP("nop", 0, none, c_opNull, c_opNull, c_opNull, c_opNull, @@Compile_Nop), // 0x01
