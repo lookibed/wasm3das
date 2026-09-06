@@ -101,7 +101,9 @@ jobs:
         run: |
           set -euo pipefail
           bin=""
-          for candidate in daScript/bin/daslang_static daScript/bin/daslang_static.exe daScript/bin/Release/daslang_static.exe; do
+          # .exe candidates first: on Windows, Git bash's `-f` also accepts the
+          # extension-less name, and the bundle keys the launcher on the suffix.
+          for candidate in daScript/bin/daslang_static.exe daScript/bin/Release/daslang_static.exe daScript/bin/daslang_static; do
             if [[ -f "$candidate" ]]; then bin="$candidate"; break; fi
           done
           test -n "$bin"
@@ -113,7 +115,8 @@ jobs:
         # The port has no M3_MUSTTAIL: deep wasm recursion costs native frames.
         # Linux launchers raise ulimit -s; on Windows the limit is in the PE header.
         # Dash form: Git bash rewrites a leading `/STACK` into a Windows path.
-        run: editbin -STACK:268435456 "${{ steps.bin.outputs.path }}"
+        # editbin needs the native path with the .exe suffix (LNK1342 otherwise).
+        run: editbin -NOLOGO -STACK:268435456 "$(cygpath -w "${{ steps.bin.outputs.path }}")"
 
       - name: Assemble bundle
         run: scripts/make_release_bundle.sh daScript "${{ steps.bin.outputs.path }}" dist/wasm3das
