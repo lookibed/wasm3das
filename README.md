@@ -1,84 +1,105 @@
 # wasm3das
 
-`wasm3das` is a manual port of the [Wasm3](https://github.com/wasm3/wasm3)
-WebAssembly interpreter from C to Daslang. The goal is structural fidelity: the
-port keeps the original files, function and variable names, ordering, and
-control flow wherever Daslang can express them safely.
+A port of the [Wasm3](https://github.com/wasm3/wasm3) WebAssembly interpreter
+from C to [Daslang](https://github.com/GaijinEntertainment/daScript), done by
+hand, file by file. The port keeps Wasm3's source layout, names and control
+flow, so the two trees can be read side by side; the reference C sources are
+vendored in `wasm3c/`.
 
-This is work in progress. It does not yet execute complete WebAssembly modules.
-The WASI integration layer is intentionally outside the current scope.
+The goal is a WebAssembly interpreter written in Daslang that behaves exactly
+like Wasm3 and is verified with Wasm3's own test suite.
 
-## Development method
+## What it does
 
-- Port one bounded C layer at a time.
-- Preserve behavior, including relevant edge cases and parser quirks.
-- Adapt C pointers, unions, ownership, and conditional fields explicitly.
-- Do not substitute a different algorithm merely because its output is similar.
-- Review each increment against the reference C source in `wasm3c/`.
-- Require compiler diagnostics, three lint profiles, focused tests, the complete
-  test suite, and working Daslang MCP/LSP protocol tests.
+- Parses, loads, compiles and executes WebAssembly 1.0 core modules,
+  including the sign-extension, non-trapping float-to-int and tail-call
+  (`return_call`) instructions Wasm3 supports.
+- Passes the WebAssembly core spec suite driven by Wasm3's unmodified
+  `run-spec-test.py`: 17863 / 17863 assertions on the current corpus
+  (`opam-1.1.1`) and 17526 / 17526 on the previous one (`v1.1`), with no
+  crashes. Per-file numbers are in `notes/spec_test_status.md`.
+- Runs every module in `wasm3c/test/lang`.
+- Links host functions into a module (`m3_LinkRawFunction`) and provides the
+  `spectest` host module.
+- Command line front end with the same commands and output as the C `wasm3`
+  binary: `--func`, `--repl`, `--stack-size`.
 
-The current file-by-file status and known blockers are recorded in
-[`PORTING_MANIFEST.md`](PORTING_MANIFEST.md). The stages every pull request
-passes, from intake to post-merge, are described in
-[`docs/development-pipeline.md`](docs/development-pipeline.md).
+## What it does not do
 
-## Repository layout
+- No WASI: modules that import `wasi_snapshot_preview1` do not run. The
+  Wasm3 WASI apps (CoreMark, Brotli, the self-hosted `wasm3.wasm`) are out of
+  scope.
+- No libc host module (`m3_LinkLibC`).
+- No imported memories, imported tables or host globals, the same as Wasm3.
+- Speed: this is an interpreter running inside the Daslang interpreter,
+  roughly two orders of magnitude slower than the C build.
+- Deep recursion needs a large stack. The wrapper raises the thread stack
+  limit and the app reserves a 64 MiB Daslang stack so a runaway recursion
+  reports `[trap] stack overflow` instead of crashing.
 
-| Path | Purpose |
-|---|---|
-| `source/` | Daslang port modules |
-| `tests/` | Component tests for completed porting increments |
-| `wasm3c/` | Vendored C reference tree |
-| `.github/workflows/daslang-quality.yml` | Required pull-request quality gate |
-| `scripts/gate.sh` | The gate itself: compile, three lint profiles, tests, repository invariants; shared by CI and the hook |
-| `scripts/check_repo_invariants.sh` | Formatter verify, test discovery, manifest consistency, file headers |
-| `.githooks/pre-push` | Runs `scripts/gate.sh` locally before every push |
-| `.lint_config` | Repo lint policy consumed by the gate |
-| `docs/` | Design decisions (memory ownership) |
-| `notes/` | Dated working notes and session handoffs |
-| `AGENTS.md` | Rules for AI coding agents |
-| `PORTING_MANIFEST.md` | Port coverage and review state |
+## Usage
 
-## Local verification
-
-The project is currently verified with Daslang 0.6.4 from upstream commit
-`1524b3bf62e7decbfe530dc5f2e794b296fa1e68`.
+Run an exported function:
 
 ```sh
-DASLANG_ROOT=/path/to/daScript DASLANG="$DASLANG_ROOT/bin/daslang" scripts/gate.sh
+$ scripts/wasm3 wasm3c/test/lang/fib32.wasm --func fib 25
+Result: 75025
 ```
 
-With the toolchain at `tmp/daslang-toolchain` (the default), plain
-`scripts/gate.sh` is enough. The script runs, in order: `-compile-only` on
-every file under `source/` and `tests/`, the three lint profiles with the repo
-policy in `.lint_config`, the dastest suite, and the repository invariants
-(formatter verify, every test file has `[test]`, every source file has a
-manifest row, every file starts with the two `options` lines). A single stage
-can be run by name: `scripts/gate.sh lint-style`.
-
-CI runs the same script. A pull request that changes none of the gate's inputs
-(`source/`, `tests/`, `scripts/`, `.githooks/`, the workflow, `.lint_config`,
-`PORTING_MANIFEST.md`) reports a green status within seconds without building
-the toolchain.
-
-The same gate runs locally before every push once the repository hooks are
-enabled:
+Interactive session, the same protocol the spec-test driver speaks:
 
 ```sh
-git config core.hooksPath .githooks
+$ scripts/wasm3 --repl
+wasm3> :load wasm3c/test/lang/fib64.wasm
+wasm3> :invoke fib 30
+Result: 832040:i64
+wasm3> :exit
 ```
 
-## Contributions
+Run the original Wasm3 spec suite against the port (the driver downloads the
+corpus into its working directory on first use):
 
-Work in feature branches and open a pull request into `main`. Direct pushes to
-`main` are not part of the project workflow. A pull request is accepted only
-after the required Daslang quality gate passes and the code owner approves it.
+```sh
+$ mkdir -p tmp/spec/run && cd tmp/spec/run
+$ ln -sfn ../../../wasm3c/test/run-spec-test.py .
+$ ln -sfn ../../../wasm3c/extra ../extra
+$ python3 run-spec-test.py --exec "$PWD/../../../scripts/wasm3 --repl"
+...
+ 17863/17863 tests OK
+```
 
-Pull requests are merged with **squash and merge**: `main` receives one commit
-per pull request, and the individual commits stay visible in the pull request
-itself. GitHub deletes the head branch automatically after the merge. Because
-squashed commits never appear in `main`, delete the local branch with
-`git branch -D <branch>` after `git pull`; `git branch --merged` will not list
-it.
+## Install and run
 
+Requirements: Linux or macOS, `bash`, `git`, `cmake`, a C++17 compiler, and
+Python 3 for the spec-test driver.
+
+1. Clone the repository:
+
+   ```sh
+   git clone https://github.com/lookibed/wasm3das.git
+   cd wasm3das
+   ```
+
+2. Build the pinned Daslang toolchain (version 0.6.4, commit
+   `1524b3bf62e7decbfe530dc5f2e794b296fa1e68`) into `tmp/daslang-toolchain`:
+
+   ```sh
+   git clone https://github.com/GaijinEntertainment/daScript.git tmp/daslang-toolchain
+   git -C tmp/daslang-toolchain checkout 1524b3bf62e7decbfe530dc5f2e794b296fa1e68
+   git -C tmp/daslang-toolchain submodule update --init --recursive
+   cmake -S tmp/daslang-toolchain -B tmp/daslang-toolchain/build -DCMAKE_BUILD_TYPE=Release
+   cmake --build tmp/daslang-toolchain/build --target daslang --parallel
+   ```
+
+   An existing Daslang build of that commit works too: point `DASLANG` at
+   its `bin/daslang`.
+
+3. Run:
+
+   ```sh
+   scripts/wasm3 wasm3c/test/lang/fib32.wasm --func fib 25
+   ```
+
+The port is plain Daslang source; there is nothing to build in this
+repository. Development rules, the verification gate and the review process
+are in `docs/development-pipeline.md` and `AGENTS.md`.

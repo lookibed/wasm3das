@@ -431,7 +431,7 @@ and raw model logs never go into the tree; dated working notes go into
 
 | File | Purpose |
 |---|---|
-| `README.md` | project overview and local verification recipes |
+| `README.md` | user-facing overview: capabilities, usage, toolchain install |
 | `PORTING_MANIFEST.md` | per-file status and acceptance boundary |
 | `CLAUDE.md` | short entry point for Claude Code; defers to this file |
 | `.mcp.json`, `.claude/skills/` | Claude Code MCP servers, LSP plugin and skills |

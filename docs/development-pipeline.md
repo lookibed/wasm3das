@@ -3,8 +3,8 @@
 Every change to this repository travels through the same stages as one pull
 request. Pull request types differ only in which checks are mandatory. The
 rules referenced here live in `AGENTS.md` (porting rules, tooling policy, DAP
-contract), `CLAUDE.md` (tool and git discipline), `README.md` (merge policy)
-and `PORTING_MANIFEST.md` (status of every C layer); this document says in
+contract), `CLAUDE.md` (tool and git discipline) and `PORTING_MANIFEST.md`
+(status of every C layer); the merge policy is stage 5 below. This document says in
 which order they apply and what "done" means at each stage.
 
 ## Unit of work: one pull request
@@ -73,8 +73,12 @@ so the order stays visible in `main` after squash merges.
   the DAP loop from `AGENTS.md`: observation → one invariant → DAP plus the C
   source → minimal patch → regression. DAP runs only locally; its output goes
   into the PR body as text because CI cannot reproduce it.
-- Done: the full pinned gate is green locally. The pre-push hook runs the same
-  gate; a push that fails the hook is not ready.
+- Done: the full pinned gate is green locally: `scripts/gate.sh` with the
+  toolchain at `tmp/daslang-toolchain` (or `DASLANG_ROOT=/path/to/daScript
+  DASLANG="$DASLANG_ROOT/bin/daslang" scripts/gate.sh`); a single stage runs
+  by name, for example `scripts/gate.sh lint-style`. The pre-push hook runs
+  the same gate once enabled with `git config core.hooksPath .githooks`; a
+  push that fails the hook is not ready.
 
 ### 4. Self-review against C
 

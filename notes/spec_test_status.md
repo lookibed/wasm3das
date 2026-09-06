@@ -152,6 +152,12 @@ out of scope. The 88 skipped `imports.wast` and 100 skipped `linking.wast`
 assertions are skipped by the driver itself (upstream blacklist and the
 `register`/`invoke in module` actions it does not implement).
 
+## Previous spec corpus (`--spec=v1.1`)
+
+The second spec step of Wasm3's CI, `run-spec-test.py --spec=v1.1`, was run
+the same way after `m3_LinkSpecTest` was wired: **17526 / 17526 assertions
+pass, 0 failures, 0 crashes, 0 timeouts, 235 skipped**.
+
 ## With `--all` (upstream blacklist disabled)
 
 `run-spec-test.py --all` also runs the 35 assertions wasm3 blacklists for
