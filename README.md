@@ -60,6 +60,17 @@ $ scripts/wasm3 wasm3c/test/wasi/mal/mal.wasm ./wasm3c/test/wasi/mal/test-fib.ma
 $ scripts/wasm3 wasm3c/test/wasi/mandelbrot/mandel.wasm 32 4e5 > mandel.ppm
 ```
 
+Embed the interpreter in your own Daslang program: `host_test/` holds the
+Daslang counterparts of the C host programs in `wasm3c/host_test`
+(`smoke`, `min`, `min2`, `main`), which drive a module through the public
+API (`m3_ParseModule`, `m3_LoadModule`, `m3_FindFunction`, `m3_CallV`,
+`m3_GetResultsV`, `m3_GetMemory`):
+
+```sh
+$ tmp/daslang-toolchain/bin/daslang host_test/smoke.das
+$ tmp/daslang-toolchain/bin/daslang host_test/main.das -- decoder.wasm clip.mp4 outdir 12
+```
+
 Interactive session, the same protocol the spec-test driver speaks:
 
 ```sh
