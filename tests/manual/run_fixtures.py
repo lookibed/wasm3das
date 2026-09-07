@@ -2,9 +2,11 @@
 """Spider manual-fixture parity + timing harness.
 
 Runs every scalar (non host-adapter) fixture export through three runtimes:
-  wasmtime v24.0.1  (D:/Backups/wasmtime/wasmtime-v24.0.1/wasmtime.exe)
-  wasm3 (original C, wasm3-original-win-x64.exe in this folder)
-  wasm3das          (wasm3.cmd -> bin/daslang.exe)
+  wasmtime   (Windows default: D:/Backups/wasmtime/wasmtime-v24.0.1/wasmtime.exe;
+              elsewhere: <repo>/tools/bin/wasmtime)
+  wasm3      (original C; Windows: wasm3-original-win-x64.exe in the bundle;
+              elsewhere: <repo>/tools/bin/wasm3 built from wasm3c/)
+  wasm3das   (wasm3.cmd in the bundle, or <repo>/scripts/wasm3)
 
 Each command is timed with the full wall clock from process spawn to
 complete output (subprocess.run + perf_counter, stdout+stderr captured).
@@ -13,8 +15,14 @@ Columns per runtime: returned value, full time, match against the
 wasmtime baseline recorded in the fixture READMEs (true/false, n/a when
 no baseline exists).  Values are compared as signed i32.
 
-Usage:
-  python run_fixtures.py [--filter substr] [--runtimes wasmtime,wasm3,das] [--slow]
+The fixture directories, this script and the report it writes
+(tests/manual/fixture_report.txt) live under tests/manual/; the automated
+dastest suite the quality gate runs is tests/integration/ and is untouched
+by this harness.
+
+Usage, from the repository root:
+  python3 tests/manual/run_fixtures.py [--filter substr]
+                                       [--runtimes wasmtime,wasm3,das] [--slow]
 
 Paths can be overridden via env: WASMTIME, WASM3C, WASM3DAS.
 """
@@ -26,12 +34,22 @@ import time
 import zlib
 
 MANUAL = os.path.dirname(os.path.abspath(__file__))
+# MANUAL is tests/manual/, so two levels up is the repository root (in the
+# Windows bundle layout the same two levels reach the bundle root).
 BUNDLE_ROOT = os.path.dirname(os.path.dirname(MANUAL))
+REPO_ROOT = BUNDLE_ROOT
 REPORT_PATH = os.path.join(MANUAL, "fixture_report.txt")
 
-WASMTIME = os.environ.get("WASMTIME", r"D:\Backups\wasmtime\wasmtime-v24.0.1\wasmtime.exe")
-WASM3C = os.environ.get("WASM3C", os.path.join(BUNDLE_ROOT, "wasm3-original-win-x64.exe"))
-WASM3DAS = os.environ.get("WASM3DAS", os.path.join(BUNDLE_ROOT, "wasm3.cmd"))
+if os.name == "nt":
+    WASMTIME = os.environ.get("WASMTIME", r"D:\Backups\wasmtime\wasmtime-v24.0.1\wasmtime.exe")
+    WASM3C = os.environ.get("WASM3C", os.path.join(BUNDLE_ROOT, "wasm3-original-win-x64.exe"))
+    WASM3DAS = os.environ.get("WASM3DAS", os.path.join(BUNDLE_ROOT, "wasm3.cmd"))
+else:
+    # A repository checkout: tools/ holds the locally installed engines
+    # (README "Install and run"), scripts/wasm3 the front end of the port.
+    WASMTIME = os.environ.get("WASMTIME", os.path.join(REPO_ROOT, "tools", "bin", "wasmtime"))
+    WASM3C = os.environ.get("WASM3C", os.path.join(REPO_ROOT, "tools", "bin", "wasm3"))
+    WASM3DAS = os.environ.get("WASM3DAS", os.path.join(REPO_ROOT, "scripts", "wasm3"))
 
 
 def gen(fixture: str) -> str:
@@ -206,7 +224,7 @@ def cmd_das(wasm, func, args):
 
 
 RUNTIMES = {
-    "wasmtime": ("wasmtime v24.0.1", cmd_wasmtime, 300),
+    "wasmtime": ("wasmtime", cmd_wasmtime, 300),
     "wasm3": ("wasm3 (original C)", cmd_wasm3c, 600),
     "das": ("wasm3das", cmd_das, 2400),
 }
@@ -247,6 +265,9 @@ def main() -> int:
     base_counts = {r: 0 for r in wanted}
 
     for name, wasm, func, args, baseline, timeout in tests:
+        # The table above spells the module names with a Windows separator;
+        # make the path native so the same list runs on Linux and macOS.
+        wasm = wasm.replace("\\", os.sep)
         row = {"name": name, "baseline": baseline}
         for r in wanted:
             label, mkcmd, to = RUNTIMES[r]

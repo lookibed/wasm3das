@@ -5,7 +5,7 @@ options indenting = 4
 // stack counts only in the program root, which under dastest is this file.
 options stack = 4_194_304
 
-// No `module` declaration, like tests/test_fib32_regression.das: under dastest
+// No `module` declaration, like tests/integration/test_fib32_regression.das: under dastest
 // a test file that names its module does not run the [init] functions of
 // required shared modules.
 
@@ -14,8 +14,8 @@ require daslib/fio
 require daslib/json
 require daslib/json_boost
 require strings
-require ../source/m3_parse.das
-require ../source/m3_api_libc.das
+require ../../source/m3_parse.das
+require ../../source/m3_api_libc.das
 
 
 /*

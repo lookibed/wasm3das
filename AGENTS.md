@@ -44,7 +44,7 @@ provenance includes mechanical rewrites; see
 commits on `origin/wip/runtime-layer`, and the fixes verified so far. The
 facts that still drive priorities:
 
-- `tests/test_fib32_regression.das` runs `fib32.wasm` through parse, load,
+- `tests/integration/test_fib32_regression.das` runs `fib32.wasm` through parse, load,
   lazy compile, execution (`fib(25) = 75025`) and teardown. It is the
   regression every runtime change must keep green.
 - The teardown `SIGSEGV` is closed: its cause was Daslang `delete` walking
@@ -339,7 +339,7 @@ new layer is explicitly in scope:
 3. Create `source/<c_file_stem>.das` with the same names, function order,
    control flow, edge cases, and intentional quirks where Daslang permits.
 4. Document every necessary semantic deviation from C at the adapted site.
-5. Add `tests/test_<c_file_stem>.das` following the one-test-file-per-source
+5. Add `tests/integration/test_<c_file_stem>.das` following the one-test-file-per-source
    convention.
 6. Run the full verification gate and compare the final diff against C again.
 
@@ -367,7 +367,8 @@ scripts/gate.sh
 ```
 
 It is the single definition of the gate, used unchanged by CI and the
-pre-push hook: `-compile-only` on every file under `source/` and `tests/`; the
+pre-push hook: `-compile-only` on every file under `source/` and
+`tests/integration/`; the
 three lint profiles with zero findings under `.lint_config` (which disables
 only the rules whose findings are the faithful spelling of the C source); the
 full dastest suite. `scripts/gate.sh <stage>` runs one stage (`compile`,
@@ -376,7 +377,7 @@ full dastest suite. `scripts/gate.sh <stage>` runs one stage (`compile`,
 Also run the focused test for the changed layer. Runtime/lifecycle changes
 must additionally pass the real `fib32.wasm` regression through result
 retrieval **and teardown without a crash**. That regression is not yet in
-`tests/`; if the runner is absent or cannot reproduce that lifecycle, report
+`tests/integration/`; if the runner is absent or cannot reproduce that lifecycle, report
 the missing verification rather than claiming completion.
 
 The MCP compiler, LSP, lint, and test tools are development aids. The pinned
@@ -444,4 +445,5 @@ and raw model logs never go into the tree; dated working notes go into
 | `notes/runtime_recovery_context_2026-09.md` | provenance of `source/`, checkpoint commits, teardown state |
 | `notes/dap_tooling_update_2026-09-04.md` | current DAP lifecycle, fixes, and failure triage |
 | `wasm3c/source/` | read-only C semantic reference |
-| `source/`, `tests/` | the Daslang port and component tests |
+| `source/`, `tests/integration/` | the Daslang port and the component tests the gate runs |
+| `tests/manual/` | manual fixture sets and `run_fixtures.py`; outside the gate |

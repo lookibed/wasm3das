@@ -5,13 +5,13 @@ options indenting = 4
 // the program root, which under dastest is this file.
 options stack = 4_194_304
 
-// No `module` declaration, like tests/test_fib32_regression.das: a named
+// No `module` declaration, like tests/integration/test_fib32_regression.das: a named
 // test module does not get the [init] of required shared modules under dastest.
 
 require dastest/testing_boost
 require daslib/fio
-require ../source/m3_parse.das
-require ../source/m3_exec.das
+require ../../source/m3_parse.das
+require ../../source/m3_exec.das
 
 
 /*

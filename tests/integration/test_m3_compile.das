@@ -8,7 +8,7 @@ module test_m3_compile
 
 require dastest/testing_boost
 require daslib/fio
-require ../source/m3_parse.das
+require ../../source/m3_parse.das
 
 
 /*

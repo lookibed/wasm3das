@@ -4,15 +4,15 @@ options indenting = 4
 // fixture parses and loads a module, so the regression's stack budget is kept.
 options stack = 4_194_304
 
-// No `module` declaration, like tests/test_m3_env.das: under dastest a test
+// No `module` declaration, like tests/integration/test_m3_env.das: under dastest a test
 // file that names its module does not run the [init] functions of required
 // shared modules.
 
 require dastest/testing_boost
 require daslib/fio
 require daslib/strings
-require ../source/m3_api_wasi_fd.das
-require ../source/m3_parse.das
+require ../../source/m3_api_wasi_fd.das
+require ../../source/m3_parse.das
 
 
 /*

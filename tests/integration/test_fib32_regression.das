@@ -7,14 +7,14 @@ options indenting = 4
 // program root, which under dastest is this file.
 options stack = 4_194_304
 
-// No `module` declaration, like tests/test_m3_env.das: under dastest a test
+// No `module` declaration, like tests/integration/test_m3_env.das: under dastest a test
 // file that names its module does not run the [init] functions of required
 // shared modules. m3_NewEnvironment fills the compiler's operation table
 // itself since PR #11, so this is convention rather than a workaround.
 
 require dastest/testing_boost
 require daslib/fio
-require ../source/m3_parse.das
+require ../../source/m3_parse.das
 
 
 /*

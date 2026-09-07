@@ -2,7 +2,7 @@ options gen2
 options indenting = 4
 
 require dastest/testing_boost
-require ../source/m3_core.das
+require ../../source/m3_core.das
 
 
 def private fail(message : string) {

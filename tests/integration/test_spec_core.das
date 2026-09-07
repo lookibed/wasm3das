@@ -5,7 +5,7 @@ options indenting = 4
 // options stack counts only in the program root, which under dastest is this file.
 options stack = 8_388_608
 
-// No `module` declaration, like tests/test_m3_exec.das: a named test module
+// No `module` declaration, like tests/integration/test_m3_exec.das: a named test module
 // does not get the [init] of required shared modules under dastest.
 
 require dastest/testing_boost
@@ -13,8 +13,8 @@ require daslib/fio
 require daslib/json
 require daslib/json_boost
 require strings
-require ../source/m3_parse.das
-require ../source/m3_api_libc.das
+require ../../source/m3_parse.das
+require ../../source/m3_api_libc.das
 
 
 /*

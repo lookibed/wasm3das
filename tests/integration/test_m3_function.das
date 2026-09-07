@@ -4,7 +4,7 @@ options indenting = 4
 module test_m3_function
 
 require dastest/testing_boost
-require ../source/m3_function.das
+require ../../source/m3_function.das
 
 
 // Fail immediately on the first mismatch, as required by the acceptance spec.

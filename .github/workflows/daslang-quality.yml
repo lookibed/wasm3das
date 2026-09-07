@@ -52,7 +52,7 @@ jobs:
           changed="$(git diff --name-only "$base" "${{ github.sha }}")"
           echo "changed files:"
           printf '  %s\n' $changed
-          if printf '%s\n' "$changed" | grep -Eq '^(source/|tests/|app/|host_test/|scripts/|\.githooks/|\.github/workflows/|\.lint_config$|PORTING_MANIFEST\.md$)'; then
+          if printf '%s\n' "$changed" | grep -Eq '^(source/|tests/integration/|app/|host_test/|scripts/|\.githooks/|\.github/workflows/|\.lint_config$|PORTING_MANIFEST\.md$)'; then
             echo "run_gate=true" >> "$GITHUB_OUTPUT"
           else
             echo "no gate inputs changed; skipping the Daslang gate"
