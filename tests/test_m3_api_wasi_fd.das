@@ -542,6 +542,10 @@ def test_fd_write(t : T?) {
         return
     }
 
+    // tmp/ is git-ignored, so a fresh checkout (CI) has no such directory;
+    // mkdir is a no-op when it already exists.
+    mkdir("tmp")
+
     let path_len = mem_write_string(fx.mem, OFF_PATH, SCRATCH_TXT)
     let oflags = u32(WASI_OFLAGS_CREAT) | u32(WASI_OFLAGS_TRUNC)
     let rights = WASI_RIGHTS_FD_READ | WASI_RIGHTS_FD_WRITE
