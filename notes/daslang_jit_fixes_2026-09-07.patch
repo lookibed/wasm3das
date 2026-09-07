@@ -1,24 +1,26 @@
-Two fixes to daslang's LLVM JIT (modules/dasLLVM/daslib), found while running
-the wasm3 port under `daslang -jit` on the pinned commit 1524b3bf62e7decbfe530dc5f2e794b296fa1e68.
-Applied in the local worktree tmp/daslang-jit; candidates for an upstream
-pull request against GaijinEntertainment/daScript.
+Three fixes to daslang's LLVM JIT (modules/dasLLVM/daslib), against the
+official release bundle v0.6.4-RC2 (the files are identical at commit
+1524b3bf62e7decbfe530dc5f2e794b296fa1e68). Never applied to an installed
+toolchain of this project; verified on a scratch copy of modules/dasLLVM
+loaded with `daslang -load_module <copy> ...`. Regression tests that fail
+without and pass with these hunks are in notes/upstream_cases/tests/.
 
 1. `reinterpret<uint64>(@@fn)` emitted an invalid bitcast from the function
-   aggregate `{ ptr }` to i64 and aborted codegen (hit by op_Compile in the
-   port). The pointer is extracted from the aggregate and converted with
-   ptrtoint, which is the value the interpreter yields for the same cast.
-2. A module-qualified builtin call (`math::sqrt`) reached the float-op1
-   intrinsic emitter with the qualified spelling, producing the intrinsic name
-   "llvm.math::sqrt.f32"; LLVMLookupIntrinsicID answers 0 and
-   LLVMGetIntrinsicDeclaration dereferences it (SIGSEGV during codegen, hit by
-   op_f32_Sqrt and the whole float_op1 family). The namespace is stripped and
-   id 0 is refused with a diagnostic.
+   aggregate `{ ptr }` to i64 and aborted codegen. The pointer is extracted
+   from the aggregate and converted with ptrtoint.
+2. The mirror image, `reinterpret<SomeFn>(handle)` from a 64-bit integer,
+   emitted `bitcast i64 to { ptr }`; the pointer is built with inttoptr and
+   inserted into an undef function aggregate.
+3. A module-qualified builtin call (`math::sqrt`) reached the float-op1
+   intrinsic emitter with the qualified spelling, producing the intrinsic
+   name "llvm.math::sqrt.f32"; LLVMLookupIntrinsicID answers 0 and
+   LLVMGetIntrinsicDeclaration dereferences it (SIGSEGV during codegen for
+   sqrt floor ceil round sin cos log exp2 log2 floori ceili sinh cosh tanh).
+   The namespace is stripped and id 0 is refused with a diagnostic.
 
-diff --git a/modules/dasLLVM/daslib/llvm_jit.das b/modules/dasLLVM/daslib/llvm_jit.das
-index 14595cf8c..a27d34cec 100644
---- a/modules/dasLLVM/daslib/llvm_jit.das
-+++ b/modules/dasLLVM/daslib/llvm_jit.das
-@@ -5495,6 +5495,16 @@ class public LlvmJitVisitor : AstVisitor {
+--- a/modules/dasLLVM/daslib/llvm_jit.das	2026-08-19 12:12:02.000000000 -0700
++++ b/modules/dasLLVM/daslib/llvm_jit.das	2026-09-07 14:03:41.015304478 -0700
+@@ -5569,6 +5569,24 @@
              res = LLVMBuildPtrToInt(g_builder, subE, type_to_llvm_type(ect), "cast_p_i")
          } elif ((ect.isPointer || ect.isString) && subT.isInteger) {
              res = LLVMBuildIntToPtr(g_builder, subE, type_to_llvm_type(ect), "cast_i_p")
@@ -32,14 +34,20 @@ index 14595cf8c..a27d34cec 100644
 +            // which is the address the interpreter yields for the same cast.
 +            var fn_ptr = LLVMBuildExtractValue(g_builder, subE, 0u, "cast_fn_p")
 +            res = LLVMBuildPtrToInt(g_builder, fn_ptr, type_to_llvm_type(ect), "cast_fn_i")
++        } elif (ect.baseType == Type.tFunction && subT.isInteger &&
++                (subT.baseType == Type.tInt64 || subT.baseType == Type.tUInt64)) {
++            // The other direction: `reinterpret<SomeFn>(handle)` turns a 64-bit
++            // handle back into a function value. Same aggregate problem, mirrored -
++            // build the { ptr } instead of bitcasting i64 straight to it.
++            var fn_ptr = LLVMBuildIntToPtr(g_builder, subE, LLVMPointerType(g_t_simFunction, 0u), "cast_i_fn_p")
++            var rfun = LLVMGetUndef(g_t_function)
++            res = LLVMBuildInsertValue(g_builder, rfun, fn_ptr, 0u, "cast_i_fn")
          } elif (!ect.isRefType && !subT.isRefType) {
              if (ect.sizeOf == subT.sizeOf) {
                  res = LLVMBuildBitCast(g_builder, subE, type_to_llvm_type(ect), "cast_r")
-diff --git a/modules/dasLLVM/daslib/llvm_jit_intrin.das b/modules/dasLLVM/daslib/llvm_jit_intrin.das
-index 947a93207..db06a56fd 100644
---- a/modules/dasLLVM/daslib/llvm_jit_intrin.das
-+++ b/modules/dasLLVM/daslib/llvm_jit_intrin.das
-@@ -1029,7 +1029,19 @@ def intrinsic_math_rsqrt(var ctx : JitCtx; expr : ExprCallFunc?; arguments : arr
+--- a/modules/dasLLVM/daslib/llvm_jit_intrin.das	2026-08-19 12:12:02.000000000 -0700
++++ b/modules/dasLLVM/daslib/llvm_jit_intrin.das	2026-09-07 14:03:10.503321493 -0700
+@@ -1029,7 +1029,19 @@
      }
  }
 
@@ -60,7 +68,7 @@ index 947a93207..db06a56fd 100644
      var sqrt_name = "llvm.{expr_name}.f32"
      assume opType = expr.arguments[0]._type
      if (opType.isFloatOrDouble || (opType.isVectorType && opType.vectorBaseType == Type.tFloat)) {
-@@ -1043,6 +1055,12 @@ def intrinsic_math_any_float_op1(expr_name : string; g_builder : LLVMOpaqueBuild
+@@ -1043,6 +1055,12 @@
      var args <- [ arguments[0]]
      var argTypes <- [ type_to_llvm_abi_type(expr.arguments[0]._type)]
      let id = LLVMLookupIntrinsicID(sqrt_name)
