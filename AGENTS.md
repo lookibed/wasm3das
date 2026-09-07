@@ -143,14 +143,26 @@ Three servers are required, whichever client is used:
   smoke checklist: `notes/claude_code_tooling_setup_2026-09-04.md`.
 - **Codex** uses a project-local `.codex/config.toml` that is not tracked
   here; `notes/codex_tooling_smoke_test.md` describes its smoke test.
-- The `daslang` and `daslang-lsp` servers must use the project-pinned compiler
-  at `tmp/daslang-toolchain/bin/daslang`.
-- The `daslang-dap` server uses the bridge and executable from
+- All three servers use the pinned daslang release bundle installed at
+  `tmp/daslang` by `scripts/install_daslang.sh` (`.mcp.json` runs
+  `tmp/daslang/utils/mcp/mcp_supervisor.py` with
+  `DASLANG_MCP_BIN=tmp/daslang/bin/daslang`; the LSP plugin runs
+  `tmp/daslang/utils/lsp/lsp_supervisor.py`).
+- The `daslang-dap` server runs the bridge `utils/dap/mcp_bridge.py` from
   `tmp/daslang-dap/`, a worktree of the upstream daScript pull request #3937
-  (`git fetch origin pull/3937/head:pr-3937`), because that build contains the
-  repaired statement-stepping lifecycle. Do not silently switch DAP back to
-  the pinned binary until the fix is present in the pinned toolchain. The
-  pinned compiler remains authoritative for the verification gate.
+  (`git fetch origin pull/3937/head:pr-3937`; merged upstream on 2026-09-05,
+  after the pinned release was cut, so the release bundle has no `utils/dap`
+  yet), with `tmp/daslang/bin/daslang` as the debuggee executable. Once a
+  release ships the bridge, point `.mcp.json` at `tmp/daslang/utils/dap`.
+  Known limitation of the v0.6.4-RC2 debuggee: cancelling a debugger worker
+  that is still waiting for its client crashes the process with SIGSEGV
+  (`utils/dap/test_mcp_bridge.py::test_waiting_worker_shutdown` fails; fixed
+  upstream by PR #3937 after the release), so a launch that never reaches
+  `debug_configuration_done` may end in a crash report rather than a clean
+  `debug_disconnect`. That is a daslang bug, not a bridge or port bug.
+- daslang itself is never built or patched for this project: a compiler bug
+  is reported upstream with a reproducer, and the port is kept correct on the
+  pinned release.
 - Before writing any new daslang tool (bridge, wrapper, script), check the open
   pull requests of `GaijinEntertainment/daScript`: the owner maintains the
   tooling there.
@@ -354,11 +366,15 @@ The tree is lint-clean under `.lint_config`; keep it that way. Do not mix
 lint/style changes with runtime fixes in one commit, and do not silence a
 fixable finding by adding a rule to `.lint_config`.
 
-All authoritative verification uses Daslang 0.6.4, commit
-`1524b3bf62e7decbfe530dc5f2e794b296fa1e68`, at
-`tmp/daslang-toolchain/bin/daslang`. Never silently substitute another
-compiler. If the pinned toolchain is missing, follow `README.md` or report the
-blocker.
+All authoritative verification uses the official prebuilt daslang release
+bundle pinned in `scripts/daslang_release.env` (tag `v0.6.4-RC2`, one sha256
+per platform asset), installed by `scripts/install_daslang.sh` into
+`tmp/daslang`. `scripts/gate.sh` checks the install stamp
+`tmp/daslang/.wasm3das-release` against that tag and refuses anything else.
+Never build daslang from source and never silently substitute another
+compiler; a local experiment with a different build must set
+`DASLANG_ALLOW_UNPINNED=1` and cannot claim a green gate. If the bundle is
+missing, run the install script or report the blocker.
 
 Run:
 
@@ -441,6 +457,8 @@ and raw model logs never go into the tree; dated working notes go into
 | `docs/memory-ownership.md` | allocation-regime decision and migration order |
 | `.github/pull_request_template.md` | PR skeleton: scope, C references, verification, manifest transition, C checklist |
 | `.githooks/pre-push` | local form of the CI quality gate |
+| `scripts/gate.sh`, `scripts/check_repo_invariants.sh` | the gate shared by CI and the pre-push hook |
+| `scripts/daslang_release.env`, `scripts/install_daslang.sh` | the pinned daslang release (tag and checksums) and its installer into `tmp/daslang` |
 | `notes/handoff_claude_code_2026-09-05.md` | latest session handoff |
 | `notes/runtime_recovery_context_2026-09.md` | provenance of `source/`, checkpoint commits, teardown state |
 | `notes/dap_tooling_update_2026-09-04.md` | current DAP lifecycle, fixes, and failure triage |

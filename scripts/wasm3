@@ -4,11 +4,11 @@
 # `--exec "<repo>/scripts/wasm3 --repl"`.
 #
 # Environment:
-#   DASLANG           pinned compiler binary (default: tmp/daslang-toolchain/bin/daslang)
+#   DASLANG           daslang binary (default: tmp/daslang/bin/daslang, the
+#                     release bundle installed by scripts/install_daslang.sh)
 #   WASM3DAS_JIT      when 1, pass -jit to daslang so the port runs LLVM-compiled
-#                     instead of interpreted. Requires a daslang built with
-#                     -DDAS_LLVM_DISABLED=OFF; the pinned gate toolchain has no
-#                     JIT, so point DASLANG at the JIT build as well.
+#                     instead of interpreted. The release bundle ships the LLVM
+#                     JIT, so the same binary serves both modes.
 #   WASM3DAS_JIT_ARGS extra daslang JIT switches, whitespace separated, only used
 #                     when WASM3DAS_JIT=1 (for example -jit-no-cache, -jit-stack).
 #   WASM3DAS_APP      alternative app entry point (default: app/wasm3.das), so an
@@ -18,10 +18,10 @@ set -euo pipefail
 
 repo_root="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")/.." && pwd)"
 
-DASLANG="${DASLANG:-$repo_root/tmp/daslang-toolchain/bin/daslang}"
+DASLANG="${DASLANG:-$repo_root/tmp/daslang/bin/daslang}"
 
 if [[ ! -x "$DASLANG" ]]; then
-    echo "wasm3: missing pinned Daslang compiler at $DASLANG" >&2
+    echo "wasm3: missing daslang at $DASLANG (run scripts/install_daslang.sh)" >&2
     exit 1
 fi
 

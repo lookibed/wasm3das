@@ -216,17 +216,20 @@ def link_all(var _module : IM3Module) : M3Result {
 
 def modname_from_fn(fn : string) : string {
     let sep = str_bytes("/\\:*?")
-    var name = fn
+    let s = str_bytes(fn)
+    // C advances `fn` past the last occurrence of each separator in turn
+    // (`fn = off + 1`); the port advances a start offset over one byte view
+    // and slices once after the loop, so no separator re-scans the string.
+    var start = 0
     for (si in 0 .. length(sep)) {
         let c = sep[si]
-        let s = str_bytes(name)
         var off = -1
-        for (i in 0 .. length(s)) {
+        for (i in start .. length(s)) {
             if (s[i] == c) { off = i }
         }
-        if (off >= 0) { name = slice(name, off + 1) }
+        if (off >= 0) { start = off + 1 }
     }
-    return name
+    return start == 0 ? fn : slice(fn, start)
 }
 
 
@@ -695,25 +698,29 @@ def private unescape_argv(buff : string) : string {
 
 def private split_argv(str : string) : array<string> {
     var result : array<string>
-    let s = str_bytes(str)
     var curr = 0
     var len = 0
-    let n = length(s)
-    for (i in 0 .. n) {
-        let c = int(s[i])
-        if (c == 32 || c == 10 || c == 13 || c == 9) {
-            if (len != 0) {   // Found space after non-space
-                result |> push(slice(str, curr, i))
-                len = 0
+    // One byte view of the line for the scan and for every word cut out of
+    // it: slicing `str` itself inside the loop would re-measure the line
+    // per word (PERF031).
+    peek_data(str) $(s) {
+        let n = length(s)
+        for (i in 0 .. n) {
+            let c = int(s[i])
+            if (c == 32 || c == 10 || c == 13 || c == 9) {
+                if (len != 0) {   // Found space after non-space
+                    result |> push(slice(s, curr, i))
+                    len = 0
+                }
+            } else {
+                if (len == 0) {   // Found non-space after space
+                    curr = i
+                }
+                len++
             }
-        } else {
-            if (len == 0) {   // Found non-space after space
-                curr = i
-            }
-            len++
         }
+        if (len != 0) { result |> push(slice(s, curr, n)) }
     }
-    if (len != 0) { result |> push(slice(str, curr, n)) }
     return <- result
 }
 

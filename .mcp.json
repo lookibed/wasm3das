@@ -3,14 +3,14 @@
     "daslang": {
       "command": "python3",
       "args": [
-        "tmp/daslang-toolchain/utils/mcp/mcp_supervisor.py",
+        "tmp/daslang/utils/mcp/mcp_supervisor.py",
         "--repo-root",
         ".",
         "--stderr-log",
         "logs/claude-mcp-daslang-child.log"
       ],
       "env": {
-        "DASLANG_MCP_BIN": "tmp/daslang-toolchain/bin/daslang",
+        "DASLANG_MCP_BIN": "tmp/daslang/bin/daslang",
         "DAS_LINT_CONFIG_PATH": ".lint_config"
       },
       "defer_loading": false
@@ -22,7 +22,7 @@
         "--repo-root",
         ".",
         "--executable",
-        "tmp/daslang-dap/bin/daslang"
+        "tmp/daslang/bin/daslang"
       ]
     }
   }

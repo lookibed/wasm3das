@@ -76,11 +76,12 @@ so the order stays visible in `main` after squash merges.
   source → minimal patch → regression. DAP runs only locally; its output goes
   into the PR body as text because CI cannot reproduce it.
 - Done: the full pinned gate is green locally: `scripts/gate.sh` with the
-  toolchain at `tmp/daslang-toolchain` (or `DASLANG_ROOT=/path/to/daScript
-  DASLANG="$DASLANG_ROOT/bin/daslang" scripts/gate.sh`); a single stage runs
-  by name, for example `scripts/gate.sh lint-style`. The pre-push hook runs
-  the same gate once enabled with `git config core.hooksPath .githooks`; a
-  push that fails the hook is not ready.
+  daslang release bundle installed at `tmp/daslang` by
+  `scripts/install_daslang.sh` (the gate verifies the install stamp against
+  `scripts/daslang_release.env`); a single stage runs by name, for example
+  `scripts/gate.sh lint-style`. The pre-push hook runs the same gate once
+  enabled with `git config core.hooksPath .githooks`; a push that fails the
+  hook is not ready.
 
 ### 4. Self-review against C
 

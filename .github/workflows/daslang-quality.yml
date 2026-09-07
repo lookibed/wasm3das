@@ -19,10 +19,11 @@ jobs:
     timeout-minutes: 30
 
     env:
-      DASLANG_COMMIT: 1524b3bf62e7decbfe530dc5f2e794b296fa1e68
-      DASLANG_ROOT: ${{ github.workspace }}/.ci/daScript
-      DASLANG_BIN: ${{ github.workspace }}/.ci/daScript/bin/daslang
-      DASLANG: ${{ github.workspace }}/.ci/daScript/bin/daslang
+      # The compiler is the daslang release bundle pinned in
+      # scripts/daslang_release.env, installed by scripts/install_daslang.sh
+      # into tmp/daslang, exactly as on a developer machine.
+      DASLANG_ROOT: ${{ github.workspace }}/tmp/daslang
+      DASLANG: ${{ github.workspace }}/tmp/daslang/bin/daslang
       DAS_LINT_CONFIG_PATH: ${{ github.workspace }}/.lint_config
 
     steps:
@@ -59,42 +60,33 @@ jobs:
             echo "run_gate=false" >> "$GITHUB_OUTPUT"
           fi
 
-      - name: Cache Daslang build
+      - name: Read the pinned daslang release
         if: steps.changes.outputs.run_gate == 'true'
-        id: cache-daslang
-        uses: actions/cache/restore@v4
-        with:
-          path: .ci/daScript
-          key: daslang-linux-${{ env.DASLANG_COMMIT }}
-
-      - name: Build pinned Daslang toolchain
-        if: steps.changes.outputs.run_gate == 'true' && steps.cache-daslang.outputs.cache-hit != 'true'
+        id: pin
         shell: bash
         run: |
           set -euo pipefail
-          git clone --filter=blob:none https://github.com/GaijinEntertainment/daScript.git "$DASLANG_ROOT"
-          git -C "$DASLANG_ROOT" checkout "$DASLANG_COMMIT"
-          git -C "$DASLANG_ROOT" submodule update --init --recursive --depth 1
-          cmake -S "$DASLANG_ROOT" -B "$DASLANG_ROOT/build" \
-            -DCMAKE_BUILD_TYPE=Release \
-            -DDAS_MODULES_INCLUDE= \
-            -DDAS_TESTS_DISABLED=ON \
-            -DDAS_TUTORIAL_DISABLED=ON \
-            -DDAS_AOT_EXAMPLES_DISABLED=ON
-          cmake --build "$DASLANG_ROOT/build" --target daslang --config Release --parallel 2
+          source scripts/daslang_release.env
+          echo "release=$DASLANG_RELEASE" >> "$GITHUB_OUTPUT"
+          echo "sha256=$DASLANG_SHA256_linux_x86_64" >> "$GITHUB_OUTPUT"
 
-      - name: Save Daslang build
-        if: steps.changes.outputs.run_gate == 'true' && steps.cache-daslang.outputs.cache-hit != 'true'
-        uses: actions/cache/save@v4
+      - name: Cache the daslang release bundle
+        if: steps.changes.outputs.run_gate == 'true'
+        id: cache-daslang
+        uses: actions/cache@v4
         with:
-          path: .ci/daScript
-          key: daslang-linux-${{ env.DASLANG_COMMIT }}
+          path: tmp/daslang
+          key: daslang-release-linux-x86_64-${{ steps.pin.outputs.release }}-${{ steps.pin.outputs.sha256 }}
+
+      - name: Install the pinned daslang release
+        if: steps.changes.outputs.run_gate == 'true' && steps.cache-daslang.outputs.cache-hit != 'true'
+        run: scripts/install_daslang.sh linux-x86_64
 
       - name: Verify pinned compiler
         if: steps.changes.outputs.run_gate == 'true'
         run: |
-          test "$(git -C "$DASLANG_ROOT" rev-parse HEAD)" = "$DASLANG_COMMIT"
-          "$DASLANG_BIN" --version
+          cat "$DASLANG_ROOT/.wasm3das-release"
+          "$DASLANG" --version
 
       # The gate itself is defined once in scripts/gate.sh and shared with the
       # pre-push hook; the steps below only split it for readable CI output.

@@ -2,11 +2,12 @@
 set -euo pipefail
 
 # Local form of the CI quality gate. The gate is defined once in
-# scripts/gate.sh; this hook only locates the pinned toolchain and runs it.
+# scripts/gate.sh; this hook only locates the installed daslang release
+# bundle (scripts/install_daslang.sh) and runs it.
 hook_dir="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)"
 repo_root="$(cd "$hook_dir/.." && pwd)"
 
-export DASLANG_ROOT="${DASLANG_ROOT:-$repo_root/tmp/daslang-toolchain}"
+export DASLANG_ROOT="${DASLANG_ROOT:-$repo_root/tmp/daslang}"
 export DASLANG="${DASLANG:-$DASLANG_ROOT/bin/daslang}"
 
 echo "pre-push: running scripts/gate.sh"
