@@ -8,15 +8,15 @@
 # editing .das) is unchanged for agents.
 #
 # Environment (same as scripts/gate.sh):
-#   DASLANG        pinned compiler binary
-#   DASLANG_ROOT   toolchain root with utils/das-fmt/
+#   DASLANG        compiler binary of the installed release bundle
+#   DASLANG_ROOT   the bundle root with utils/das-fmt/ (default: tmp/daslang)
 # Usage: scripts/check_repo_invariants.sh [repo_root]
 set -uo pipefail
 
 repo_root="${1:-$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")/.." && pwd)}"
 cd "$repo_root"
 
-DASLANG_ROOT="${DASLANG_ROOT:-$repo_root/tmp/daslang-toolchain}"
+DASLANG_ROOT="${DASLANG_ROOT:-$repo_root/tmp/daslang}"
 DASLANG="${DASLANG:-$DASLANG_ROOT/bin/daslang}"
 
 failures=0
@@ -26,7 +26,7 @@ fail() {
 }
 
 # 1. Formatter verify. dasfmt must be given directories: a single-file path
-#    aborts with "FATAL: g_envTotal=1 at exit" on the pinned toolchain.
+#    aborts with "FATAL: g_envTotal=1 at exit" on daslang 0.6.4.
 echo "invariants: formatter verify"
 for dir in source tests/integration app tests/host_test; do
     if ! "$DASLANG" "$DASLANG_ROOT/utils/das-fmt/dasfmt.das" -- --path "$dir" --verify; then

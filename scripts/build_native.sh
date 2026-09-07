@@ -1,12 +1,13 @@
 #!/usr/bin/env bash
 # Build the native wasm3das binary: AOT-compile every Daslang module of the
-# port to C++ with the pinned daslang, then compile and link them together
-# with native/wasm3das_main.cpp and the static libDaScript.
+# port to C++ with the daslang release bundle, then compile and link them
+# together with native/wasm3das_main.cpp and the bundle's static libDaScript.
 #
 # Usage: scripts/build_native.sh [out-dir]      (default: tmp/native)
 # Environment:
-#   DASLANG_ROOT  daslang checkout with include/, lib/liblibDaScript.a and
-#                 utils/aot/main.das (default: tmp/daslang-toolchain)
+#   DASLANG_ROOT  the installed release bundle with include/, lib/liblibDaScript.a
+#                 and utils/aot/main.das (default: tmp/daslang, from
+#                 scripts/install_daslang.sh)
 #   DASLANG       the daslang binary (default: $DASLANG_ROOT/bin/daslang)
 #   CXX           C++ compiler (default: clang++, else g++)
 #   JOBS          parallel compile jobs (default: nproc)
@@ -19,7 +20,7 @@
 set -euo pipefail
 
 repo_root="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")/.." && pwd)"
-DASLANG_ROOT="${DASLANG_ROOT:-$repo_root/tmp/daslang-toolchain}"
+DASLANG_ROOT="${DASLANG_ROOT:-$repo_root/tmp/daslang}"
 DASLANG="${DASLANG:-$DASLANG_ROOT/bin/daslang}"
 CXX="${CXX:-$(command -v clang++ || command -v g++)}"
 JOBS="${JOBS:-$(nproc 2>/dev/null || echo 4)}"
@@ -28,7 +29,7 @@ out="${1:-$repo_root/tmp/native}"
 for f in "$DASLANG" "$DASLANG_ROOT/utils/aot/main.das" "$DASLANG_ROOT/lib/liblibDaScript.a" \
          "$DASLANG_ROOT/lib/liblibDaScript_runtime.a" "$DASLANG_ROOT/lib/liblibUriParser.a"; do
     if [[ ! -e "$f" ]]; then
-        echo "build_native: missing $f (build the toolchain's daslang_static target first)" >&2
+        echo "build_native: missing $f (run scripts/install_daslang.sh)" >&2
         exit 1
     fi
 done
@@ -46,15 +47,20 @@ done
 "$DASLANG" "$DASLANG_ROOT/utils/aot/main.das" -- "${aot_args[@]}" \
     | grep -v "shared_module\|failed to load\|^\s*$" || true
 
-# 2. Compile, with the flags libDaScript itself is built with (see the
-#    toolchain's CMake: -O3 -fno-rtti -fwrapv -std=gnu++17, DAS_FUSION=2).
+# 2. Compile, with the flags libDaScript itself is built with (see daScript's
+#    CMake: -O3 -fno-rtti -fwrapv -std=gnu++17, DAS_FUSION=2).
 echo "build_native: compile ($CXX, $JOBS jobs)"
 cxxflags=(-std=gnu++17 -O3 -fno-rtti -fomit-frame-pointer -fno-stack-protector -fwrapv -fPIC
           -DNDEBUG=1 -DDAS_ENABLE_DYN_INCLUDES=1 -DDAS_FUSION=2 -DDAS_NO_ASSERTIONS -DSIZE_OF_VOID_P=8
           -DURIPARSER_BUILD_CHAR -DURI_STATIC_BUILD
           -Wno-invalid-offsetof -Wno-unused-parameter -Wno-unused-variable -Wno-unused-but-set-variable
-          -I"$DASLANG_ROOT/include" -I"$DASLANG_ROOT/3rdparty/fmt/include" -I"$DASLANG_ROOT/3rdparty/uriparser/include")
-if [[ -d "$DASLANG_ROOT/build/include" ]]; then cxxflags+=(-I"$DASLANG_ROOT/build/include"); fi
+          -I"$DASLANG_ROOT/include")
+# A source checkout keeps the fmt and uriparser headers under 3rdparty/ and
+# generated headers under build/; the release bundle installs everything it
+# exports under include/, so these are optional.
+for inc in "$DASLANG_ROOT/3rdparty/fmt/include" "$DASLANG_ROOT/3rdparty/uriparser/include" "$DASLANG_ROOT/build/include"; do
+    if [[ -d "$inc" ]]; then cxxflags+=(-I"$inc"); fi
+done
 if [[ -n "${EXTRA_CXXFLAGS:-}" ]]; then read -r -a extra_cxx <<< "$EXTRA_CXXFLAGS"; cxxflags+=("${extra_cxx[@]}"); fi
 ldflags=()
 if [[ -n "${EXTRA_LDFLAGS:-}" ]]; then read -r -a ldflags <<< "$EXTRA_LDFLAGS"; fi

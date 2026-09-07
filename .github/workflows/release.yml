@@ -1,8 +1,9 @@
 name: Release bundles
 
-# Builds self-contained wasm3das bundles (pinned daslang interpreter + the
-# port) for Linux x86_64, Linux arm64 and Windows x64, smoke-tests each one,
-# and attaches them to the GitHub release of the given tag.
+# Builds self-contained wasm3das bundles (the daslang interpreter of the
+# release bundle pinned in scripts/daslang_release.env + the port) for Linux
+# x86_64, Linux arm64 and Windows x64, smoke-tests each one, and attaches
+# them to the GitHub release of the given tag.
 #
 # Triggers:
 #   * push of a tag v*: builds the tagged commit and uploads to its release
@@ -30,7 +31,6 @@ defaults:
     shell: bash
 
 env:
-  DASLANG_COMMIT: 1524b3bf62e7decbfe530dc5f2e794b296fa1e68
   RELEASE_TAG: ${{ github.event_name == 'workflow_dispatch' && inputs.tag || github.ref_name }}
 
 jobs:
@@ -45,56 +45,28 @@ jobs:
           - name: linux-x86_64
             runner: ubuntu-24.04
             ext: tar.gz
+            daslang: linux-x86_64
           - name: linux-arm64
             runner: ubuntu-24.04-arm
             ext: tar.gz
+            daslang: linux-arm64
           - name: windows-x64
             runner: windows-2022
             ext: zip
+            daslang: windows-x86_64
 
     steps:
       - name: Check out wasm3das
         uses: actions/checkout@v4
 
-      - name: Install CMake and Ninja
-        uses: lukka/get-cmake@latest
-
-      - name: Set up MSVC (Windows)
+      - name: Set up MSVC (Windows, for editbin)
         if: runner.os == 'Windows'
         uses: ilammy/msvc-dev-cmd@v1
         with:
           arch: x64
 
-      - name: Check out pinned daslang
-        run: |
-          set -euo pipefail
-          git clone --filter=blob:none https://github.com/GaijinEntertainment/daScript.git daScript
-          git -C daScript checkout "$DASLANG_COMMIT"
-          git -C daScript submodule update --init --recursive --depth 1
-
-      - name: Cache daslang build
-        id: cache-daslang
-        uses: actions/cache@v4
-        with:
-          path: daScript/build
-          key: daslang-static-${{ matrix.name }}-${{ env.DASLANG_COMMIT }}-v1
-
-      - name: Build daslang (static, lean)
-        run: |
-          set -euo pipefail
-          # Only builtin modules and daslib are needed by the port: every
-          # external module is off, as in daScript's own lean tool builds.
-          MODULES_OFF="-DDAS_HV_DISABLED=ON -DDAS_LLVM_DISABLED=ON -DDAS_AUDIO_DISABLED=ON"
-          MODULES_OFF="$MODULES_OFF -DDAS_GLFW_DISABLED=ON -DDAS_PUGIXML_DISABLED=ON -DDAS_SQLITE_DISABLED=ON"
-          MODULES_OFF="$MODULES_OFF -DDAS_STBIMAGE_DISABLED=ON -DDAS_STDDLG_DISABLED=ON -DDAS_CLANG_BIND_DISABLED=ON"
-          MODULES_OFF="$MODULES_OFF -DDAS_TREE_SITTER_DISABLED=ON"
-          LEAN="-DDAS_TESTS_DISABLED=ON -DDAS_TUTORIAL_DISABLED=ON -DDAS_AOT_EXAMPLES_DISABLED=ON -DDAS_FLEX_BISON_DISABLED=ON"
-          if [[ "${{ runner.os }}" == "Linux" ]]; then
-            export CC=clang CXX=clang++
-          fi
-          cmake --no-warn-unused-cli -S daScript -B daScript/build -G Ninja \
-            -DCMAKE_BUILD_TYPE=Release $MODULES_OFF $LEAN
-          cmake --build daScript/build --target daslang_static --parallel
+      - name: Install the pinned daslang release
+        run: scripts/install_daslang.sh ${{ matrix.daslang }}
 
       - name: Locate the daslang binary
         id: bin
@@ -103,12 +75,13 @@ jobs:
           bin=""
           # .exe candidates first: on Windows, Git bash's `-f` also accepts the
           # extension-less name, and the bundle keys the launcher on the suffix.
-          for candidate in daScript/bin/daslang_static.exe daScript/bin/Release/daslang_static.exe daScript/bin/daslang_static; do
+          for candidate in tmp/daslang/bin/daslang.exe tmp/daslang/bin/daslang; do
             if [[ -f "$candidate" ]]; then bin="$candidate"; break; fi
           done
           test -n "$bin"
           echo "path=$bin" >> "$GITHUB_OUTPUT"
-          "$bin" --version || true
+          cat tmp/daslang/.wasm3das-release
+          "$bin" --version
 
       - name: Reserve a large native stack (Windows)
         if: runner.os == 'Windows'
@@ -119,7 +92,7 @@ jobs:
         run: editbin -NOLOGO -STACK:268435456 "$(cygpath -w "${{ steps.bin.outputs.path }}")"
 
       - name: Assemble bundle
-        run: scripts/make_release_bundle.sh daScript "${{ steps.bin.outputs.path }}" dist/wasm3das
+        run: scripts/make_release_bundle.sh tmp/daslang "${{ steps.bin.outputs.path }}" dist/wasm3das
 
       - name: Smoke test
         run: |

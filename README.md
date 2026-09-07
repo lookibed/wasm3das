@@ -71,8 +71,8 @@ API (`m3_ParseModule`, `m3_LoadModule`, `m3_FindFunction`, `m3_CallV`,
 `m3_GetResultsV`, `m3_GetMemory`):
 
 ```sh
-$ tmp/daslang-toolchain/bin/daslang tests/host_test/smoke.das
-$ tmp/daslang-toolchain/bin/daslang tests/host_test/main.das -- tests/manual/real-world-h264bsd-mp4/generated/h264mp4.wasm clip.mp4 outdir 12
+$ tmp/daslang/bin/daslang tests/host_test/smoke.das
+$ tmp/daslang/bin/daslang tests/host_test/main.das -- tests/manual/real-world-h264bsd-mp4/generated/h264mp4.wasm clip.mp4 outdir 12
 ```
 
 Interactive session, the same protocol the spec-test driver speaks:
@@ -103,8 +103,8 @@ $ python3 run-spec-test.py --exec "$PWD/../../../scripts/wasm3 --repl"
 
 Each [release](https://github.com/lookibed/wasm3das/releases) ships a
 self-contained bundle for Linux x86_64, Linux arm64 and Windows x64: the
-pinned Daslang interpreter, the port and the example modules. Unpack it and
-run:
+Daslang interpreter of the pinned daslang release, the port and the example
+modules. Unpack it and run:
 
 ```sh
 tar -xzf wasm3das-v0.1.0-linux-x86_64.tar.gz
@@ -115,10 +115,12 @@ wasm3das/wasm3 wasm3das/examples/fib32.wasm --func fib 25
 wasm3das\wasm3.cmd wasm3das\examples\fib32.wasm --func fib 25
 ```
 
-### From source
+### From the repository
 
-Requirements: Linux or macOS, `bash`, `git`, `cmake`, a C++17 compiler, and
-Python 3 for the spec-test driver.
+Requirements: Linux (x86_64 or arm64) or macOS (arm64), `bash`, `curl`,
+`unzip`, and Python 3 for the spec-test driver. daslang is never built here:
+the project uses one official prebuilt daslang release bundle, pinned by tag
+and sha256 in `scripts/daslang_release.env`.
 
 1. Clone the repository:
 
@@ -127,19 +129,17 @@ Python 3 for the spec-test driver.
    cd wasm3das
    ```
 
-2. Build the pinned Daslang toolchain (version 0.6.4, commit
-   `1524b3bf62e7decbfe530dc5f2e794b296fa1e68`) into `tmp/daslang-toolchain`:
+2. Install the pinned daslang release into `tmp/daslang` (downloads
+   `daslang-bundle-<platform>.zip` from the
+   [daScript releases](https://github.com/GaijinEntertainment/daScript/releases),
+   verifies the checksum and unpacks it):
 
    ```sh
-   git clone https://github.com/GaijinEntertainment/daScript.git tmp/daslang-toolchain
-   git -C tmp/daslang-toolchain checkout 1524b3bf62e7decbfe530dc5f2e794b296fa1e68
-   git -C tmp/daslang-toolchain submodule update --init --recursive
-   cmake -S tmp/daslang-toolchain -B tmp/daslang-toolchain/build -DCMAKE_BUILD_TYPE=Release
-   cmake --build tmp/daslang-toolchain/build --target daslang --parallel
+   scripts/install_daslang.sh
    ```
 
-   An existing Daslang build of that commit works too: point `DASLANG` at
-   its `bin/daslang`.
+   Every script, the gate, CI and the editor tooling read that one tree;
+   `scripts/gate.sh` refuses any other compiler.
 
 3. Run:
 
@@ -154,11 +154,9 @@ run above.
 
 `scripts/build_native.sh` compiles the port ahead of time: daslang's AOT
 turns every module into C++, which is linked with the static `libDaScript`
-of the toolchain and the host in `native/` into `tmp/native/bin/wasm3das`.
-It needs the toolchain's `daslang_static` target built
-(`cmake --build tmp/daslang-toolchain/build --target daslang_static`) and
-clang++ or g++. `scripts/wasm3-native` is the drop-in counterpart of
-`scripts/wasm3`:
+shipped in the release bundle and the host in `native/` into
+`tmp/native/bin/wasm3das`. It needs clang++ or g++. `scripts/wasm3-native`
+is the drop-in counterpart of `scripts/wasm3`:
 
 ```sh
 scripts/build_native.sh

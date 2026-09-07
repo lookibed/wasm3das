@@ -9,10 +9,10 @@ Runs every scalar (non host-adapter) fixture export through four runtimes:
   das        (wasm3das, interpreted: wasm3.cmd in the bundle, or
               <repo>/scripts/wasm3)
   jit        (wasm3das, LLVM JIT: the very same front end run with
-              WASM3DAS_JIT=1 and DASLANG pointed at a JIT-enabled daslang,
-              by default <repo>/tmp/daslang-jit/bin/daslang.  The JIT
-              compiles the port on first use into ./.jitted_scripts, so the
-              first ever run is much slower than the cached ones.)
+              WASM3DAS_JIT=1; the daslang release bundle ships the JIT, so by
+              default this is the same <repo>/tmp/daslang/bin/daslang.  The
+              JIT compiles the port on first use into ./.jitted_scripts, so
+              the first ever run is much slower than the cached ones.)
 
 Each command is timed with the full wall clock from process spawn to
 complete output (subprocess.run + perf_counter, stdout+stderr captured).
@@ -64,10 +64,11 @@ else:
     WASM3C = os.environ.get("WASM3C", os.path.join(REPO_ROOT, "tools", "bin", "wasm3"))
     WASM3DAS = os.environ.get("WASM3DAS", os.path.join(REPO_ROOT, "scripts", "wasm3"))
 
-# The JIT runtime drives the same scripts/wasm3 front end, only with a
-# JIT-enabled daslang: the pinned gate toolchain is built without LLVM.
+# The JIT runtime drives the same scripts/wasm3 front end with -jit; the
+# release bundle's daslang ships the LLVM JIT, so it is the same binary the
+# interpreter column uses (scripts/install_daslang.sh installs it).
 DASLANG_JIT = os.environ.get(
-    "DASLANG_JIT", os.path.join(REPO_ROOT, "tmp", "daslang-jit", "bin", "daslang"))
+    "DASLANG_JIT", os.path.join(REPO_ROOT, "tmp", "daslang", "bin", "daslang"))
 
 
 def gen(fixture: str) -> str:
