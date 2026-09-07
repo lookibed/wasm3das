@@ -12,6 +12,15 @@ require ./m3_exec_defs.das public
 // Conservative Gen2 port of m3_exec.h.
 // The threaded-interpreter ABI, op_* names, register/slot forms, trap propagation,
 // memory checks, and immediate layout are intentionally kept close to wasm3.
+//
+// One architectural deviation, documented in full in m3_exec_defs.das and
+// notes/exec_trampoline_design.md: Daslang has no M3_MUSTTAIL, so an operation
+// does not call its successor. Every operation takes the five interpreter
+// registers (_pc, _sp, _mem, _r0, _fp0) BY REFERENCE and updates them in place -
+// which is what C's "pass the updated values to the next operation" means - and
+// `return nextOpDirect (...)` hands control back to the dispatching RunLoop in
+// m3_exec_defs.das. The bodies below are otherwise the C bodies: the C spelling
+// of every tail position, of jumpOpDirect and of nextOpImpl is preserved.
 
 let INT32_MIN : i32 = -2147483647 - 1
 let INT64_MIN : i64 = -9223372036854775807l - 1l
@@ -319,566 +328,571 @@ def slot_f64(var _pc : pc_t&; _sp : m3stack_t) : f64 {
     }
 }
 
+// C: static inline m3ret_t Call (d_m3OpSig) — takes the operation signature by
+// value and its callers (op_Call, op_CallIndirect) pass a fresh stack pointer
+// and cleared registers. C ends it with nextOpDirect(), a MUSTTAIL return of
+// nextOpImpl(): Call's result is the completed result of the callee's operation
+// chain, so the trampoline form is nextOpImpl, one nested RunLoop per wasm call.
 def Call(var _pc : pc_t; var _sp : m3stack_t; var _mem : M3MemoryHeader?; var _r0 : m3reg_t; var _fp0 : f64) : M3Result {
     let possible_trap = m3_Yield()
     if (possible_trap != m3Err_none) { return possible_trap }
-    return nextOpDirect(_pc, _sp, _mem, _r0, _fp0)
+    return nextOpImpl(_pc, _sp, _mem, _r0, _fp0)
 }
 
-def public op_i32_Equal_rs(var _pc : pc_t; var _sp : m3stack_t; var _mem : M3MemoryHeader?; var _r0 : m3reg_t; var _fp0 : f64) : M3Result {
+def public op_i32_Equal_rs(var _pc : pc_t&; var _sp : m3stack_t&; var _mem : M3MemoryHeader?&; var _r0 : m3reg_t&; var _fp0 : f64&) : M3Result {
     let operand = slot_i32(_pc, _sp)
     _r0 = bool_reg(operand == i32(_r0))
     return nextOpDirect(_pc, _sp, _mem, _r0, _fp0)
 }
 
-def public op_i32_Equal_ss(var _pc : pc_t; var _sp : m3stack_t; var _mem : M3MemoryHeader?; var _r0 : m3reg_t; var _fp0 : f64) : M3Result {
+def public op_i32_Equal_ss(var _pc : pc_t&; var _sp : m3stack_t&; var _mem : M3MemoryHeader?&; var _r0 : m3reg_t&; var _fp0 : f64&) : M3Result {
     let operand2 = slot_i32(_pc, _sp)
     let operand1 = slot_i32(_pc, _sp)
     _r0 = bool_reg(operand1 == operand2)
     return nextOpDirect(_pc, _sp, _mem, _r0, _fp0)
 }
 
-def public op_i32_NotEqual_rs(var _pc : pc_t; var _sp : m3stack_t; var _mem : M3MemoryHeader?; var _r0 : m3reg_t; var _fp0 : f64) : M3Result {
+def public op_i32_NotEqual_rs(var _pc : pc_t&; var _sp : m3stack_t&; var _mem : M3MemoryHeader?&; var _r0 : m3reg_t&; var _fp0 : f64&) : M3Result {
     let operand = slot_i32(_pc, _sp)
     _r0 = bool_reg(operand != i32(_r0))
     return nextOpDirect(_pc, _sp, _mem, _r0, _fp0)
 }
 
-def public op_i32_NotEqual_ss(var _pc : pc_t; var _sp : m3stack_t; var _mem : M3MemoryHeader?; var _r0 : m3reg_t; var _fp0 : f64) : M3Result {
+def public op_i32_NotEqual_ss(var _pc : pc_t&; var _sp : m3stack_t&; var _mem : M3MemoryHeader?&; var _r0 : m3reg_t&; var _fp0 : f64&) : M3Result {
     let operand2 = slot_i32(_pc, _sp)
     let operand1 = slot_i32(_pc, _sp)
     _r0 = bool_reg(operand1 != operand2)
     return nextOpDirect(_pc, _sp, _mem, _r0, _fp0)
 }
 
-def public op_i32_LessThan_sr(var _pc : pc_t; var _sp : m3stack_t; var _mem : M3MemoryHeader?; var _r0 : m3reg_t; var _fp0 : f64) : M3Result {
+def public op_i32_LessThan_sr(var _pc : pc_t&; var _sp : m3stack_t&; var _mem : M3MemoryHeader?&; var _r0 : m3reg_t&; var _fp0 : f64&) : M3Result {
     let operand = slot_i32(_pc, _sp)
     _r0 = bool_reg(i32(_r0) < operand)
     return nextOpDirect(_pc, _sp, _mem, _r0, _fp0)
 }
 
-def public op_i32_LessThan_rs(var _pc : pc_t; var _sp : m3stack_t; var _mem : M3MemoryHeader?; var _r0 : m3reg_t; var _fp0 : f64) : M3Result {
+def public op_i32_LessThan_rs(var _pc : pc_t&; var _sp : m3stack_t&; var _mem : M3MemoryHeader?&; var _r0 : m3reg_t&; var _fp0 : f64&) : M3Result {
     let operand = slot_i32(_pc, _sp)
     _r0 = bool_reg(operand < i32(_r0))
     return nextOpDirect(_pc, _sp, _mem, _r0, _fp0)
 }
 
-def public op_i32_LessThan_ss(var _pc : pc_t; var _sp : m3stack_t; var _mem : M3MemoryHeader?; var _r0 : m3reg_t; var _fp0 : f64) : M3Result {
+def public op_i32_LessThan_ss(var _pc : pc_t&; var _sp : m3stack_t&; var _mem : M3MemoryHeader?&; var _r0 : m3reg_t&; var _fp0 : f64&) : M3Result {
     let operand2 = slot_i32(_pc, _sp)
     let operand1 = slot_i32(_pc, _sp)
     _r0 = bool_reg(operand1 < operand2)
     return nextOpDirect(_pc, _sp, _mem, _r0, _fp0)
 }
 
-def public op_i32_GreaterThan_sr(var _pc : pc_t; var _sp : m3stack_t; var _mem : M3MemoryHeader?; var _r0 : m3reg_t; var _fp0 : f64) : M3Result {
+def public op_i32_GreaterThan_sr(var _pc : pc_t&; var _sp : m3stack_t&; var _mem : M3MemoryHeader?&; var _r0 : m3reg_t&; var _fp0 : f64&) : M3Result {
     let operand = slot_i32(_pc, _sp)
     _r0 = bool_reg(i32(_r0) > operand)
     return nextOpDirect(_pc, _sp, _mem, _r0, _fp0)
 }
 
-def public op_i32_GreaterThan_rs(var _pc : pc_t; var _sp : m3stack_t; var _mem : M3MemoryHeader?; var _r0 : m3reg_t; var _fp0 : f64) : M3Result {
+def public op_i32_GreaterThan_rs(var _pc : pc_t&; var _sp : m3stack_t&; var _mem : M3MemoryHeader?&; var _r0 : m3reg_t&; var _fp0 : f64&) : M3Result {
     let operand = slot_i32(_pc, _sp)
     _r0 = bool_reg(operand > i32(_r0))
     return nextOpDirect(_pc, _sp, _mem, _r0, _fp0)
 }
 
-def public op_i32_GreaterThan_ss(var _pc : pc_t; var _sp : m3stack_t; var _mem : M3MemoryHeader?; var _r0 : m3reg_t; var _fp0 : f64) : M3Result {
+def public op_i32_GreaterThan_ss(var _pc : pc_t&; var _sp : m3stack_t&; var _mem : M3MemoryHeader?&; var _r0 : m3reg_t&; var _fp0 : f64&) : M3Result {
     let operand2 = slot_i32(_pc, _sp)
     let operand1 = slot_i32(_pc, _sp)
     _r0 = bool_reg(operand1 > operand2)
     return nextOpDirect(_pc, _sp, _mem, _r0, _fp0)
 }
 
-def public op_i32_LessThanOrEqual_sr(var _pc : pc_t; var _sp : m3stack_t; var _mem : M3MemoryHeader?; var _r0 : m3reg_t; var _fp0 : f64) : M3Result {
+def public op_i32_LessThanOrEqual_sr(var _pc : pc_t&; var _sp : m3stack_t&; var _mem : M3MemoryHeader?&; var _r0 : m3reg_t&; var _fp0 : f64&) : M3Result {
     let operand = slot_i32(_pc, _sp)
     _r0 = bool_reg(i32(_r0) <= operand)
     return nextOpDirect(_pc, _sp, _mem, _r0, _fp0)
 }
 
-def public op_i32_LessThanOrEqual_rs(var _pc : pc_t; var _sp : m3stack_t; var _mem : M3MemoryHeader?; var _r0 : m3reg_t; var _fp0 : f64) : M3Result {
+def public op_i32_LessThanOrEqual_rs(var _pc : pc_t&; var _sp : m3stack_t&; var _mem : M3MemoryHeader?&; var _r0 : m3reg_t&; var _fp0 : f64&) : M3Result {
     let operand = slot_i32(_pc, _sp)
     _r0 = bool_reg(operand <= i32(_r0))
     return nextOpDirect(_pc, _sp, _mem, _r0, _fp0)
 }
 
-def public op_i32_LessThanOrEqual_ss(var _pc : pc_t; var _sp : m3stack_t; var _mem : M3MemoryHeader?; var _r0 : m3reg_t; var _fp0 : f64) : M3Result {
+def public op_i32_LessThanOrEqual_ss(var _pc : pc_t&; var _sp : m3stack_t&; var _mem : M3MemoryHeader?&; var _r0 : m3reg_t&; var _fp0 : f64&) : M3Result {
     let operand2 = slot_i32(_pc, _sp)
     let operand1 = slot_i32(_pc, _sp)
     _r0 = bool_reg(operand1 <= operand2)
     return nextOpDirect(_pc, _sp, _mem, _r0, _fp0)
 }
 
-def public op_i32_GreaterThanOrEqual_sr(var _pc : pc_t; var _sp : m3stack_t; var _mem : M3MemoryHeader?; var _r0 : m3reg_t; var _fp0 : f64) : M3Result {
+def public op_i32_GreaterThanOrEqual_sr(var _pc : pc_t&; var _sp : m3stack_t&; var _mem : M3MemoryHeader?&; var _r0 : m3reg_t&; var _fp0 : f64&) : M3Result {
     let operand = slot_i32(_pc, _sp)
     _r0 = bool_reg(i32(_r0) >= operand)
     return nextOpDirect(_pc, _sp, _mem, _r0, _fp0)
 }
 
-def public op_i32_GreaterThanOrEqual_rs(var _pc : pc_t; var _sp : m3stack_t; var _mem : M3MemoryHeader?; var _r0 : m3reg_t; var _fp0 : f64) : M3Result {
+def public op_i32_GreaterThanOrEqual_rs(var _pc : pc_t&; var _sp : m3stack_t&; var _mem : M3MemoryHeader?&; var _r0 : m3reg_t&; var _fp0 : f64&) : M3Result {
     let operand = slot_i32(_pc, _sp)
     _r0 = bool_reg(operand >= i32(_r0))
     return nextOpDirect(_pc, _sp, _mem, _r0, _fp0)
 }
 
-def public op_i32_GreaterThanOrEqual_ss(var _pc : pc_t; var _sp : m3stack_t; var _mem : M3MemoryHeader?; var _r0 : m3reg_t; var _fp0 : f64) : M3Result {
+def public op_i32_GreaterThanOrEqual_ss(var _pc : pc_t&; var _sp : m3stack_t&; var _mem : M3MemoryHeader?&; var _r0 : m3reg_t&; var _fp0 : f64&) : M3Result {
     let operand2 = slot_i32(_pc, _sp)
     let operand1 = slot_i32(_pc, _sp)
     _r0 = bool_reg(operand1 >= operand2)
     return nextOpDirect(_pc, _sp, _mem, _r0, _fp0)
 }
 
-def public op_i64_Equal_rs(var _pc : pc_t; var _sp : m3stack_t; var _mem : M3MemoryHeader?; var _r0 : m3reg_t; var _fp0 : f64) : M3Result {
+def public op_i64_Equal_rs(var _pc : pc_t&; var _sp : m3stack_t&; var _mem : M3MemoryHeader?&; var _r0 : m3reg_t&; var _fp0 : f64&) : M3Result {
     let operand = slot_i64(_pc, _sp)
     _r0 = bool_reg(operand == _r0)
     return nextOpDirect(_pc, _sp, _mem, _r0, _fp0)
 }
 
-def public op_i64_Equal_ss(var _pc : pc_t; var _sp : m3stack_t; var _mem : M3MemoryHeader?; var _r0 : m3reg_t; var _fp0 : f64) : M3Result {
+def public op_i64_Equal_ss(var _pc : pc_t&; var _sp : m3stack_t&; var _mem : M3MemoryHeader?&; var _r0 : m3reg_t&; var _fp0 : f64&) : M3Result {
     let operand2 = slot_i64(_pc, _sp)
     let operand1 = slot_i64(_pc, _sp)
     _r0 = bool_reg(operand1 == operand2)
     return nextOpDirect(_pc, _sp, _mem, _r0, _fp0)
 }
 
-def public op_i64_NotEqual_rs(var _pc : pc_t; var _sp : m3stack_t; var _mem : M3MemoryHeader?; var _r0 : m3reg_t; var _fp0 : f64) : M3Result {
+def public op_i64_NotEqual_rs(var _pc : pc_t&; var _sp : m3stack_t&; var _mem : M3MemoryHeader?&; var _r0 : m3reg_t&; var _fp0 : f64&) : M3Result {
     let operand = slot_i64(_pc, _sp)
     _r0 = bool_reg(operand != _r0)
     return nextOpDirect(_pc, _sp, _mem, _r0, _fp0)
 }
 
-def public op_i64_NotEqual_ss(var _pc : pc_t; var _sp : m3stack_t; var _mem : M3MemoryHeader?; var _r0 : m3reg_t; var _fp0 : f64) : M3Result {
+def public op_i64_NotEqual_ss(var _pc : pc_t&; var _sp : m3stack_t&; var _mem : M3MemoryHeader?&; var _r0 : m3reg_t&; var _fp0 : f64&) : M3Result {
     let operand2 = slot_i64(_pc, _sp)
     let operand1 = slot_i64(_pc, _sp)
     _r0 = bool_reg(operand1 != operand2)
     return nextOpDirect(_pc, _sp, _mem, _r0, _fp0)
 }
 
-def public op_i64_LessThan_sr(var _pc : pc_t; var _sp : m3stack_t; var _mem : M3MemoryHeader?; var _r0 : m3reg_t; var _fp0 : f64) : M3Result {
+def public op_i64_LessThan_sr(var _pc : pc_t&; var _sp : m3stack_t&; var _mem : M3MemoryHeader?&; var _r0 : m3reg_t&; var _fp0 : f64&) : M3Result {
     let operand = slot_i64(_pc, _sp)
     _r0 = bool_reg(_r0 < operand)
     return nextOpDirect(_pc, _sp, _mem, _r0, _fp0)
 }
 
-def public op_i64_LessThan_rs(var _pc : pc_t; var _sp : m3stack_t; var _mem : M3MemoryHeader?; var _r0 : m3reg_t; var _fp0 : f64) : M3Result {
+def public op_i64_LessThan_rs(var _pc : pc_t&; var _sp : m3stack_t&; var _mem : M3MemoryHeader?&; var _r0 : m3reg_t&; var _fp0 : f64&) : M3Result {
     let operand = slot_i64(_pc, _sp)
     _r0 = bool_reg(operand < _r0)
     return nextOpDirect(_pc, _sp, _mem, _r0, _fp0)
 }
 
-def public op_i64_LessThan_ss(var _pc : pc_t; var _sp : m3stack_t; var _mem : M3MemoryHeader?; var _r0 : m3reg_t; var _fp0 : f64) : M3Result {
+def public op_i64_LessThan_ss(var _pc : pc_t&; var _sp : m3stack_t&; var _mem : M3MemoryHeader?&; var _r0 : m3reg_t&; var _fp0 : f64&) : M3Result {
     let operand2 = slot_i64(_pc, _sp)
     let operand1 = slot_i64(_pc, _sp)
     _r0 = bool_reg(operand1 < operand2)
     return nextOpDirect(_pc, _sp, _mem, _r0, _fp0)
 }
 
-def public op_i64_GreaterThan_sr(var _pc : pc_t; var _sp : m3stack_t; var _mem : M3MemoryHeader?; var _r0 : m3reg_t; var _fp0 : f64) : M3Result {
+def public op_i64_GreaterThan_sr(var _pc : pc_t&; var _sp : m3stack_t&; var _mem : M3MemoryHeader?&; var _r0 : m3reg_t&; var _fp0 : f64&) : M3Result {
     let operand = slot_i64(_pc, _sp)
     _r0 = bool_reg(_r0 > operand)
     return nextOpDirect(_pc, _sp, _mem, _r0, _fp0)
 }
 
-def public op_i64_GreaterThan_rs(var _pc : pc_t; var _sp : m3stack_t; var _mem : M3MemoryHeader?; var _r0 : m3reg_t; var _fp0 : f64) : M3Result {
+def public op_i64_GreaterThan_rs(var _pc : pc_t&; var _sp : m3stack_t&; var _mem : M3MemoryHeader?&; var _r0 : m3reg_t&; var _fp0 : f64&) : M3Result {
     let operand = slot_i64(_pc, _sp)
     _r0 = bool_reg(operand > _r0)
     return nextOpDirect(_pc, _sp, _mem, _r0, _fp0)
 }
 
-def public op_i64_GreaterThan_ss(var _pc : pc_t; var _sp : m3stack_t; var _mem : M3MemoryHeader?; var _r0 : m3reg_t; var _fp0 : f64) : M3Result {
+def public op_i64_GreaterThan_ss(var _pc : pc_t&; var _sp : m3stack_t&; var _mem : M3MemoryHeader?&; var _r0 : m3reg_t&; var _fp0 : f64&) : M3Result {
     let operand2 = slot_i64(_pc, _sp)
     let operand1 = slot_i64(_pc, _sp)
     _r0 = bool_reg(operand1 > operand2)
     return nextOpDirect(_pc, _sp, _mem, _r0, _fp0)
 }
 
-def public op_i64_LessThanOrEqual_sr(var _pc : pc_t; var _sp : m3stack_t; var _mem : M3MemoryHeader?; var _r0 : m3reg_t; var _fp0 : f64) : M3Result {
+def public op_i64_LessThanOrEqual_sr(var _pc : pc_t&; var _sp : m3stack_t&; var _mem : M3MemoryHeader?&; var _r0 : m3reg_t&; var _fp0 : f64&) : M3Result {
     let operand = slot_i64(_pc, _sp)
     _r0 = bool_reg(_r0 <= operand)
     return nextOpDirect(_pc, _sp, _mem, _r0, _fp0)
 }
 
-def public op_i64_LessThanOrEqual_rs(var _pc : pc_t; var _sp : m3stack_t; var _mem : M3MemoryHeader?; var _r0 : m3reg_t; var _fp0 : f64) : M3Result {
+def public op_i64_LessThanOrEqual_rs(var _pc : pc_t&; var _sp : m3stack_t&; var _mem : M3MemoryHeader?&; var _r0 : m3reg_t&; var _fp0 : f64&) : M3Result {
     let operand = slot_i64(_pc, _sp)
     _r0 = bool_reg(operand <= _r0)
     return nextOpDirect(_pc, _sp, _mem, _r0, _fp0)
 }
 
-def public op_i64_LessThanOrEqual_ss(var _pc : pc_t; var _sp : m3stack_t; var _mem : M3MemoryHeader?; var _r0 : m3reg_t; var _fp0 : f64) : M3Result {
+def public op_i64_LessThanOrEqual_ss(var _pc : pc_t&; var _sp : m3stack_t&; var _mem : M3MemoryHeader?&; var _r0 : m3reg_t&; var _fp0 : f64&) : M3Result {
     let operand2 = slot_i64(_pc, _sp)
     let operand1 = slot_i64(_pc, _sp)
     _r0 = bool_reg(operand1 <= operand2)
     return nextOpDirect(_pc, _sp, _mem, _r0, _fp0)
 }
 
-def public op_i64_GreaterThanOrEqual_sr(var _pc : pc_t; var _sp : m3stack_t; var _mem : M3MemoryHeader?; var _r0 : m3reg_t; var _fp0 : f64) : M3Result {
+def public op_i64_GreaterThanOrEqual_sr(var _pc : pc_t&; var _sp : m3stack_t&; var _mem : M3MemoryHeader?&; var _r0 : m3reg_t&; var _fp0 : f64&) : M3Result {
     let operand = slot_i64(_pc, _sp)
     _r0 = bool_reg(_r0 >= operand)
     return nextOpDirect(_pc, _sp, _mem, _r0, _fp0)
 }
 
-def public op_i64_GreaterThanOrEqual_rs(var _pc : pc_t; var _sp : m3stack_t; var _mem : M3MemoryHeader?; var _r0 : m3reg_t; var _fp0 : f64) : M3Result {
+def public op_i64_GreaterThanOrEqual_rs(var _pc : pc_t&; var _sp : m3stack_t&; var _mem : M3MemoryHeader?&; var _r0 : m3reg_t&; var _fp0 : f64&) : M3Result {
     let operand = slot_i64(_pc, _sp)
     _r0 = bool_reg(operand >= _r0)
     return nextOpDirect(_pc, _sp, _mem, _r0, _fp0)
 }
 
-def public op_i64_GreaterThanOrEqual_ss(var _pc : pc_t; var _sp : m3stack_t; var _mem : M3MemoryHeader?; var _r0 : m3reg_t; var _fp0 : f64) : M3Result {
+def public op_i64_GreaterThanOrEqual_ss(var _pc : pc_t&; var _sp : m3stack_t&; var _mem : M3MemoryHeader?&; var _r0 : m3reg_t&; var _fp0 : f64&) : M3Result {
     let operand2 = slot_i64(_pc, _sp)
     let operand1 = slot_i64(_pc, _sp)
     _r0 = bool_reg(operand1 >= operand2)
     return nextOpDirect(_pc, _sp, _mem, _r0, _fp0)
 }
 
-def public op_u32_LessThan_sr(var _pc : pc_t; var _sp : m3stack_t; var _mem : M3MemoryHeader?; var _r0 : m3reg_t; var _fp0 : f64) : M3Result {
+def public op_u32_LessThan_sr(var _pc : pc_t&; var _sp : m3stack_t&; var _mem : M3MemoryHeader?&; var _r0 : m3reg_t&; var _fp0 : f64&) : M3Result {
     let operand = slot_u32(_pc, _sp)
     _r0 = bool_reg(u32(_r0) < operand)
     return nextOpDirect(_pc, _sp, _mem, _r0, _fp0)
 }
 
-def public op_u32_LessThan_rs(var _pc : pc_t; var _sp : m3stack_t; var _mem : M3MemoryHeader?; var _r0 : m3reg_t; var _fp0 : f64) : M3Result {
+def public op_u32_LessThan_rs(var _pc : pc_t&; var _sp : m3stack_t&; var _mem : M3MemoryHeader?&; var _r0 : m3reg_t&; var _fp0 : f64&) : M3Result {
     let operand = slot_u32(_pc, _sp)
     _r0 = bool_reg(operand < u32(_r0))
     return nextOpDirect(_pc, _sp, _mem, _r0, _fp0)
 }
 
-def public op_u32_LessThan_ss(var _pc : pc_t; var _sp : m3stack_t; var _mem : M3MemoryHeader?; var _r0 : m3reg_t; var _fp0 : f64) : M3Result {
+def public op_u32_LessThan_ss(var _pc : pc_t&; var _sp : m3stack_t&; var _mem : M3MemoryHeader?&; var _r0 : m3reg_t&; var _fp0 : f64&) : M3Result {
     let operand2 = slot_u32(_pc, _sp)
     let operand1 = slot_u32(_pc, _sp)
     _r0 = bool_reg(operand1 < operand2)
     return nextOpDirect(_pc, _sp, _mem, _r0, _fp0)
 }
 
-def public op_u32_GreaterThan_sr(var _pc : pc_t; var _sp : m3stack_t; var _mem : M3MemoryHeader?; var _r0 : m3reg_t; var _fp0 : f64) : M3Result {
+def public op_u32_GreaterThan_sr(var _pc : pc_t&; var _sp : m3stack_t&; var _mem : M3MemoryHeader?&; var _r0 : m3reg_t&; var _fp0 : f64&) : M3Result {
     let operand = slot_u32(_pc, _sp)
     _r0 = bool_reg(u32(_r0) > operand)
     return nextOpDirect(_pc, _sp, _mem, _r0, _fp0)
 }
 
-def public op_u32_GreaterThan_rs(var _pc : pc_t; var _sp : m3stack_t; var _mem : M3MemoryHeader?; var _r0 : m3reg_t; var _fp0 : f64) : M3Result {
+def public op_u32_GreaterThan_rs(var _pc : pc_t&; var _sp : m3stack_t&; var _mem : M3MemoryHeader?&; var _r0 : m3reg_t&; var _fp0 : f64&) : M3Result {
     let operand = slot_u32(_pc, _sp)
     _r0 = bool_reg(operand > u32(_r0))
     return nextOpDirect(_pc, _sp, _mem, _r0, _fp0)
 }
 
-def public op_u32_GreaterThan_ss(var _pc : pc_t; var _sp : m3stack_t; var _mem : M3MemoryHeader?; var _r0 : m3reg_t; var _fp0 : f64) : M3Result {
+def public op_u32_GreaterThan_ss(var _pc : pc_t&; var _sp : m3stack_t&; var _mem : M3MemoryHeader?&; var _r0 : m3reg_t&; var _fp0 : f64&) : M3Result {
     let operand2 = slot_u32(_pc, _sp)
     let operand1 = slot_u32(_pc, _sp)
     _r0 = bool_reg(operand1 > operand2)
     return nextOpDirect(_pc, _sp, _mem, _r0, _fp0)
 }
 
-def public op_u32_LessThanOrEqual_sr(var _pc : pc_t; var _sp : m3stack_t; var _mem : M3MemoryHeader?; var _r0 : m3reg_t; var _fp0 : f64) : M3Result {
+def public op_u32_LessThanOrEqual_sr(var _pc : pc_t&; var _sp : m3stack_t&; var _mem : M3MemoryHeader?&; var _r0 : m3reg_t&; var _fp0 : f64&) : M3Result {
     let operand = slot_u32(_pc, _sp)
     _r0 = bool_reg(u32(_r0) <= operand)
     return nextOpDirect(_pc, _sp, _mem, _r0, _fp0)
 }
 
-def public op_u32_LessThanOrEqual_rs(var _pc : pc_t; var _sp : m3stack_t; var _mem : M3MemoryHeader?; var _r0 : m3reg_t; var _fp0 : f64) : M3Result {
+def public op_u32_LessThanOrEqual_rs(var _pc : pc_t&; var _sp : m3stack_t&; var _mem : M3MemoryHeader?&; var _r0 : m3reg_t&; var _fp0 : f64&) : M3Result {
     let operand = slot_u32(_pc, _sp)
     _r0 = bool_reg(operand <= u32(_r0))
     return nextOpDirect(_pc, _sp, _mem, _r0, _fp0)
 }
 
-def public op_u32_LessThanOrEqual_ss(var _pc : pc_t; var _sp : m3stack_t; var _mem : M3MemoryHeader?; var _r0 : m3reg_t; var _fp0 : f64) : M3Result {
+def public op_u32_LessThanOrEqual_ss(var _pc : pc_t&; var _sp : m3stack_t&; var _mem : M3MemoryHeader?&; var _r0 : m3reg_t&; var _fp0 : f64&) : M3Result {
     let operand2 = slot_u32(_pc, _sp)
     let operand1 = slot_u32(_pc, _sp)
     _r0 = bool_reg(operand1 <= operand2)
     return nextOpDirect(_pc, _sp, _mem, _r0, _fp0)
 }
 
-def public op_u32_GreaterThanOrEqual_sr(var _pc : pc_t; var _sp : m3stack_t; var _mem : M3MemoryHeader?; var _r0 : m3reg_t; var _fp0 : f64) : M3Result {
+def public op_u32_GreaterThanOrEqual_sr(var _pc : pc_t&; var _sp : m3stack_t&; var _mem : M3MemoryHeader?&; var _r0 : m3reg_t&; var _fp0 : f64&) : M3Result {
     let operand = slot_u32(_pc, _sp)
     _r0 = bool_reg(u32(_r0) >= operand)
     return nextOpDirect(_pc, _sp, _mem, _r0, _fp0)
 }
 
-def public op_u32_GreaterThanOrEqual_rs(var _pc : pc_t; var _sp : m3stack_t; var _mem : M3MemoryHeader?; var _r0 : m3reg_t; var _fp0 : f64) : M3Result {
+def public op_u32_GreaterThanOrEqual_rs(var _pc : pc_t&; var _sp : m3stack_t&; var _mem : M3MemoryHeader?&; var _r0 : m3reg_t&; var _fp0 : f64&) : M3Result {
     let operand = slot_u32(_pc, _sp)
     _r0 = bool_reg(operand >= u32(_r0))
     return nextOpDirect(_pc, _sp, _mem, _r0, _fp0)
 }
 
-def public op_u32_GreaterThanOrEqual_ss(var _pc : pc_t; var _sp : m3stack_t; var _mem : M3MemoryHeader?; var _r0 : m3reg_t; var _fp0 : f64) : M3Result {
+def public op_u32_GreaterThanOrEqual_ss(var _pc : pc_t&; var _sp : m3stack_t&; var _mem : M3MemoryHeader?&; var _r0 : m3reg_t&; var _fp0 : f64&) : M3Result {
     let operand2 = slot_u32(_pc, _sp)
     let operand1 = slot_u32(_pc, _sp)
     _r0 = bool_reg(operand1 >= operand2)
     return nextOpDirect(_pc, _sp, _mem, _r0, _fp0)
 }
 
-def public op_u64_LessThan_sr(var _pc : pc_t; var _sp : m3stack_t; var _mem : M3MemoryHeader?; var _r0 : m3reg_t; var _fp0 : f64) : M3Result {
+def public op_u64_LessThan_sr(var _pc : pc_t&; var _sp : m3stack_t&; var _mem : M3MemoryHeader?&; var _r0 : m3reg_t&; var _fp0 : f64&) : M3Result {
     let operand = slot_u64(_pc, _sp)
     _r0 = bool_reg(u64(_r0) < operand)
     return nextOpDirect(_pc, _sp, _mem, _r0, _fp0)
 }
 
-def public op_u64_LessThan_rs(var _pc : pc_t; var _sp : m3stack_t; var _mem : M3MemoryHeader?; var _r0 : m3reg_t; var _fp0 : f64) : M3Result {
+def public op_u64_LessThan_rs(var _pc : pc_t&; var _sp : m3stack_t&; var _mem : M3MemoryHeader?&; var _r0 : m3reg_t&; var _fp0 : f64&) : M3Result {
     let operand = slot_u64(_pc, _sp)
     _r0 = bool_reg(operand < u64(_r0))
     return nextOpDirect(_pc, _sp, _mem, _r0, _fp0)
 }
 
-def public op_u64_LessThan_ss(var _pc : pc_t; var _sp : m3stack_t; var _mem : M3MemoryHeader?; var _r0 : m3reg_t; var _fp0 : f64) : M3Result {
+def public op_u64_LessThan_ss(var _pc : pc_t&; var _sp : m3stack_t&; var _mem : M3MemoryHeader?&; var _r0 : m3reg_t&; var _fp0 : f64&) : M3Result {
     let operand2 = slot_u64(_pc, _sp)
     let operand1 = slot_u64(_pc, _sp)
     _r0 = bool_reg(operand1 < operand2)
     return nextOpDirect(_pc, _sp, _mem, _r0, _fp0)
 }
 
-def public op_u64_GreaterThan_sr(var _pc : pc_t; var _sp : m3stack_t; var _mem : M3MemoryHeader?; var _r0 : m3reg_t; var _fp0 : f64) : M3Result {
+def public op_u64_GreaterThan_sr(var _pc : pc_t&; var _sp : m3stack_t&; var _mem : M3MemoryHeader?&; var _r0 : m3reg_t&; var _fp0 : f64&) : M3Result {
     let operand = slot_u64(_pc, _sp)
     _r0 = bool_reg(u64(_r0) > operand)
     return nextOpDirect(_pc, _sp, _mem, _r0, _fp0)
 }
 
-def public op_u64_GreaterThan_rs(var _pc : pc_t; var _sp : m3stack_t; var _mem : M3MemoryHeader?; var _r0 : m3reg_t; var _fp0 : f64) : M3Result {
+def public op_u64_GreaterThan_rs(var _pc : pc_t&; var _sp : m3stack_t&; var _mem : M3MemoryHeader?&; var _r0 : m3reg_t&; var _fp0 : f64&) : M3Result {
     let operand = slot_u64(_pc, _sp)
     _r0 = bool_reg(operand > u64(_r0))
     return nextOpDirect(_pc, _sp, _mem, _r0, _fp0)
 }
 
-def public op_u64_GreaterThan_ss(var _pc : pc_t; var _sp : m3stack_t; var _mem : M3MemoryHeader?; var _r0 : m3reg_t; var _fp0 : f64) : M3Result {
+def public op_u64_GreaterThan_ss(var _pc : pc_t&; var _sp : m3stack_t&; var _mem : M3MemoryHeader?&; var _r0 : m3reg_t&; var _fp0 : f64&) : M3Result {
     let operand2 = slot_u64(_pc, _sp)
     let operand1 = slot_u64(_pc, _sp)
     _r0 = bool_reg(operand1 > operand2)
     return nextOpDirect(_pc, _sp, _mem, _r0, _fp0)
 }
 
-def public op_u64_LessThanOrEqual_sr(var _pc : pc_t; var _sp : m3stack_t; var _mem : M3MemoryHeader?; var _r0 : m3reg_t; var _fp0 : f64) : M3Result {
+def public op_u64_LessThanOrEqual_sr(var _pc : pc_t&; var _sp : m3stack_t&; var _mem : M3MemoryHeader?&; var _r0 : m3reg_t&; var _fp0 : f64&) : M3Result {
     let operand = slot_u64(_pc, _sp)
     _r0 = bool_reg(u64(_r0) <= operand)
     return nextOpDirect(_pc, _sp, _mem, _r0, _fp0)
 }
 
-def public op_u64_LessThanOrEqual_rs(var _pc : pc_t; var _sp : m3stack_t; var _mem : M3MemoryHeader?; var _r0 : m3reg_t; var _fp0 : f64) : M3Result {
+def public op_u64_LessThanOrEqual_rs(var _pc : pc_t&; var _sp : m3stack_t&; var _mem : M3MemoryHeader?&; var _r0 : m3reg_t&; var _fp0 : f64&) : M3Result {
     let operand = slot_u64(_pc, _sp)
     _r0 = bool_reg(operand <= u64(_r0))
     return nextOpDirect(_pc, _sp, _mem, _r0, _fp0)
 }
 
-def public op_u64_LessThanOrEqual_ss(var _pc : pc_t; var _sp : m3stack_t; var _mem : M3MemoryHeader?; var _r0 : m3reg_t; var _fp0 : f64) : M3Result {
+def public op_u64_LessThanOrEqual_ss(var _pc : pc_t&; var _sp : m3stack_t&; var _mem : M3MemoryHeader?&; var _r0 : m3reg_t&; var _fp0 : f64&) : M3Result {
     let operand2 = slot_u64(_pc, _sp)
     let operand1 = slot_u64(_pc, _sp)
     _r0 = bool_reg(operand1 <= operand2)
     return nextOpDirect(_pc, _sp, _mem, _r0, _fp0)
 }
 
-def public op_u64_GreaterThanOrEqual_sr(var _pc : pc_t; var _sp : m3stack_t; var _mem : M3MemoryHeader?; var _r0 : m3reg_t; var _fp0 : f64) : M3Result {
+def public op_u64_GreaterThanOrEqual_sr(var _pc : pc_t&; var _sp : m3stack_t&; var _mem : M3MemoryHeader?&; var _r0 : m3reg_t&; var _fp0 : f64&) : M3Result {
     let operand = slot_u64(_pc, _sp)
     _r0 = bool_reg(u64(_r0) >= operand)
     return nextOpDirect(_pc, _sp, _mem, _r0, _fp0)
 }
 
-def public op_u64_GreaterThanOrEqual_rs(var _pc : pc_t; var _sp : m3stack_t; var _mem : M3MemoryHeader?; var _r0 : m3reg_t; var _fp0 : f64) : M3Result {
+def public op_u64_GreaterThanOrEqual_rs(var _pc : pc_t&; var _sp : m3stack_t&; var _mem : M3MemoryHeader?&; var _r0 : m3reg_t&; var _fp0 : f64&) : M3Result {
     let operand = slot_u64(_pc, _sp)
     _r0 = bool_reg(operand >= u64(_r0))
     return nextOpDirect(_pc, _sp, _mem, _r0, _fp0)
 }
 
-def public op_u64_GreaterThanOrEqual_ss(var _pc : pc_t; var _sp : m3stack_t; var _mem : M3MemoryHeader?; var _r0 : m3reg_t; var _fp0 : f64) : M3Result {
+def public op_u64_GreaterThanOrEqual_ss(var _pc : pc_t&; var _sp : m3stack_t&; var _mem : M3MemoryHeader?&; var _r0 : m3reg_t&; var _fp0 : f64&) : M3Result {
     let operand2 = slot_u64(_pc, _sp)
     let operand1 = slot_u64(_pc, _sp)
     _r0 = bool_reg(operand1 >= operand2)
     return nextOpDirect(_pc, _sp, _mem, _r0, _fp0)
 }
 
-def public op_f32_Equal_rs(var _pc : pc_t; var _sp : m3stack_t; var _mem : M3MemoryHeader?; var _r0 : m3reg_t; var _fp0 : f64) : M3Result {
+def public op_f32_Equal_rs(var _pc : pc_t&; var _sp : m3stack_t&; var _mem : M3MemoryHeader?&; var _r0 : m3reg_t&; var _fp0 : f64&) : M3Result {
     let operand = slot_f32(_pc, _sp)
     _r0 = bool_reg(operand == f32(_fp0))
     return nextOpDirect(_pc, _sp, _mem, _r0, _fp0)
 }
 
-def public op_f32_Equal_ss(var _pc : pc_t; var _sp : m3stack_t; var _mem : M3MemoryHeader?; var _r0 : m3reg_t; var _fp0 : f64) : M3Result {
+def public op_f32_Equal_ss(var _pc : pc_t&; var _sp : m3stack_t&; var _mem : M3MemoryHeader?&; var _r0 : m3reg_t&; var _fp0 : f64&) : M3Result {
     let operand2 = slot_f32(_pc, _sp)
     let operand1 = slot_f32(_pc, _sp)
     _r0 = bool_reg(operand1 == operand2)
     return nextOpDirect(_pc, _sp, _mem, _r0, _fp0)
 }
 
-def public op_f32_NotEqual_rs(var _pc : pc_t; var _sp : m3stack_t; var _mem : M3MemoryHeader?; var _r0 : m3reg_t; var _fp0 : f64) : M3Result {
+def public op_f32_NotEqual_rs(var _pc : pc_t&; var _sp : m3stack_t&; var _mem : M3MemoryHeader?&; var _r0 : m3reg_t&; var _fp0 : f64&) : M3Result {
     let operand = slot_f32(_pc, _sp)
     _r0 = bool_reg(operand != f32(_fp0))
     return nextOpDirect(_pc, _sp, _mem, _r0, _fp0)
 }
 
-def public op_f32_NotEqual_ss(var _pc : pc_t; var _sp : m3stack_t; var _mem : M3MemoryHeader?; var _r0 : m3reg_t; var _fp0 : f64) : M3Result {
+def public op_f32_NotEqual_ss(var _pc : pc_t&; var _sp : m3stack_t&; var _mem : M3MemoryHeader?&; var _r0 : m3reg_t&; var _fp0 : f64&) : M3Result {
     let operand2 = slot_f32(_pc, _sp)
     let operand1 = slot_f32(_pc, _sp)
     _r0 = bool_reg(operand1 != operand2)
     return nextOpDirect(_pc, _sp, _mem, _r0, _fp0)
 }
 
-def public op_f32_LessThan_sr(var _pc : pc_t; var _sp : m3stack_t; var _mem : M3MemoryHeader?; var _r0 : m3reg_t; var _fp0 : f64) : M3Result {
+def public op_f32_LessThan_sr(var _pc : pc_t&; var _sp : m3stack_t&; var _mem : M3MemoryHeader?&; var _r0 : m3reg_t&; var _fp0 : f64&) : M3Result {
     let operand = slot_f32(_pc, _sp)
     _r0 = bool_reg(f32(_fp0) < operand)
     return nextOpDirect(_pc, _sp, _mem, _r0, _fp0)
 }
 
-def public op_f32_LessThan_rs(var _pc : pc_t; var _sp : m3stack_t; var _mem : M3MemoryHeader?; var _r0 : m3reg_t; var _fp0 : f64) : M3Result {
+def public op_f32_LessThan_rs(var _pc : pc_t&; var _sp : m3stack_t&; var _mem : M3MemoryHeader?&; var _r0 : m3reg_t&; var _fp0 : f64&) : M3Result {
     let operand = slot_f32(_pc, _sp)
     _r0 = bool_reg(operand < f32(_fp0))
     return nextOpDirect(_pc, _sp, _mem, _r0, _fp0)
 }
 
-def public op_f32_LessThan_ss(var _pc : pc_t; var _sp : m3stack_t; var _mem : M3MemoryHeader?; var _r0 : m3reg_t; var _fp0 : f64) : M3Result {
+def public op_f32_LessThan_ss(var _pc : pc_t&; var _sp : m3stack_t&; var _mem : M3MemoryHeader?&; var _r0 : m3reg_t&; var _fp0 : f64&) : M3Result {
     let operand2 = slot_f32(_pc, _sp)
     let operand1 = slot_f32(_pc, _sp)
     _r0 = bool_reg(operand1 < operand2)
     return nextOpDirect(_pc, _sp, _mem, _r0, _fp0)
 }
 
-def public op_f32_GreaterThan_sr(var _pc : pc_t; var _sp : m3stack_t; var _mem : M3MemoryHeader?; var _r0 : m3reg_t; var _fp0 : f64) : M3Result {
+def public op_f32_GreaterThan_sr(var _pc : pc_t&; var _sp : m3stack_t&; var _mem : M3MemoryHeader?&; var _r0 : m3reg_t&; var _fp0 : f64&) : M3Result {
     let operand = slot_f32(_pc, _sp)
     _r0 = bool_reg(f32(_fp0) > operand)
     return nextOpDirect(_pc, _sp, _mem, _r0, _fp0)
 }
 
-def public op_f32_GreaterThan_rs(var _pc : pc_t; var _sp : m3stack_t; var _mem : M3MemoryHeader?; var _r0 : m3reg_t; var _fp0 : f64) : M3Result {
+def public op_f32_GreaterThan_rs(var _pc : pc_t&; var _sp : m3stack_t&; var _mem : M3MemoryHeader?&; var _r0 : m3reg_t&; var _fp0 : f64&) : M3Result {
     let operand = slot_f32(_pc, _sp)
     _r0 = bool_reg(operand > f32(_fp0))
     return nextOpDirect(_pc, _sp, _mem, _r0, _fp0)
 }
 
-def public op_f32_GreaterThan_ss(var _pc : pc_t; var _sp : m3stack_t; var _mem : M3MemoryHeader?; var _r0 : m3reg_t; var _fp0 : f64) : M3Result {
+def public op_f32_GreaterThan_ss(var _pc : pc_t&; var _sp : m3stack_t&; var _mem : M3MemoryHeader?&; var _r0 : m3reg_t&; var _fp0 : f64&) : M3Result {
     let operand2 = slot_f32(_pc, _sp)
     let operand1 = slot_f32(_pc, _sp)
     _r0 = bool_reg(operand1 > operand2)
     return nextOpDirect(_pc, _sp, _mem, _r0, _fp0)
 }
 
-def public op_f32_LessThanOrEqual_sr(var _pc : pc_t; var _sp : m3stack_t; var _mem : M3MemoryHeader?; var _r0 : m3reg_t; var _fp0 : f64) : M3Result {
+def public op_f32_LessThanOrEqual_sr(var _pc : pc_t&; var _sp : m3stack_t&; var _mem : M3MemoryHeader?&; var _r0 : m3reg_t&; var _fp0 : f64&) : M3Result {
     let operand = slot_f32(_pc, _sp)
     _r0 = bool_reg(f32(_fp0) <= operand)
     return nextOpDirect(_pc, _sp, _mem, _r0, _fp0)
 }
 
-def public op_f32_LessThanOrEqual_rs(var _pc : pc_t; var _sp : m3stack_t; var _mem : M3MemoryHeader?; var _r0 : m3reg_t; var _fp0 : f64) : M3Result {
+def public op_f32_LessThanOrEqual_rs(var _pc : pc_t&; var _sp : m3stack_t&; var _mem : M3MemoryHeader?&; var _r0 : m3reg_t&; var _fp0 : f64&) : M3Result {
     let operand = slot_f32(_pc, _sp)
     _r0 = bool_reg(operand <= f32(_fp0))
     return nextOpDirect(_pc, _sp, _mem, _r0, _fp0)
 }
 
-def public op_f32_LessThanOrEqual_ss(var _pc : pc_t; var _sp : m3stack_t; var _mem : M3MemoryHeader?; var _r0 : m3reg_t; var _fp0 : f64) : M3Result {
+def public op_f32_LessThanOrEqual_ss(var _pc : pc_t&; var _sp : m3stack_t&; var _mem : M3MemoryHeader?&; var _r0 : m3reg_t&; var _fp0 : f64&) : M3Result {
     let operand2 = slot_f32(_pc, _sp)
     let operand1 = slot_f32(_pc, _sp)
     _r0 = bool_reg(operand1 <= operand2)
     return nextOpDirect(_pc, _sp, _mem, _r0, _fp0)
 }
 
-def public op_f32_GreaterThanOrEqual_sr(var _pc : pc_t; var _sp : m3stack_t; var _mem : M3MemoryHeader?; var _r0 : m3reg_t; var _fp0 : f64) : M3Result {
+def public op_f32_GreaterThanOrEqual_sr(var _pc : pc_t&; var _sp : m3stack_t&; var _mem : M3MemoryHeader?&; var _r0 : m3reg_t&; var _fp0 : f64&) : M3Result {
     let operand = slot_f32(_pc, _sp)
     _r0 = bool_reg(f32(_fp0) >= operand)
     return nextOpDirect(_pc, _sp, _mem, _r0, _fp0)
 }
 
-def public op_f32_GreaterThanOrEqual_rs(var _pc : pc_t; var _sp : m3stack_t; var _mem : M3MemoryHeader?; var _r0 : m3reg_t; var _fp0 : f64) : M3Result {
+def public op_f32_GreaterThanOrEqual_rs(var _pc : pc_t&; var _sp : m3stack_t&; var _mem : M3MemoryHeader?&; var _r0 : m3reg_t&; var _fp0 : f64&) : M3Result {
     let operand = slot_f32(_pc, _sp)
     _r0 = bool_reg(operand >= f32(_fp0))
     return nextOpDirect(_pc, _sp, _mem, _r0, _fp0)
 }
 
-def public op_f32_GreaterThanOrEqual_ss(var _pc : pc_t; var _sp : m3stack_t; var _mem : M3MemoryHeader?; var _r0 : m3reg_t; var _fp0 : f64) : M3Result {
+def public op_f32_GreaterThanOrEqual_ss(var _pc : pc_t&; var _sp : m3stack_t&; var _mem : M3MemoryHeader?&; var _r0 : m3reg_t&; var _fp0 : f64&) : M3Result {
     let operand2 = slot_f32(_pc, _sp)
     let operand1 = slot_f32(_pc, _sp)
     _r0 = bool_reg(operand1 >= operand2)
     return nextOpDirect(_pc, _sp, _mem, _r0, _fp0)
 }
 
-def public op_f64_Equal_rs(var _pc : pc_t; var _sp : m3stack_t; var _mem : M3MemoryHeader?; var _r0 : m3reg_t; var _fp0 : f64) : M3Result {
+def public op_f64_Equal_rs(var _pc : pc_t&; var _sp : m3stack_t&; var _mem : M3MemoryHeader?&; var _r0 : m3reg_t&; var _fp0 : f64&) : M3Result {
     let operand = slot_f64(_pc, _sp)
     _r0 = bool_reg(operand == _fp0)
     return nextOpDirect(_pc, _sp, _mem, _r0, _fp0)
 }
 
-def public op_f64_Equal_ss(var _pc : pc_t; var _sp : m3stack_t; var _mem : M3MemoryHeader?; var _r0 : m3reg_t; var _fp0 : f64) : M3Result {
+def public op_f64_Equal_ss(var _pc : pc_t&; var _sp : m3stack_t&; var _mem : M3MemoryHeader?&; var _r0 : m3reg_t&; var _fp0 : f64&) : M3Result {
     let operand2 = slot_f64(_pc, _sp)
     let operand1 = slot_f64(_pc, _sp)
     _r0 = bool_reg(operand1 == operand2)
     return nextOpDirect(_pc, _sp, _mem, _r0, _fp0)
 }
 
-def public op_f64_NotEqual_rs(var _pc : pc_t; var _sp : m3stack_t; var _mem : M3MemoryHeader?; var _r0 : m3reg_t; var _fp0 : f64) : M3Result {
+def public op_f64_NotEqual_rs(var _pc : pc_t&; var _sp : m3stack_t&; var _mem : M3MemoryHeader?&; var _r0 : m3reg_t&; var _fp0 : f64&) : M3Result {
     let operand = slot_f64(_pc, _sp)
     _r0 = bool_reg(operand != _fp0)
     return nextOpDirect(_pc, _sp, _mem, _r0, _fp0)
 }
 
-def public op_f64_NotEqual_ss(var _pc : pc_t; var _sp : m3stack_t; var _mem : M3MemoryHeader?; var _r0 : m3reg_t; var _fp0 : f64) : M3Result {
+def public op_f64_NotEqual_ss(var _pc : pc_t&; var _sp : m3stack_t&; var _mem : M3MemoryHeader?&; var _r0 : m3reg_t&; var _fp0 : f64&) : M3Result {
     let operand2 = slot_f64(_pc, _sp)
     let operand1 = slot_f64(_pc, _sp)
     _r0 = bool_reg(operand1 != operand2)
     return nextOpDirect(_pc, _sp, _mem, _r0, _fp0)
 }
 
-def public op_f64_LessThan_sr(var _pc : pc_t; var _sp : m3stack_t; var _mem : M3MemoryHeader?; var _r0 : m3reg_t; var _fp0 : f64) : M3Result {
+def public op_f64_LessThan_sr(var _pc : pc_t&; var _sp : m3stack_t&; var _mem : M3MemoryHeader?&; var _r0 : m3reg_t&; var _fp0 : f64&) : M3Result {
     let operand = slot_f64(_pc, _sp)
     _r0 = bool_reg(_fp0 < operand)
     return nextOpDirect(_pc, _sp, _mem, _r0, _fp0)
 }
 
-def public op_f64_LessThan_rs(var _pc : pc_t; var _sp : m3stack_t; var _mem : M3MemoryHeader?; var _r0 : m3reg_t; var _fp0 : f64) : M3Result {
+def public op_f64_LessThan_rs(var _pc : pc_t&; var _sp : m3stack_t&; var _mem : M3MemoryHeader?&; var _r0 : m3reg_t&; var _fp0 : f64&) : M3Result {
     let operand = slot_f64(_pc, _sp)
     _r0 = bool_reg(operand < _fp0)
     return nextOpDirect(_pc, _sp, _mem, _r0, _fp0)
 }
 
-def public op_f64_LessThan_ss(var _pc : pc_t; var _sp : m3stack_t; var _mem : M3MemoryHeader?; var _r0 : m3reg_t; var _fp0 : f64) : M3Result {
+def public op_f64_LessThan_ss(var _pc : pc_t&; var _sp : m3stack_t&; var _mem : M3MemoryHeader?&; var _r0 : m3reg_t&; var _fp0 : f64&) : M3Result {
     let operand2 = slot_f64(_pc, _sp)
     let operand1 = slot_f64(_pc, _sp)
     _r0 = bool_reg(operand1 < operand2)
     return nextOpDirect(_pc, _sp, _mem, _r0, _fp0)
 }
 
-def public op_f64_GreaterThan_sr(var _pc : pc_t; var _sp : m3stack_t; var _mem : M3MemoryHeader?; var _r0 : m3reg_t; var _fp0 : f64) : M3Result {
+def public op_f64_GreaterThan_sr(var _pc : pc_t&; var _sp : m3stack_t&; var _mem : M3MemoryHeader?&; var _r0 : m3reg_t&; var _fp0 : f64&) : M3Result {
     let operand = slot_f64(_pc, _sp)
     _r0 = bool_reg(_fp0 > operand)
     return nextOpDirect(_pc, _sp, _mem, _r0, _fp0)
 }
 
-def public op_f64_GreaterThan_rs(var _pc : pc_t; var _sp : m3stack_t; var _mem : M3MemoryHeader?; var _r0 : m3reg_t; var _fp0 : f64) : M3Result {
+def public op_f64_GreaterThan_rs(var _pc : pc_t&; var _sp : m3stack_t&; var _mem : M3MemoryHeader?&; var _r0 : m3reg_t&; var _fp0 : f64&) : M3Result {
     let operand = slot_f64(_pc, _sp)
     _r0 = bool_reg(operand > _fp0)
     return nextOpDirect(_pc, _sp, _mem, _r0, _fp0)
 }
 
-def public op_f64_GreaterThan_ss(var _pc : pc_t; var _sp : m3stack_t; var _mem : M3MemoryHeader?; var _r0 : m3reg_t; var _fp0 : f64) : M3Result {
+def public op_f64_GreaterThan_ss(var _pc : pc_t&; var _sp : m3stack_t&; var _mem : M3MemoryHeader?&; var _r0 : m3reg_t&; var _fp0 : f64&) : M3Result {
     let operand2 = slot_f64(_pc, _sp)
     let operand1 = slot_f64(_pc, _sp)
     _r0 = bool_reg(operand1 > operand2)
     return nextOpDirect(_pc, _sp, _mem, _r0, _fp0)
 }
 
-def public op_f64_LessThanOrEqual_sr(var _pc : pc_t; var _sp : m3stack_t; var _mem : M3MemoryHeader?; var _r0 : m3reg_t; var _fp0 : f64) : M3Result {
+def public op_f64_LessThanOrEqual_sr(var _pc : pc_t&; var _sp : m3stack_t&; var _mem : M3MemoryHeader?&; var _r0 : m3reg_t&; var _fp0 : f64&) : M3Result {
     let operand = slot_f64(_pc, _sp)
     _r0 = bool_reg(_fp0 <= operand)
     return nextOpDirect(_pc, _sp, _mem, _r0, _fp0)
 }
 
-def public op_f64_LessThanOrEqual_rs(var _pc : pc_t; var _sp : m3stack_t; var _mem : M3MemoryHeader?; var _r0 : m3reg_t; var _fp0 : f64) : M3Result {
+def public op_f64_LessThanOrEqual_rs(var _pc : pc_t&; var _sp : m3stack_t&; var _mem : M3MemoryHeader?&; var _r0 : m3reg_t&; var _fp0 : f64&) : M3Result {
     let operand = slot_f64(_pc, _sp)
     _r0 = bool_reg(operand <= _fp0)
     return nextOpDirect(_pc, _sp, _mem, _r0, _fp0)
 }
 
-def public op_f64_LessThanOrEqual_ss(var _pc : pc_t; var _sp : m3stack_t; var _mem : M3MemoryHeader?; var _r0 : m3reg_t; var _fp0 : f64) : M3Result {
+def public op_f64_LessThanOrEqual_ss(var _pc : pc_t&; var _sp : m3stack_t&; var _mem : M3MemoryHeader?&; var _r0 : m3reg_t&; var _fp0 : f64&) : M3Result {
     let operand2 = slot_f64(_pc, _sp)
     let operand1 = slot_f64(_pc, _sp)
     _r0 = bool_reg(operand1 <= operand2)
     return nextOpDirect(_pc, _sp, _mem, _r0, _fp0)
 }
 
-def public op_f64_GreaterThanOrEqual_sr(var _pc : pc_t; var _sp : m3stack_t; var _mem : M3MemoryHeader?; var _r0 : m3reg_t; var _fp0 : f64) : M3Result {
+def public op_f64_GreaterThanOrEqual_sr(var _pc : pc_t&; var _sp : m3stack_t&; var _mem : M3MemoryHeader?&; var _r0 : m3reg_t&; var _fp0 : f64&) : M3Result {
     let operand = slot_f64(_pc, _sp)
     _r0 = bool_reg(_fp0 >= operand)
     return nextOpDirect(_pc, _sp, _mem, _r0, _fp0)
 }
 
-def public op_f64_GreaterThanOrEqual_rs(var _pc : pc_t; var _sp : m3stack_t; var _mem : M3MemoryHeader?; var _r0 : m3reg_t; var _fp0 : f64) : M3Result {
+def public op_f64_GreaterThanOrEqual_rs(var _pc : pc_t&; var _sp : m3stack_t&; var _mem : M3MemoryHeader?&; var _r0 : m3reg_t&; var _fp0 : f64&) : M3Result {
     let operand = slot_f64(_pc, _sp)
     _r0 = bool_reg(operand >= _fp0)
     return nextOpDirect(_pc, _sp, _mem, _r0, _fp0)
 }
 
-def public op_f64_GreaterThanOrEqual_ss(var _pc : pc_t; var _sp : m3stack_t; var _mem : M3MemoryHeader?; var _r0 : m3reg_t; var _fp0 : f64) : M3Result {
+def public op_f64_GreaterThanOrEqual_ss(var _pc : pc_t&; var _sp : m3stack_t&; var _mem : M3MemoryHeader?&; var _r0 : m3reg_t&; var _fp0 : f64&) : M3Result {
     let operand2 = slot_f64(_pc, _sp)
     let operand1 = slot_f64(_pc, _sp)
     _r0 = bool_reg(operand1 >= operand2)
@@ -905,493 +919,493 @@ def OP_CTZ_32(x : u32) : u32 { return x == 0u ? 32u : ctz(x) }
 def OP_CLZ_64(x : u64) : u64 { return x == 0ul ? 64ul : clz(x) }
 def OP_CTZ_64(x : u64) : u64 { return x == 0ul ? 64ul : ctz(x) }
 
-def public op_i32_Add_rs(var _pc : pc_t; var _sp : m3stack_t; var _mem : M3MemoryHeader?; var _r0 : m3reg_t; var _fp0 : f64) : M3Result {
+def public op_i32_Add_rs(var _pc : pc_t&; var _sp : m3stack_t&; var _mem : M3MemoryHeader?&; var _r0 : m3reg_t&; var _fp0 : f64&) : M3Result {
     let operand = slot_i32(_pc, _sp)
     _r0 = m3reg_t(OP_ADD_32(operand, i32(_r0)))
     return nextOpDirect(_pc, _sp, _mem, _r0, _fp0)
 }
 
-def public op_i32_Add_ss(var _pc : pc_t; var _sp : m3stack_t; var _mem : M3MemoryHeader?; var _r0 : m3reg_t; var _fp0 : f64) : M3Result {
+def public op_i32_Add_ss(var _pc : pc_t&; var _sp : m3stack_t&; var _mem : M3MemoryHeader?&; var _r0 : m3reg_t&; var _fp0 : f64&) : M3Result {
     let operand2 = slot_i32(_pc, _sp)
     let operand1 = slot_i32(_pc, _sp)
     _r0 = m3reg_t(OP_ADD_32(operand1, operand2))
     return nextOpDirect(_pc, _sp, _mem, _r0, _fp0)
 }
 
-def public op_i64_Add_rs(var _pc : pc_t; var _sp : m3stack_t; var _mem : M3MemoryHeader?; var _r0 : m3reg_t; var _fp0 : f64) : M3Result {
+def public op_i64_Add_rs(var _pc : pc_t&; var _sp : m3stack_t&; var _mem : M3MemoryHeader?&; var _r0 : m3reg_t&; var _fp0 : f64&) : M3Result {
     let operand = slot_i64(_pc, _sp)
     _r0 = OP_ADD_64(operand, _r0)
     return nextOpDirect(_pc, _sp, _mem, _r0, _fp0)
 }
 
-def public op_i64_Add_ss(var _pc : pc_t; var _sp : m3stack_t; var _mem : M3MemoryHeader?; var _r0 : m3reg_t; var _fp0 : f64) : M3Result {
+def public op_i64_Add_ss(var _pc : pc_t&; var _sp : m3stack_t&; var _mem : M3MemoryHeader?&; var _r0 : m3reg_t&; var _fp0 : f64&) : M3Result {
     let operand2 = slot_i64(_pc, _sp)
     let operand1 = slot_i64(_pc, _sp)
     _r0 = OP_ADD_64(operand1, operand2)
     return nextOpDirect(_pc, _sp, _mem, _r0, _fp0)
 }
 
-def public op_i32_Multiply_rs(var _pc : pc_t; var _sp : m3stack_t; var _mem : M3MemoryHeader?; var _r0 : m3reg_t; var _fp0 : f64) : M3Result {
+def public op_i32_Multiply_rs(var _pc : pc_t&; var _sp : m3stack_t&; var _mem : M3MemoryHeader?&; var _r0 : m3reg_t&; var _fp0 : f64&) : M3Result {
     let operand = slot_i32(_pc, _sp)
     _r0 = m3reg_t(OP_MUL_32(operand, i32(_r0)))
     return nextOpDirect(_pc, _sp, _mem, _r0, _fp0)
 }
 
-def public op_i32_Multiply_ss(var _pc : pc_t; var _sp : m3stack_t; var _mem : M3MemoryHeader?; var _r0 : m3reg_t; var _fp0 : f64) : M3Result {
+def public op_i32_Multiply_ss(var _pc : pc_t&; var _sp : m3stack_t&; var _mem : M3MemoryHeader?&; var _r0 : m3reg_t&; var _fp0 : f64&) : M3Result {
     let operand2 = slot_i32(_pc, _sp)
     let operand1 = slot_i32(_pc, _sp)
     _r0 = m3reg_t(OP_MUL_32(operand1, operand2))
     return nextOpDirect(_pc, _sp, _mem, _r0, _fp0)
 }
 
-def public op_i64_Multiply_rs(var _pc : pc_t; var _sp : m3stack_t; var _mem : M3MemoryHeader?; var _r0 : m3reg_t; var _fp0 : f64) : M3Result {
+def public op_i64_Multiply_rs(var _pc : pc_t&; var _sp : m3stack_t&; var _mem : M3MemoryHeader?&; var _r0 : m3reg_t&; var _fp0 : f64&) : M3Result {
     let operand = slot_i64(_pc, _sp)
     _r0 = OP_MUL_64(operand, _r0)
     return nextOpDirect(_pc, _sp, _mem, _r0, _fp0)
 }
 
-def public op_i64_Multiply_ss(var _pc : pc_t; var _sp : m3stack_t; var _mem : M3MemoryHeader?; var _r0 : m3reg_t; var _fp0 : f64) : M3Result {
+def public op_i64_Multiply_ss(var _pc : pc_t&; var _sp : m3stack_t&; var _mem : M3MemoryHeader?&; var _r0 : m3reg_t&; var _fp0 : f64&) : M3Result {
     let operand2 = slot_i64(_pc, _sp)
     let operand1 = slot_i64(_pc, _sp)
     _r0 = OP_MUL_64(operand1, operand2)
     return nextOpDirect(_pc, _sp, _mem, _r0, _fp0)
 }
 
-def public op_i32_Subtract_sr(var _pc : pc_t; var _sp : m3stack_t; var _mem : M3MemoryHeader?; var _r0 : m3reg_t; var _fp0 : f64) : M3Result {
+def public op_i32_Subtract_sr(var _pc : pc_t&; var _sp : m3stack_t&; var _mem : M3MemoryHeader?&; var _r0 : m3reg_t&; var _fp0 : f64&) : M3Result {
     let operand = slot_i32(_pc, _sp)
     _r0 = m3reg_t(OP_SUB_32(i32(_r0), operand))
     return nextOpDirect(_pc, _sp, _mem, _r0, _fp0)
 }
 
-def public op_i32_Subtract_rs(var _pc : pc_t; var _sp : m3stack_t; var _mem : M3MemoryHeader?; var _r0 : m3reg_t; var _fp0 : f64) : M3Result {
+def public op_i32_Subtract_rs(var _pc : pc_t&; var _sp : m3stack_t&; var _mem : M3MemoryHeader?&; var _r0 : m3reg_t&; var _fp0 : f64&) : M3Result {
     let operand = slot_i32(_pc, _sp)
     _r0 = m3reg_t(OP_SUB_32(operand, i32(_r0)))
     return nextOpDirect(_pc, _sp, _mem, _r0, _fp0)
 }
 
-def public op_i32_Subtract_ss(var _pc : pc_t; var _sp : m3stack_t; var _mem : M3MemoryHeader?; var _r0 : m3reg_t; var _fp0 : f64) : M3Result {
+def public op_i32_Subtract_ss(var _pc : pc_t&; var _sp : m3stack_t&; var _mem : M3MemoryHeader?&; var _r0 : m3reg_t&; var _fp0 : f64&) : M3Result {
     let operand2 = slot_i32(_pc, _sp)
     let operand1 = slot_i32(_pc, _sp)
     _r0 = m3reg_t(OP_SUB_32(operand1, operand2))
     return nextOpDirect(_pc, _sp, _mem, _r0, _fp0)
 }
 
-def public op_i64_Subtract_sr(var _pc : pc_t; var _sp : m3stack_t; var _mem : M3MemoryHeader?; var _r0 : m3reg_t; var _fp0 : f64) : M3Result {
+def public op_i64_Subtract_sr(var _pc : pc_t&; var _sp : m3stack_t&; var _mem : M3MemoryHeader?&; var _r0 : m3reg_t&; var _fp0 : f64&) : M3Result {
     let operand = slot_i64(_pc, _sp)
     _r0 = OP_SUB_64(_r0, operand)
     return nextOpDirect(_pc, _sp, _mem, _r0, _fp0)
 }
 
-def public op_i64_Subtract_rs(var _pc : pc_t; var _sp : m3stack_t; var _mem : M3MemoryHeader?; var _r0 : m3reg_t; var _fp0 : f64) : M3Result {
+def public op_i64_Subtract_rs(var _pc : pc_t&; var _sp : m3stack_t&; var _mem : M3MemoryHeader?&; var _r0 : m3reg_t&; var _fp0 : f64&) : M3Result {
     let operand = slot_i64(_pc, _sp)
     _r0 = OP_SUB_64(operand, _r0)
     return nextOpDirect(_pc, _sp, _mem, _r0, _fp0)
 }
 
-def public op_i64_Subtract_ss(var _pc : pc_t; var _sp : m3stack_t; var _mem : M3MemoryHeader?; var _r0 : m3reg_t; var _fp0 : f64) : M3Result {
+def public op_i64_Subtract_ss(var _pc : pc_t&; var _sp : m3stack_t&; var _mem : M3MemoryHeader?&; var _r0 : m3reg_t&; var _fp0 : f64&) : M3Result {
     let operand2 = slot_i64(_pc, _sp)
     let operand1 = slot_i64(_pc, _sp)
     _r0 = OP_SUB_64(operand1, operand2)
     return nextOpDirect(_pc, _sp, _mem, _r0, _fp0)
 }
 
-def public op_u32_ShiftLeft_sr(var _pc : pc_t; var _sp : m3stack_t; var _mem : M3MemoryHeader?; var _r0 : m3reg_t; var _fp0 : f64) : M3Result {
+def public op_u32_ShiftLeft_sr(var _pc : pc_t&; var _sp : m3stack_t&; var _mem : M3MemoryHeader?&; var _r0 : m3reg_t&; var _fp0 : f64&) : M3Result {
     let operand = slot_u32(_pc, _sp)
     _r0 = m3reg_t(OP_SHL_32(u32(_r0), operand))
     return nextOpDirect(_pc, _sp, _mem, _r0, _fp0)
 }
 
-def public op_u32_ShiftLeft_rs(var _pc : pc_t; var _sp : m3stack_t; var _mem : M3MemoryHeader?; var _r0 : m3reg_t; var _fp0 : f64) : M3Result {
+def public op_u32_ShiftLeft_rs(var _pc : pc_t&; var _sp : m3stack_t&; var _mem : M3MemoryHeader?&; var _r0 : m3reg_t&; var _fp0 : f64&) : M3Result {
     let operand = slot_u32(_pc, _sp)
     _r0 = m3reg_t(OP_SHL_32(operand, u32(_r0)))
     return nextOpDirect(_pc, _sp, _mem, _r0, _fp0)
 }
 
-def public op_u32_ShiftLeft_ss(var _pc : pc_t; var _sp : m3stack_t; var _mem : M3MemoryHeader?; var _r0 : m3reg_t; var _fp0 : f64) : M3Result {
+def public op_u32_ShiftLeft_ss(var _pc : pc_t&; var _sp : m3stack_t&; var _mem : M3MemoryHeader?&; var _r0 : m3reg_t&; var _fp0 : f64&) : M3Result {
     let operand2 = slot_u32(_pc, _sp)
     let operand1 = slot_u32(_pc, _sp)
     _r0 = m3reg_t(OP_SHL_32(operand1, operand2))
     return nextOpDirect(_pc, _sp, _mem, _r0, _fp0)
 }
 
-def public op_u64_ShiftLeft_sr(var _pc : pc_t; var _sp : m3stack_t; var _mem : M3MemoryHeader?; var _r0 : m3reg_t; var _fp0 : f64) : M3Result {
+def public op_u64_ShiftLeft_sr(var _pc : pc_t&; var _sp : m3stack_t&; var _mem : M3MemoryHeader?&; var _r0 : m3reg_t&; var _fp0 : f64&) : M3Result {
     let operand = slot_u64(_pc, _sp)
     _r0 = m3reg_t(OP_SHL_64(u64(_r0), operand))
     return nextOpDirect(_pc, _sp, _mem, _r0, _fp0)
 }
 
-def public op_u64_ShiftLeft_rs(var _pc : pc_t; var _sp : m3stack_t; var _mem : M3MemoryHeader?; var _r0 : m3reg_t; var _fp0 : f64) : M3Result {
+def public op_u64_ShiftLeft_rs(var _pc : pc_t&; var _sp : m3stack_t&; var _mem : M3MemoryHeader?&; var _r0 : m3reg_t&; var _fp0 : f64&) : M3Result {
     let operand = slot_u64(_pc, _sp)
     _r0 = m3reg_t(OP_SHL_64(operand, u64(_r0)))
     return nextOpDirect(_pc, _sp, _mem, _r0, _fp0)
 }
 
-def public op_u64_ShiftLeft_ss(var _pc : pc_t; var _sp : m3stack_t; var _mem : M3MemoryHeader?; var _r0 : m3reg_t; var _fp0 : f64) : M3Result {
+def public op_u64_ShiftLeft_ss(var _pc : pc_t&; var _sp : m3stack_t&; var _mem : M3MemoryHeader?&; var _r0 : m3reg_t&; var _fp0 : f64&) : M3Result {
     let operand2 = slot_u64(_pc, _sp)
     let operand1 = slot_u64(_pc, _sp)
     _r0 = m3reg_t(OP_SHL_64(operand1, operand2))
     return nextOpDirect(_pc, _sp, _mem, _r0, _fp0)
 }
 
-def public op_i32_ShiftRight_sr(var _pc : pc_t; var _sp : m3stack_t; var _mem : M3MemoryHeader?; var _r0 : m3reg_t; var _fp0 : f64) : M3Result {
+def public op_i32_ShiftRight_sr(var _pc : pc_t&; var _sp : m3stack_t&; var _mem : M3MemoryHeader?&; var _r0 : m3reg_t&; var _fp0 : f64&) : M3Result {
     let operand = slot_i32(_pc, _sp)
     _r0 = m3reg_t(i32(_r0) >> i32(u32(operand) % 32u))
     return nextOpDirect(_pc, _sp, _mem, _r0, _fp0)
 }
 
-def public op_i32_ShiftRight_rs(var _pc : pc_t; var _sp : m3stack_t; var _mem : M3MemoryHeader?; var _r0 : m3reg_t; var _fp0 : f64) : M3Result {
+def public op_i32_ShiftRight_rs(var _pc : pc_t&; var _sp : m3stack_t&; var _mem : M3MemoryHeader?&; var _r0 : m3reg_t&; var _fp0 : f64&) : M3Result {
     let operand = slot_i32(_pc, _sp)
     _r0 = m3reg_t(operand >> i32(u32(i32(_r0)) % 32u))
     return nextOpDirect(_pc, _sp, _mem, _r0, _fp0)
 }
 
-def public op_i32_ShiftRight_ss(var _pc : pc_t; var _sp : m3stack_t; var _mem : M3MemoryHeader?; var _r0 : m3reg_t; var _fp0 : f64) : M3Result {
+def public op_i32_ShiftRight_ss(var _pc : pc_t&; var _sp : m3stack_t&; var _mem : M3MemoryHeader?&; var _r0 : m3reg_t&; var _fp0 : f64&) : M3Result {
     let operand2 = slot_i32(_pc, _sp)
     let operand1 = slot_i32(_pc, _sp)
     _r0 = m3reg_t(operand1 >> i32(u32(operand2) % 32u))
     return nextOpDirect(_pc, _sp, _mem, _r0, _fp0)
 }
 
-def public op_i64_ShiftRight_sr(var _pc : pc_t; var _sp : m3stack_t; var _mem : M3MemoryHeader?; var _r0 : m3reg_t; var _fp0 : f64) : M3Result {
+def public op_i64_ShiftRight_sr(var _pc : pc_t&; var _sp : m3stack_t&; var _mem : M3MemoryHeader?&; var _r0 : m3reg_t&; var _fp0 : f64&) : M3Result {
     let operand = slot_i64(_pc, _sp)
     _r0 = (_r0 >> i64(u64(operand) % 64ul))
     return nextOpDirect(_pc, _sp, _mem, _r0, _fp0)
 }
 
-def public op_i64_ShiftRight_rs(var _pc : pc_t; var _sp : m3stack_t; var _mem : M3MemoryHeader?; var _r0 : m3reg_t; var _fp0 : f64) : M3Result {
+def public op_i64_ShiftRight_rs(var _pc : pc_t&; var _sp : m3stack_t&; var _mem : M3MemoryHeader?&; var _r0 : m3reg_t&; var _fp0 : f64&) : M3Result {
     let operand = slot_i64(_pc, _sp)
     _r0 = (operand >> i64(u64(_r0) % 64ul))
     return nextOpDirect(_pc, _sp, _mem, _r0, _fp0)
 }
 
-def public op_i64_ShiftRight_ss(var _pc : pc_t; var _sp : m3stack_t; var _mem : M3MemoryHeader?; var _r0 : m3reg_t; var _fp0 : f64) : M3Result {
+def public op_i64_ShiftRight_ss(var _pc : pc_t&; var _sp : m3stack_t&; var _mem : M3MemoryHeader?&; var _r0 : m3reg_t&; var _fp0 : f64&) : M3Result {
     let operand2 = slot_i64(_pc, _sp)
     let operand1 = slot_i64(_pc, _sp)
     _r0 = (operand1 >> i64(u64(operand2) % 64ul))
     return nextOpDirect(_pc, _sp, _mem, _r0, _fp0)
 }
 
-def public op_u32_ShiftRight_sr(var _pc : pc_t; var _sp : m3stack_t; var _mem : M3MemoryHeader?; var _r0 : m3reg_t; var _fp0 : f64) : M3Result {
+def public op_u32_ShiftRight_sr(var _pc : pc_t&; var _sp : m3stack_t&; var _mem : M3MemoryHeader?&; var _r0 : m3reg_t&; var _fp0 : f64&) : M3Result {
     let operand = slot_u32(_pc, _sp)
     _r0 = m3reg_t(OP_SHR_32(u32(_r0), operand))
     return nextOpDirect(_pc, _sp, _mem, _r0, _fp0)
 }
 
-def public op_u32_ShiftRight_rs(var _pc : pc_t; var _sp : m3stack_t; var _mem : M3MemoryHeader?; var _r0 : m3reg_t; var _fp0 : f64) : M3Result {
+def public op_u32_ShiftRight_rs(var _pc : pc_t&; var _sp : m3stack_t&; var _mem : M3MemoryHeader?&; var _r0 : m3reg_t&; var _fp0 : f64&) : M3Result {
     let operand = slot_u32(_pc, _sp)
     _r0 = m3reg_t(OP_SHR_32(operand, u32(_r0)))
     return nextOpDirect(_pc, _sp, _mem, _r0, _fp0)
 }
 
-def public op_u32_ShiftRight_ss(var _pc : pc_t; var _sp : m3stack_t; var _mem : M3MemoryHeader?; var _r0 : m3reg_t; var _fp0 : f64) : M3Result {
+def public op_u32_ShiftRight_ss(var _pc : pc_t&; var _sp : m3stack_t&; var _mem : M3MemoryHeader?&; var _r0 : m3reg_t&; var _fp0 : f64&) : M3Result {
     let operand2 = slot_u32(_pc, _sp)
     let operand1 = slot_u32(_pc, _sp)
     _r0 = m3reg_t(OP_SHR_32(operand1, operand2))
     return nextOpDirect(_pc, _sp, _mem, _r0, _fp0)
 }
 
-def public op_u64_ShiftRight_sr(var _pc : pc_t; var _sp : m3stack_t; var _mem : M3MemoryHeader?; var _r0 : m3reg_t; var _fp0 : f64) : M3Result {
+def public op_u64_ShiftRight_sr(var _pc : pc_t&; var _sp : m3stack_t&; var _mem : M3MemoryHeader?&; var _r0 : m3reg_t&; var _fp0 : f64&) : M3Result {
     let operand = slot_u64(_pc, _sp)
     _r0 = m3reg_t(OP_SHR_64(u64(_r0), operand))
     return nextOpDirect(_pc, _sp, _mem, _r0, _fp0)
 }
 
-def public op_u64_ShiftRight_rs(var _pc : pc_t; var _sp : m3stack_t; var _mem : M3MemoryHeader?; var _r0 : m3reg_t; var _fp0 : f64) : M3Result {
+def public op_u64_ShiftRight_rs(var _pc : pc_t&; var _sp : m3stack_t&; var _mem : M3MemoryHeader?&; var _r0 : m3reg_t&; var _fp0 : f64&) : M3Result {
     let operand = slot_u64(_pc, _sp)
     _r0 = m3reg_t(OP_SHR_64(operand, u64(_r0)))
     return nextOpDirect(_pc, _sp, _mem, _r0, _fp0)
 }
 
-def public op_u64_ShiftRight_ss(var _pc : pc_t; var _sp : m3stack_t; var _mem : M3MemoryHeader?; var _r0 : m3reg_t; var _fp0 : f64) : M3Result {
+def public op_u64_ShiftRight_ss(var _pc : pc_t&; var _sp : m3stack_t&; var _mem : M3MemoryHeader?&; var _r0 : m3reg_t&; var _fp0 : f64&) : M3Result {
     let operand2 = slot_u64(_pc, _sp)
     let operand1 = slot_u64(_pc, _sp)
     _r0 = m3reg_t(OP_SHR_64(operand1, operand2))
     return nextOpDirect(_pc, _sp, _mem, _r0, _fp0)
 }
 
-def public op_u32_And_rs(var _pc : pc_t; var _sp : m3stack_t; var _mem : M3MemoryHeader?; var _r0 : m3reg_t; var _fp0 : f64) : M3Result {
+def public op_u32_And_rs(var _pc : pc_t&; var _sp : m3stack_t&; var _mem : M3MemoryHeader?&; var _r0 : m3reg_t&; var _fp0 : f64&) : M3Result {
     let operand = slot_u32(_pc, _sp)
     _r0 = m3reg_t(operand & u32(_r0))
     return nextOpDirect(_pc, _sp, _mem, _r0, _fp0)
 }
 
-def public op_u32_And_ss(var _pc : pc_t; var _sp : m3stack_t; var _mem : M3MemoryHeader?; var _r0 : m3reg_t; var _fp0 : f64) : M3Result {
+def public op_u32_And_ss(var _pc : pc_t&; var _sp : m3stack_t&; var _mem : M3MemoryHeader?&; var _r0 : m3reg_t&; var _fp0 : f64&) : M3Result {
     let operand2 = slot_u32(_pc, _sp)
     let operand1 = slot_u32(_pc, _sp)
     _r0 = m3reg_t(operand1 & operand2)
     return nextOpDirect(_pc, _sp, _mem, _r0, _fp0)
 }
 
-def public op_u32_Or_rs(var _pc : pc_t; var _sp : m3stack_t; var _mem : M3MemoryHeader?; var _r0 : m3reg_t; var _fp0 : f64) : M3Result {
+def public op_u32_Or_rs(var _pc : pc_t&; var _sp : m3stack_t&; var _mem : M3MemoryHeader?&; var _r0 : m3reg_t&; var _fp0 : f64&) : M3Result {
     let operand = slot_u32(_pc, _sp)
     _r0 = m3reg_t(operand | u32(_r0))
     return nextOpDirect(_pc, _sp, _mem, _r0, _fp0)
 }
 
-def public op_u32_Or_ss(var _pc : pc_t; var _sp : m3stack_t; var _mem : M3MemoryHeader?; var _r0 : m3reg_t; var _fp0 : f64) : M3Result {
+def public op_u32_Or_ss(var _pc : pc_t&; var _sp : m3stack_t&; var _mem : M3MemoryHeader?&; var _r0 : m3reg_t&; var _fp0 : f64&) : M3Result {
     let operand2 = slot_u32(_pc, _sp)
     let operand1 = slot_u32(_pc, _sp)
     _r0 = m3reg_t(operand1 | operand2)
     return nextOpDirect(_pc, _sp, _mem, _r0, _fp0)
 }
 
-def public op_u32_Xor_rs(var _pc : pc_t; var _sp : m3stack_t; var _mem : M3MemoryHeader?; var _r0 : m3reg_t; var _fp0 : f64) : M3Result {
+def public op_u32_Xor_rs(var _pc : pc_t&; var _sp : m3stack_t&; var _mem : M3MemoryHeader?&; var _r0 : m3reg_t&; var _fp0 : f64&) : M3Result {
     let operand = slot_u32(_pc, _sp)
     _r0 = m3reg_t(operand ^ u32(_r0))
     return nextOpDirect(_pc, _sp, _mem, _r0, _fp0)
 }
 
-def public op_u32_Xor_ss(var _pc : pc_t; var _sp : m3stack_t; var _mem : M3MemoryHeader?; var _r0 : m3reg_t; var _fp0 : f64) : M3Result {
+def public op_u32_Xor_ss(var _pc : pc_t&; var _sp : m3stack_t&; var _mem : M3MemoryHeader?&; var _r0 : m3reg_t&; var _fp0 : f64&) : M3Result {
     let operand2 = slot_u32(_pc, _sp)
     let operand1 = slot_u32(_pc, _sp)
     _r0 = m3reg_t(operand1 ^ operand2)
     return nextOpDirect(_pc, _sp, _mem, _r0, _fp0)
 }
 
-def public op_u64_And_rs(var _pc : pc_t; var _sp : m3stack_t; var _mem : M3MemoryHeader?; var _r0 : m3reg_t; var _fp0 : f64) : M3Result {
+def public op_u64_And_rs(var _pc : pc_t&; var _sp : m3stack_t&; var _mem : M3MemoryHeader?&; var _r0 : m3reg_t&; var _fp0 : f64&) : M3Result {
     let operand = slot_u64(_pc, _sp)
     _r0 = m3reg_t(operand & u64(_r0))
     return nextOpDirect(_pc, _sp, _mem, _r0, _fp0)
 }
 
-def public op_u64_And_ss(var _pc : pc_t; var _sp : m3stack_t; var _mem : M3MemoryHeader?; var _r0 : m3reg_t; var _fp0 : f64) : M3Result {
+def public op_u64_And_ss(var _pc : pc_t&; var _sp : m3stack_t&; var _mem : M3MemoryHeader?&; var _r0 : m3reg_t&; var _fp0 : f64&) : M3Result {
     let operand2 = slot_u64(_pc, _sp)
     let operand1 = slot_u64(_pc, _sp)
     _r0 = m3reg_t(operand1 & operand2)
     return nextOpDirect(_pc, _sp, _mem, _r0, _fp0)
 }
 
-def public op_u64_Or_rs(var _pc : pc_t; var _sp : m3stack_t; var _mem : M3MemoryHeader?; var _r0 : m3reg_t; var _fp0 : f64) : M3Result {
+def public op_u64_Or_rs(var _pc : pc_t&; var _sp : m3stack_t&; var _mem : M3MemoryHeader?&; var _r0 : m3reg_t&; var _fp0 : f64&) : M3Result {
     let operand = slot_u64(_pc, _sp)
     _r0 = m3reg_t(operand | u64(_r0))
     return nextOpDirect(_pc, _sp, _mem, _r0, _fp0)
 }
 
-def public op_u64_Or_ss(var _pc : pc_t; var _sp : m3stack_t; var _mem : M3MemoryHeader?; var _r0 : m3reg_t; var _fp0 : f64) : M3Result {
+def public op_u64_Or_ss(var _pc : pc_t&; var _sp : m3stack_t&; var _mem : M3MemoryHeader?&; var _r0 : m3reg_t&; var _fp0 : f64&) : M3Result {
     let operand2 = slot_u64(_pc, _sp)
     let operand1 = slot_u64(_pc, _sp)
     _r0 = m3reg_t(operand1 | operand2)
     return nextOpDirect(_pc, _sp, _mem, _r0, _fp0)
 }
 
-def public op_u64_Xor_rs(var _pc : pc_t; var _sp : m3stack_t; var _mem : M3MemoryHeader?; var _r0 : m3reg_t; var _fp0 : f64) : M3Result {
+def public op_u64_Xor_rs(var _pc : pc_t&; var _sp : m3stack_t&; var _mem : M3MemoryHeader?&; var _r0 : m3reg_t&; var _fp0 : f64&) : M3Result {
     let operand = slot_u64(_pc, _sp)
     _r0 = m3reg_t(operand ^ u64(_r0))
     return nextOpDirect(_pc, _sp, _mem, _r0, _fp0)
 }
 
-def public op_u64_Xor_ss(var _pc : pc_t; var _sp : m3stack_t; var _mem : M3MemoryHeader?; var _r0 : m3reg_t; var _fp0 : f64) : M3Result {
+def public op_u64_Xor_ss(var _pc : pc_t&; var _sp : m3stack_t&; var _mem : M3MemoryHeader?&; var _r0 : m3reg_t&; var _fp0 : f64&) : M3Result {
     let operand2 = slot_u64(_pc, _sp)
     let operand1 = slot_u64(_pc, _sp)
     _r0 = m3reg_t(operand1 ^ operand2)
     return nextOpDirect(_pc, _sp, _mem, _r0, _fp0)
 }
 
-def public op_f32_Add_rs(var _pc : pc_t; var _sp : m3stack_t; var _mem : M3MemoryHeader?; var _r0 : m3reg_t; var _fp0 : f64) : M3Result {
+def public op_f32_Add_rs(var _pc : pc_t&; var _sp : m3stack_t&; var _mem : M3MemoryHeader?&; var _r0 : m3reg_t&; var _fp0 : f64&) : M3Result {
     let operand = slot_f32(_pc, _sp)
     _fp0 = f64(operand + f32(_fp0))
     return nextOpDirect(_pc, _sp, _mem, _r0, _fp0)
 }
 
-def public op_f32_Add_ss(var _pc : pc_t; var _sp : m3stack_t; var _mem : M3MemoryHeader?; var _r0 : m3reg_t; var _fp0 : f64) : M3Result {
+def public op_f32_Add_ss(var _pc : pc_t&; var _sp : m3stack_t&; var _mem : M3MemoryHeader?&; var _r0 : m3reg_t&; var _fp0 : f64&) : M3Result {
     let operand2 = slot_f32(_pc, _sp)
     let operand1 = slot_f32(_pc, _sp)
     _fp0 = f64(operand1 + operand2)
     return nextOpDirect(_pc, _sp, _mem, _r0, _fp0)
 }
 
-def public op_f32_Multiply_rs(var _pc : pc_t; var _sp : m3stack_t; var _mem : M3MemoryHeader?; var _r0 : m3reg_t; var _fp0 : f64) : M3Result {
+def public op_f32_Multiply_rs(var _pc : pc_t&; var _sp : m3stack_t&; var _mem : M3MemoryHeader?&; var _r0 : m3reg_t&; var _fp0 : f64&) : M3Result {
     let operand = slot_f32(_pc, _sp)
     _fp0 = f64(operand * f32(_fp0))
     return nextOpDirect(_pc, _sp, _mem, _r0, _fp0)
 }
 
-def public op_f32_Multiply_ss(var _pc : pc_t; var _sp : m3stack_t; var _mem : M3MemoryHeader?; var _r0 : m3reg_t; var _fp0 : f64) : M3Result {
+def public op_f32_Multiply_ss(var _pc : pc_t&; var _sp : m3stack_t&; var _mem : M3MemoryHeader?&; var _r0 : m3reg_t&; var _fp0 : f64&) : M3Result {
     let operand2 = slot_f32(_pc, _sp)
     let operand1 = slot_f32(_pc, _sp)
     _fp0 = f64(operand1 * operand2)
     return nextOpDirect(_pc, _sp, _mem, _r0, _fp0)
 }
 
-def public op_f32_Subtract_sr(var _pc : pc_t; var _sp : m3stack_t; var _mem : M3MemoryHeader?; var _r0 : m3reg_t; var _fp0 : f64) : M3Result {
+def public op_f32_Subtract_sr(var _pc : pc_t&; var _sp : m3stack_t&; var _mem : M3MemoryHeader?&; var _r0 : m3reg_t&; var _fp0 : f64&) : M3Result {
     let operand = slot_f32(_pc, _sp)
     _fp0 = f64(f32(_fp0) - operand)
     return nextOpDirect(_pc, _sp, _mem, _r0, _fp0)
 }
 
-def public op_f32_Subtract_rs(var _pc : pc_t; var _sp : m3stack_t; var _mem : M3MemoryHeader?; var _r0 : m3reg_t; var _fp0 : f64) : M3Result {
+def public op_f32_Subtract_rs(var _pc : pc_t&; var _sp : m3stack_t&; var _mem : M3MemoryHeader?&; var _r0 : m3reg_t&; var _fp0 : f64&) : M3Result {
     let operand = slot_f32(_pc, _sp)
     _fp0 = f64(operand - f32(_fp0))
     return nextOpDirect(_pc, _sp, _mem, _r0, _fp0)
 }
 
-def public op_f32_Subtract_ss(var _pc : pc_t; var _sp : m3stack_t; var _mem : M3MemoryHeader?; var _r0 : m3reg_t; var _fp0 : f64) : M3Result {
+def public op_f32_Subtract_ss(var _pc : pc_t&; var _sp : m3stack_t&; var _mem : M3MemoryHeader?&; var _r0 : m3reg_t&; var _fp0 : f64&) : M3Result {
     let operand2 = slot_f32(_pc, _sp)
     let operand1 = slot_f32(_pc, _sp)
     _fp0 = f64(operand1 - operand2)
     return nextOpDirect(_pc, _sp, _mem, _r0, _fp0)
 }
 
-def public op_f32_Divide_sr(var _pc : pc_t; var _sp : m3stack_t; var _mem : M3MemoryHeader?; var _r0 : m3reg_t; var _fp0 : f64) : M3Result {
+def public op_f32_Divide_sr(var _pc : pc_t&; var _sp : m3stack_t&; var _mem : M3MemoryHeader?&; var _r0 : m3reg_t&; var _fp0 : f64&) : M3Result {
     let operand = slot_f32(_pc, _sp)
     _fp0 = f64(f32(_fp0) / operand)
     return nextOpDirect(_pc, _sp, _mem, _r0, _fp0)
 }
 
-def public op_f32_Divide_rs(var _pc : pc_t; var _sp : m3stack_t; var _mem : M3MemoryHeader?; var _r0 : m3reg_t; var _fp0 : f64) : M3Result {
+def public op_f32_Divide_rs(var _pc : pc_t&; var _sp : m3stack_t&; var _mem : M3MemoryHeader?&; var _r0 : m3reg_t&; var _fp0 : f64&) : M3Result {
     let operand = slot_f32(_pc, _sp)
     _fp0 = f64(operand / f32(_fp0))
     return nextOpDirect(_pc, _sp, _mem, _r0, _fp0)
 }
 
-def public op_f32_Divide_ss(var _pc : pc_t; var _sp : m3stack_t; var _mem : M3MemoryHeader?; var _r0 : m3reg_t; var _fp0 : f64) : M3Result {
+def public op_f32_Divide_ss(var _pc : pc_t&; var _sp : m3stack_t&; var _mem : M3MemoryHeader?&; var _r0 : m3reg_t&; var _fp0 : f64&) : M3Result {
     let operand2 = slot_f32(_pc, _sp)
     let operand1 = slot_f32(_pc, _sp)
     _fp0 = f64(operand1 / operand2)
     return nextOpDirect(_pc, _sp, _mem, _r0, _fp0)
 }
 
-def public op_f64_Add_rs(var _pc : pc_t; var _sp : m3stack_t; var _mem : M3MemoryHeader?; var _r0 : m3reg_t; var _fp0 : f64) : M3Result {
+def public op_f64_Add_rs(var _pc : pc_t&; var _sp : m3stack_t&; var _mem : M3MemoryHeader?&; var _r0 : m3reg_t&; var _fp0 : f64&) : M3Result {
     let operand = slot_f64(_pc, _sp)
     _fp0 = (operand + _fp0)
     return nextOpDirect(_pc, _sp, _mem, _r0, _fp0)
 }
 
-def public op_f64_Add_ss(var _pc : pc_t; var _sp : m3stack_t; var _mem : M3MemoryHeader?; var _r0 : m3reg_t; var _fp0 : f64) : M3Result {
+def public op_f64_Add_ss(var _pc : pc_t&; var _sp : m3stack_t&; var _mem : M3MemoryHeader?&; var _r0 : m3reg_t&; var _fp0 : f64&) : M3Result {
     let operand2 = slot_f64(_pc, _sp)
     let operand1 = slot_f64(_pc, _sp)
     _fp0 = (operand1 + operand2)
     return nextOpDirect(_pc, _sp, _mem, _r0, _fp0)
 }
 
-def public op_f64_Multiply_rs(var _pc : pc_t; var _sp : m3stack_t; var _mem : M3MemoryHeader?; var _r0 : m3reg_t; var _fp0 : f64) : M3Result {
+def public op_f64_Multiply_rs(var _pc : pc_t&; var _sp : m3stack_t&; var _mem : M3MemoryHeader?&; var _r0 : m3reg_t&; var _fp0 : f64&) : M3Result {
     let operand = slot_f64(_pc, _sp)
     _fp0 = (operand * _fp0)
     return nextOpDirect(_pc, _sp, _mem, _r0, _fp0)
 }
 
-def public op_f64_Multiply_ss(var _pc : pc_t; var _sp : m3stack_t; var _mem : M3MemoryHeader?; var _r0 : m3reg_t; var _fp0 : f64) : M3Result {
+def public op_f64_Multiply_ss(var _pc : pc_t&; var _sp : m3stack_t&; var _mem : M3MemoryHeader?&; var _r0 : m3reg_t&; var _fp0 : f64&) : M3Result {
     let operand2 = slot_f64(_pc, _sp)
     let operand1 = slot_f64(_pc, _sp)
     _fp0 = (operand1 * operand2)
     return nextOpDirect(_pc, _sp, _mem, _r0, _fp0)
 }
 
-def public op_f64_Subtract_sr(var _pc : pc_t; var _sp : m3stack_t; var _mem : M3MemoryHeader?; var _r0 : m3reg_t; var _fp0 : f64) : M3Result {
+def public op_f64_Subtract_sr(var _pc : pc_t&; var _sp : m3stack_t&; var _mem : M3MemoryHeader?&; var _r0 : m3reg_t&; var _fp0 : f64&) : M3Result {
     let operand = slot_f64(_pc, _sp)
     _fp0 = (_fp0 - operand)
     return nextOpDirect(_pc, _sp, _mem, _r0, _fp0)
 }
 
-def public op_f64_Subtract_rs(var _pc : pc_t; var _sp : m3stack_t; var _mem : M3MemoryHeader?; var _r0 : m3reg_t; var _fp0 : f64) : M3Result {
+def public op_f64_Subtract_rs(var _pc : pc_t&; var _sp : m3stack_t&; var _mem : M3MemoryHeader?&; var _r0 : m3reg_t&; var _fp0 : f64&) : M3Result {
     let operand = slot_f64(_pc, _sp)
     _fp0 = (operand - _fp0)
     return nextOpDirect(_pc, _sp, _mem, _r0, _fp0)
 }
 
-def public op_f64_Subtract_ss(var _pc : pc_t; var _sp : m3stack_t; var _mem : M3MemoryHeader?; var _r0 : m3reg_t; var _fp0 : f64) : M3Result {
+def public op_f64_Subtract_ss(var _pc : pc_t&; var _sp : m3stack_t&; var _mem : M3MemoryHeader?&; var _r0 : m3reg_t&; var _fp0 : f64&) : M3Result {
     let operand2 = slot_f64(_pc, _sp)
     let operand1 = slot_f64(_pc, _sp)
     _fp0 = (operand1 - operand2)
     return nextOpDirect(_pc, _sp, _mem, _r0, _fp0)
 }
 
-def public op_f64_Divide_sr(var _pc : pc_t; var _sp : m3stack_t; var _mem : M3MemoryHeader?; var _r0 : m3reg_t; var _fp0 : f64) : M3Result {
+def public op_f64_Divide_sr(var _pc : pc_t&; var _sp : m3stack_t&; var _mem : M3MemoryHeader?&; var _r0 : m3reg_t&; var _fp0 : f64&) : M3Result {
     let operand = slot_f64(_pc, _sp)
     _fp0 = (_fp0 / operand)
     return nextOpDirect(_pc, _sp, _mem, _r0, _fp0)
 }
 
-def public op_f64_Divide_rs(var _pc : pc_t; var _sp : m3stack_t; var _mem : M3MemoryHeader?; var _r0 : m3reg_t; var _fp0 : f64) : M3Result {
+def public op_f64_Divide_rs(var _pc : pc_t&; var _sp : m3stack_t&; var _mem : M3MemoryHeader?&; var _r0 : m3reg_t&; var _fp0 : f64&) : M3Result {
     let operand = slot_f64(_pc, _sp)
     _fp0 = (operand / _fp0)
     return nextOpDirect(_pc, _sp, _mem, _r0, _fp0)
 }
 
-def public op_f64_Divide_ss(var _pc : pc_t; var _sp : m3stack_t; var _mem : M3MemoryHeader?; var _r0 : m3reg_t; var _fp0 : f64) : M3Result {
+def public op_f64_Divide_ss(var _pc : pc_t&; var _sp : m3stack_t&; var _mem : M3MemoryHeader?&; var _r0 : m3reg_t&; var _fp0 : f64&) : M3Result {
     let operand2 = slot_f64(_pc, _sp)
     let operand1 = slot_f64(_pc, _sp)
     _fp0 = (operand1 / operand2)
     return nextOpDirect(_pc, _sp, _mem, _r0, _fp0)
 }
 
-def public op_u32_Rotl_sr(var _pc : pc_t; var _sp : m3stack_t; var _mem : M3MemoryHeader?; var _r0 : m3reg_t; var _fp0 : f64) : M3Result {
+def public op_u32_Rotl_sr(var _pc : pc_t&; var _sp : m3stack_t&; var _mem : M3MemoryHeader?&; var _r0 : m3reg_t&; var _fp0 : f64&) : M3Result {
     let operand = slot_u32(_pc, _sp)
     _r0 = m3reg_t(rotl32(u32(_r0), operand))
     return nextOpDirect(_pc, _sp, _mem, _r0, _fp0)
 }
 
-def public op_u32_Rotl_rs(var _pc : pc_t; var _sp : m3stack_t; var _mem : M3MemoryHeader?; var _r0 : m3reg_t; var _fp0 : f64) : M3Result {
+def public op_u32_Rotl_rs(var _pc : pc_t&; var _sp : m3stack_t&; var _mem : M3MemoryHeader?&; var _r0 : m3reg_t&; var _fp0 : f64&) : M3Result {
     let operand = slot_u32(_pc, _sp)
     _r0 = m3reg_t(rotl32(operand, u32(_r0)))
     return nextOpDirect(_pc, _sp, _mem, _r0, _fp0)
 }
 
-def public op_u32_Rotl_ss(var _pc : pc_t; var _sp : m3stack_t; var _mem : M3MemoryHeader?; var _r0 : m3reg_t; var _fp0 : f64) : M3Result {
+def public op_u32_Rotl_ss(var _pc : pc_t&; var _sp : m3stack_t&; var _mem : M3MemoryHeader?&; var _r0 : m3reg_t&; var _fp0 : f64&) : M3Result {
     let operand2 = slot_u32(_pc, _sp)
     let operand1 = slot_u32(_pc, _sp)
     _r0 = m3reg_t(rotl32(operand1, operand2))
     return nextOpDirect(_pc, _sp, _mem, _r0, _fp0)
 }
 
-def public op_u32_Rotr_sr(var _pc : pc_t; var _sp : m3stack_t; var _mem : M3MemoryHeader?; var _r0 : m3reg_t; var _fp0 : f64) : M3Result {
+def public op_u32_Rotr_sr(var _pc : pc_t&; var _sp : m3stack_t&; var _mem : M3MemoryHeader?&; var _r0 : m3reg_t&; var _fp0 : f64&) : M3Result {
     let operand = slot_u32(_pc, _sp)
     _r0 = m3reg_t(rotr32(u32(_r0), operand))
     return nextOpDirect(_pc, _sp, _mem, _r0, _fp0)
 }
 
-def public op_u32_Rotr_rs(var _pc : pc_t; var _sp : m3stack_t; var _mem : M3MemoryHeader?; var _r0 : m3reg_t; var _fp0 : f64) : M3Result {
+def public op_u32_Rotr_rs(var _pc : pc_t&; var _sp : m3stack_t&; var _mem : M3MemoryHeader?&; var _r0 : m3reg_t&; var _fp0 : f64&) : M3Result {
     let operand = slot_u32(_pc, _sp)
     _r0 = m3reg_t(rotr32(operand, u32(_r0)))
     return nextOpDirect(_pc, _sp, _mem, _r0, _fp0)
 }
 
-def public op_u32_Rotr_ss(var _pc : pc_t; var _sp : m3stack_t; var _mem : M3MemoryHeader?; var _r0 : m3reg_t; var _fp0 : f64) : M3Result {
+def public op_u32_Rotr_ss(var _pc : pc_t&; var _sp : m3stack_t&; var _mem : M3MemoryHeader?&; var _r0 : m3reg_t&; var _fp0 : f64&) : M3Result {
     let operand2 = slot_u32(_pc, _sp)
     let operand1 = slot_u32(_pc, _sp)
     _r0 = m3reg_t(rotr32(operand1, operand2))
     return nextOpDirect(_pc, _sp, _mem, _r0, _fp0)
 }
 
-def public op_u64_Rotl_sr(var _pc : pc_t; var _sp : m3stack_t; var _mem : M3MemoryHeader?; var _r0 : m3reg_t; var _fp0 : f64) : M3Result {
+def public op_u64_Rotl_sr(var _pc : pc_t&; var _sp : m3stack_t&; var _mem : M3MemoryHeader?&; var _r0 : m3reg_t&; var _fp0 : f64&) : M3Result {
     let operand = slot_u64(_pc, _sp)
     _r0 = m3reg_t(rotl64(u64(_r0), u32(operand)))
     return nextOpDirect(_pc, _sp, _mem, _r0, _fp0)
 }
 
-def public op_u64_Rotl_rs(var _pc : pc_t; var _sp : m3stack_t; var _mem : M3MemoryHeader?; var _r0 : m3reg_t; var _fp0 : f64) : M3Result {
+def public op_u64_Rotl_rs(var _pc : pc_t&; var _sp : m3stack_t&; var _mem : M3MemoryHeader?&; var _r0 : m3reg_t&; var _fp0 : f64&) : M3Result {
     let operand = slot_u64(_pc, _sp)
     _r0 = m3reg_t(rotl64(operand, u32(u64(_r0) % 64ul)))
     return nextOpDirect(_pc, _sp, _mem, _r0, _fp0)
 }
 
-def public op_u64_Rotl_ss(var _pc : pc_t; var _sp : m3stack_t; var _mem : M3MemoryHeader?; var _r0 : m3reg_t; var _fp0 : f64) : M3Result {
+def public op_u64_Rotl_ss(var _pc : pc_t&; var _sp : m3stack_t&; var _mem : M3MemoryHeader?&; var _r0 : m3reg_t&; var _fp0 : f64&) : M3Result {
     let operand2 = slot_u64(_pc, _sp)
     let operand1 = slot_u64(_pc, _sp)
     _r0 = m3reg_t(rotl64(operand1, u32(operand2 % 64ul)))
     return nextOpDirect(_pc, _sp, _mem, _r0, _fp0)
 }
 
-def public op_u64_Rotr_sr(var _pc : pc_t; var _sp : m3stack_t; var _mem : M3MemoryHeader?; var _r0 : m3reg_t; var _fp0 : f64) : M3Result {
+def public op_u64_Rotr_sr(var _pc : pc_t&; var _sp : m3stack_t&; var _mem : M3MemoryHeader?&; var _r0 : m3reg_t&; var _fp0 : f64&) : M3Result {
     let operand = slot_u64(_pc, _sp)
     _r0 = m3reg_t(rotr64(u64(_r0), u32(operand)))
     return nextOpDirect(_pc, _sp, _mem, _r0, _fp0)
 }
 
-def public op_u64_Rotr_rs(var _pc : pc_t; var _sp : m3stack_t; var _mem : M3MemoryHeader?; var _r0 : m3reg_t; var _fp0 : f64) : M3Result {
+def public op_u64_Rotr_rs(var _pc : pc_t&; var _sp : m3stack_t&; var _mem : M3MemoryHeader?&; var _r0 : m3reg_t&; var _fp0 : f64&) : M3Result {
     let operand = slot_u64(_pc, _sp)
     _r0 = m3reg_t(rotr64(operand, u32(u64(_r0) % 64ul)))
     return nextOpDirect(_pc, _sp, _mem, _r0, _fp0)
 }
 
-def public op_u64_Rotr_ss(var _pc : pc_t; var _sp : m3stack_t; var _mem : M3MemoryHeader?; var _r0 : m3reg_t; var _fp0 : f64) : M3Result {
+def public op_u64_Rotr_ss(var _pc : pc_t&; var _sp : m3stack_t&; var _mem : M3MemoryHeader?&; var _r0 : m3reg_t&; var _fp0 : f64&) : M3Result {
     let operand2 = slot_u64(_pc, _sp)
     let operand1 = slot_u64(_pc, _sp)
     _r0 = m3reg_t(rotr64(operand1, u32(operand2 % 64ul)))
     return nextOpDirect(_pc, _sp, _mem, _r0, _fp0)
 }
 
-def public op_u32_Divide_sr(var _pc : pc_t; var _sp : m3stack_t; var _mem : M3MemoryHeader?; var _r0 : m3reg_t; var _fp0 : f64) : M3Result {
+def public op_u32_Divide_sr(var _pc : pc_t&; var _sp : m3stack_t&; var _mem : M3MemoryHeader?&; var _r0 : m3reg_t&; var _fp0 : f64&) : M3Result {
     let operand = slot_u32(_pc, _sp)
     var RES : u32
     let result = OP_DIV_U(RES, u32(_r0), operand)
@@ -1400,7 +1414,7 @@ def public op_u32_Divide_sr(var _pc : pc_t; var _sp : m3stack_t; var _mem : M3Me
     return nextOpDirect(_pc, _sp, _mem, _r0, _fp0)
 }
 
-def public op_u32_Divide_rs(var _pc : pc_t; var _sp : m3stack_t; var _mem : M3MemoryHeader?; var _r0 : m3reg_t; var _fp0 : f64) : M3Result {
+def public op_u32_Divide_rs(var _pc : pc_t&; var _sp : m3stack_t&; var _mem : M3MemoryHeader?&; var _r0 : m3reg_t&; var _fp0 : f64&) : M3Result {
     let operand = slot_u32(_pc, _sp)
     var RES : u32
     let result = OP_DIV_U(RES, operand, u32(_r0))
@@ -1409,7 +1423,7 @@ def public op_u32_Divide_rs(var _pc : pc_t; var _sp : m3stack_t; var _mem : M3Me
     return nextOpDirect(_pc, _sp, _mem, _r0, _fp0)
 }
 
-def public op_u32_Divide_ss(var _pc : pc_t; var _sp : m3stack_t; var _mem : M3MemoryHeader?; var _r0 : m3reg_t; var _fp0 : f64) : M3Result {
+def public op_u32_Divide_ss(var _pc : pc_t&; var _sp : m3stack_t&; var _mem : M3MemoryHeader?&; var _r0 : m3reg_t&; var _fp0 : f64&) : M3Result {
     let operand2 = slot_u32(_pc, _sp)
     let operand1 = slot_u32(_pc, _sp)
     var RES : u32
@@ -1419,7 +1433,7 @@ def public op_u32_Divide_ss(var _pc : pc_t; var _sp : m3stack_t; var _mem : M3Me
     return nextOpDirect(_pc, _sp, _mem, _r0, _fp0)
 }
 
-def public op_u32_Remainder_sr(var _pc : pc_t; var _sp : m3stack_t; var _mem : M3MemoryHeader?; var _r0 : m3reg_t; var _fp0 : f64) : M3Result {
+def public op_u32_Remainder_sr(var _pc : pc_t&; var _sp : m3stack_t&; var _mem : M3MemoryHeader?&; var _r0 : m3reg_t&; var _fp0 : f64&) : M3Result {
     let operand = slot_u32(_pc, _sp)
     var RES : u32
     let result = OP_REM_U(RES, u32(_r0), operand)
@@ -1428,7 +1442,7 @@ def public op_u32_Remainder_sr(var _pc : pc_t; var _sp : m3stack_t; var _mem : M
     return nextOpDirect(_pc, _sp, _mem, _r0, _fp0)
 }
 
-def public op_u32_Remainder_rs(var _pc : pc_t; var _sp : m3stack_t; var _mem : M3MemoryHeader?; var _r0 : m3reg_t; var _fp0 : f64) : M3Result {
+def public op_u32_Remainder_rs(var _pc : pc_t&; var _sp : m3stack_t&; var _mem : M3MemoryHeader?&; var _r0 : m3reg_t&; var _fp0 : f64&) : M3Result {
     let operand = slot_u32(_pc, _sp)
     var RES : u32
     let result = OP_REM_U(RES, operand, u32(_r0))
@@ -1437,7 +1451,7 @@ def public op_u32_Remainder_rs(var _pc : pc_t; var _sp : m3stack_t; var _mem : M
     return nextOpDirect(_pc, _sp, _mem, _r0, _fp0)
 }
 
-def public op_u32_Remainder_ss(var _pc : pc_t; var _sp : m3stack_t; var _mem : M3MemoryHeader?; var _r0 : m3reg_t; var _fp0 : f64) : M3Result {
+def public op_u32_Remainder_ss(var _pc : pc_t&; var _sp : m3stack_t&; var _mem : M3MemoryHeader?&; var _r0 : m3reg_t&; var _fp0 : f64&) : M3Result {
     let operand2 = slot_u32(_pc, _sp)
     let operand1 = slot_u32(_pc, _sp)
     var RES : u32
@@ -1447,7 +1461,7 @@ def public op_u32_Remainder_ss(var _pc : pc_t; var _sp : m3stack_t; var _mem : M
     return nextOpDirect(_pc, _sp, _mem, _r0, _fp0)
 }
 
-def public op_i32_Divide_sr(var _pc : pc_t; var _sp : m3stack_t; var _mem : M3MemoryHeader?; var _r0 : m3reg_t; var _fp0 : f64) : M3Result {
+def public op_i32_Divide_sr(var _pc : pc_t&; var _sp : m3stack_t&; var _mem : M3MemoryHeader?&; var _r0 : m3reg_t&; var _fp0 : f64&) : M3Result {
     let operand = slot_i32(_pc, _sp)
     var RES : i32
     let result = OP_DIV_S(RES, i32(_r0), operand, INT32_MIN)
@@ -1456,7 +1470,7 @@ def public op_i32_Divide_sr(var _pc : pc_t; var _sp : m3stack_t; var _mem : M3Me
     return nextOpDirect(_pc, _sp, _mem, _r0, _fp0)
 }
 
-def public op_i32_Divide_rs(var _pc : pc_t; var _sp : m3stack_t; var _mem : M3MemoryHeader?; var _r0 : m3reg_t; var _fp0 : f64) : M3Result {
+def public op_i32_Divide_rs(var _pc : pc_t&; var _sp : m3stack_t&; var _mem : M3MemoryHeader?&; var _r0 : m3reg_t&; var _fp0 : f64&) : M3Result {
     let operand = slot_i32(_pc, _sp)
     var RES : i32
     let result = OP_DIV_S(RES, operand, i32(_r0), INT32_MIN)
@@ -1465,7 +1479,7 @@ def public op_i32_Divide_rs(var _pc : pc_t; var _sp : m3stack_t; var _mem : M3Me
     return nextOpDirect(_pc, _sp, _mem, _r0, _fp0)
 }
 
-def public op_i32_Divide_ss(var _pc : pc_t; var _sp : m3stack_t; var _mem : M3MemoryHeader?; var _r0 : m3reg_t; var _fp0 : f64) : M3Result {
+def public op_i32_Divide_ss(var _pc : pc_t&; var _sp : m3stack_t&; var _mem : M3MemoryHeader?&; var _r0 : m3reg_t&; var _fp0 : f64&) : M3Result {
     let operand2 = slot_i32(_pc, _sp)
     let operand1 = slot_i32(_pc, _sp)
     var RES : i32
@@ -1475,7 +1489,7 @@ def public op_i32_Divide_ss(var _pc : pc_t; var _sp : m3stack_t; var _mem : M3Me
     return nextOpDirect(_pc, _sp, _mem, _r0, _fp0)
 }
 
-def public op_i32_Remainder_sr(var _pc : pc_t; var _sp : m3stack_t; var _mem : M3MemoryHeader?; var _r0 : m3reg_t; var _fp0 : f64) : M3Result {
+def public op_i32_Remainder_sr(var _pc : pc_t&; var _sp : m3stack_t&; var _mem : M3MemoryHeader?&; var _r0 : m3reg_t&; var _fp0 : f64&) : M3Result {
     let operand = slot_i32(_pc, _sp)
     var RES : i32
     let result = OP_REM_S(RES, i32(_r0), operand, INT32_MIN)
@@ -1484,7 +1498,7 @@ def public op_i32_Remainder_sr(var _pc : pc_t; var _sp : m3stack_t; var _mem : M
     return nextOpDirect(_pc, _sp, _mem, _r0, _fp0)
 }
 
-def public op_i32_Remainder_rs(var _pc : pc_t; var _sp : m3stack_t; var _mem : M3MemoryHeader?; var _r0 : m3reg_t; var _fp0 : f64) : M3Result {
+def public op_i32_Remainder_rs(var _pc : pc_t&; var _sp : m3stack_t&; var _mem : M3MemoryHeader?&; var _r0 : m3reg_t&; var _fp0 : f64&) : M3Result {
     let operand = slot_i32(_pc, _sp)
     var RES : i32
     let result = OP_REM_S(RES, operand, i32(_r0), INT32_MIN)
@@ -1493,7 +1507,7 @@ def public op_i32_Remainder_rs(var _pc : pc_t; var _sp : m3stack_t; var _mem : M
     return nextOpDirect(_pc, _sp, _mem, _r0, _fp0)
 }
 
-def public op_i32_Remainder_ss(var _pc : pc_t; var _sp : m3stack_t; var _mem : M3MemoryHeader?; var _r0 : m3reg_t; var _fp0 : f64) : M3Result {
+def public op_i32_Remainder_ss(var _pc : pc_t&; var _sp : m3stack_t&; var _mem : M3MemoryHeader?&; var _r0 : m3reg_t&; var _fp0 : f64&) : M3Result {
     let operand2 = slot_i32(_pc, _sp)
     let operand1 = slot_i32(_pc, _sp)
     var RES : i32
@@ -1503,7 +1517,7 @@ def public op_i32_Remainder_ss(var _pc : pc_t; var _sp : m3stack_t; var _mem : M
     return nextOpDirect(_pc, _sp, _mem, _r0, _fp0)
 }
 
-def public op_u64_Divide_sr(var _pc : pc_t; var _sp : m3stack_t; var _mem : M3MemoryHeader?; var _r0 : m3reg_t; var _fp0 : f64) : M3Result {
+def public op_u64_Divide_sr(var _pc : pc_t&; var _sp : m3stack_t&; var _mem : M3MemoryHeader?&; var _r0 : m3reg_t&; var _fp0 : f64&) : M3Result {
     let operand = slot_u64(_pc, _sp)
     var RES : u64
     let result = OP_DIV_U(RES, u64(_r0), operand)
@@ -1512,7 +1526,7 @@ def public op_u64_Divide_sr(var _pc : pc_t; var _sp : m3stack_t; var _mem : M3Me
     return nextOpDirect(_pc, _sp, _mem, _r0, _fp0)
 }
 
-def public op_u64_Divide_rs(var _pc : pc_t; var _sp : m3stack_t; var _mem : M3MemoryHeader?; var _r0 : m3reg_t; var _fp0 : f64) : M3Result {
+def public op_u64_Divide_rs(var _pc : pc_t&; var _sp : m3stack_t&; var _mem : M3MemoryHeader?&; var _r0 : m3reg_t&; var _fp0 : f64&) : M3Result {
     let operand = slot_u64(_pc, _sp)
     var RES : u64
     let result = OP_DIV_U(RES, operand, u64(_r0))
@@ -1521,7 +1535,7 @@ def public op_u64_Divide_rs(var _pc : pc_t; var _sp : m3stack_t; var _mem : M3Me
     return nextOpDirect(_pc, _sp, _mem, _r0, _fp0)
 }
 
-def public op_u64_Divide_ss(var _pc : pc_t; var _sp : m3stack_t; var _mem : M3MemoryHeader?; var _r0 : m3reg_t; var _fp0 : f64) : M3Result {
+def public op_u64_Divide_ss(var _pc : pc_t&; var _sp : m3stack_t&; var _mem : M3MemoryHeader?&; var _r0 : m3reg_t&; var _fp0 : f64&) : M3Result {
     let operand2 = slot_u64(_pc, _sp)
     let operand1 = slot_u64(_pc, _sp)
     var RES : u64
@@ -1531,7 +1545,7 @@ def public op_u64_Divide_ss(var _pc : pc_t; var _sp : m3stack_t; var _mem : M3Me
     return nextOpDirect(_pc, _sp, _mem, _r0, _fp0)
 }
 
-def public op_u64_Remainder_sr(var _pc : pc_t; var _sp : m3stack_t; var _mem : M3MemoryHeader?; var _r0 : m3reg_t; var _fp0 : f64) : M3Result {
+def public op_u64_Remainder_sr(var _pc : pc_t&; var _sp : m3stack_t&; var _mem : M3MemoryHeader?&; var _r0 : m3reg_t&; var _fp0 : f64&) : M3Result {
     let operand = slot_u64(_pc, _sp)
     var RES : u64
     let result = OP_REM_U(RES, u64(_r0), operand)
@@ -1540,7 +1554,7 @@ def public op_u64_Remainder_sr(var _pc : pc_t; var _sp : m3stack_t; var _mem : M
     return nextOpDirect(_pc, _sp, _mem, _r0, _fp0)
 }
 
-def public op_u64_Remainder_rs(var _pc : pc_t; var _sp : m3stack_t; var _mem : M3MemoryHeader?; var _r0 : m3reg_t; var _fp0 : f64) : M3Result {
+def public op_u64_Remainder_rs(var _pc : pc_t&; var _sp : m3stack_t&; var _mem : M3MemoryHeader?&; var _r0 : m3reg_t&; var _fp0 : f64&) : M3Result {
     let operand = slot_u64(_pc, _sp)
     var RES : u64
     let result = OP_REM_U(RES, operand, u64(_r0))
@@ -1549,7 +1563,7 @@ def public op_u64_Remainder_rs(var _pc : pc_t; var _sp : m3stack_t; var _mem : M
     return nextOpDirect(_pc, _sp, _mem, _r0, _fp0)
 }
 
-def public op_u64_Remainder_ss(var _pc : pc_t; var _sp : m3stack_t; var _mem : M3MemoryHeader?; var _r0 : m3reg_t; var _fp0 : f64) : M3Result {
+def public op_u64_Remainder_ss(var _pc : pc_t&; var _sp : m3stack_t&; var _mem : M3MemoryHeader?&; var _r0 : m3reg_t&; var _fp0 : f64&) : M3Result {
     let operand2 = slot_u64(_pc, _sp)
     let operand1 = slot_u64(_pc, _sp)
     var RES : u64
@@ -1559,7 +1573,7 @@ def public op_u64_Remainder_ss(var _pc : pc_t; var _sp : m3stack_t; var _mem : M
     return nextOpDirect(_pc, _sp, _mem, _r0, _fp0)
 }
 
-def public op_i64_Divide_sr(var _pc : pc_t; var _sp : m3stack_t; var _mem : M3MemoryHeader?; var _r0 : m3reg_t; var _fp0 : f64) : M3Result {
+def public op_i64_Divide_sr(var _pc : pc_t&; var _sp : m3stack_t&; var _mem : M3MemoryHeader?&; var _r0 : m3reg_t&; var _fp0 : f64&) : M3Result {
     let operand = slot_i64(_pc, _sp)
     var RES : i64
     let result = OP_DIV_S(RES, _r0, operand, INT64_MIN)
@@ -1568,7 +1582,7 @@ def public op_i64_Divide_sr(var _pc : pc_t; var _sp : m3stack_t; var _mem : M3Me
     return nextOpDirect(_pc, _sp, _mem, _r0, _fp0)
 }
 
-def public op_i64_Divide_rs(var _pc : pc_t; var _sp : m3stack_t; var _mem : M3MemoryHeader?; var _r0 : m3reg_t; var _fp0 : f64) : M3Result {
+def public op_i64_Divide_rs(var _pc : pc_t&; var _sp : m3stack_t&; var _mem : M3MemoryHeader?&; var _r0 : m3reg_t&; var _fp0 : f64&) : M3Result {
     let operand = slot_i64(_pc, _sp)
     var RES : i64
     let result = OP_DIV_S(RES, operand, _r0, INT64_MIN)
@@ -1577,7 +1591,7 @@ def public op_i64_Divide_rs(var _pc : pc_t; var _sp : m3stack_t; var _mem : M3Me
     return nextOpDirect(_pc, _sp, _mem, _r0, _fp0)
 }
 
-def public op_i64_Divide_ss(var _pc : pc_t; var _sp : m3stack_t; var _mem : M3MemoryHeader?; var _r0 : m3reg_t; var _fp0 : f64) : M3Result {
+def public op_i64_Divide_ss(var _pc : pc_t&; var _sp : m3stack_t&; var _mem : M3MemoryHeader?&; var _r0 : m3reg_t&; var _fp0 : f64&) : M3Result {
     let operand2 = slot_i64(_pc, _sp)
     let operand1 = slot_i64(_pc, _sp)
     var RES : i64
@@ -1587,7 +1601,7 @@ def public op_i64_Divide_ss(var _pc : pc_t; var _sp : m3stack_t; var _mem : M3Me
     return nextOpDirect(_pc, _sp, _mem, _r0, _fp0)
 }
 
-def public op_i64_Remainder_sr(var _pc : pc_t; var _sp : m3stack_t; var _mem : M3MemoryHeader?; var _r0 : m3reg_t; var _fp0 : f64) : M3Result {
+def public op_i64_Remainder_sr(var _pc : pc_t&; var _sp : m3stack_t&; var _mem : M3MemoryHeader?&; var _r0 : m3reg_t&; var _fp0 : f64&) : M3Result {
     let operand = slot_i64(_pc, _sp)
     var RES : i64
     let result = OP_REM_S(RES, _r0, operand, INT64_MIN)
@@ -1596,7 +1610,7 @@ def public op_i64_Remainder_sr(var _pc : pc_t; var _sp : m3stack_t; var _mem : M
     return nextOpDirect(_pc, _sp, _mem, _r0, _fp0)
 }
 
-def public op_i64_Remainder_rs(var _pc : pc_t; var _sp : m3stack_t; var _mem : M3MemoryHeader?; var _r0 : m3reg_t; var _fp0 : f64) : M3Result {
+def public op_i64_Remainder_rs(var _pc : pc_t&; var _sp : m3stack_t&; var _mem : M3MemoryHeader?&; var _r0 : m3reg_t&; var _fp0 : f64&) : M3Result {
     let operand = slot_i64(_pc, _sp)
     var RES : i64
     let result = OP_REM_S(RES, operand, _r0, INT64_MIN)
@@ -1605,7 +1619,7 @@ def public op_i64_Remainder_rs(var _pc : pc_t; var _sp : m3stack_t; var _mem : M
     return nextOpDirect(_pc, _sp, _mem, _r0, _fp0)
 }
 
-def public op_i64_Remainder_ss(var _pc : pc_t; var _sp : m3stack_t; var _mem : M3MemoryHeader?; var _r0 : m3reg_t; var _fp0 : f64) : M3Result {
+def public op_i64_Remainder_ss(var _pc : pc_t&; var _sp : m3stack_t&; var _mem : M3MemoryHeader?&; var _r0 : m3reg_t&; var _fp0 : f64&) : M3Result {
     let operand2 = slot_i64(_pc, _sp)
     let operand1 = slot_i64(_pc, _sp)
     var RES : i64
@@ -1615,429 +1629,429 @@ def public op_i64_Remainder_ss(var _pc : pc_t; var _sp : m3stack_t; var _mem : M
     return nextOpDirect(_pc, _sp, _mem, _r0, _fp0)
 }
 
-def public op_f32_Min_sr(var _pc : pc_t; var _sp : m3stack_t; var _mem : M3MemoryHeader?; var _r0 : m3reg_t; var _fp0 : f64) : M3Result {
+def public op_f32_Min_sr(var _pc : pc_t&; var _sp : m3stack_t&; var _mem : M3MemoryHeader?&; var _r0 : m3reg_t&; var _fp0 : f64&) : M3Result {
     let operand = slot_f32(_pc, _sp)
     _fp0 = f64(min_f32(f32(_fp0), operand))
     return nextOpDirect(_pc, _sp, _mem, _r0, _fp0)
 }
 
-def public op_f32_Min_rs(var _pc : pc_t; var _sp : m3stack_t; var _mem : M3MemoryHeader?; var _r0 : m3reg_t; var _fp0 : f64) : M3Result {
+def public op_f32_Min_rs(var _pc : pc_t&; var _sp : m3stack_t&; var _mem : M3MemoryHeader?&; var _r0 : m3reg_t&; var _fp0 : f64&) : M3Result {
     let operand = slot_f32(_pc, _sp)
     _fp0 = f64(min_f32(operand, f32(_fp0)))
     return nextOpDirect(_pc, _sp, _mem, _r0, _fp0)
 }
 
-def public op_f32_Min_ss(var _pc : pc_t; var _sp : m3stack_t; var _mem : M3MemoryHeader?; var _r0 : m3reg_t; var _fp0 : f64) : M3Result {
+def public op_f32_Min_ss(var _pc : pc_t&; var _sp : m3stack_t&; var _mem : M3MemoryHeader?&; var _r0 : m3reg_t&; var _fp0 : f64&) : M3Result {
     let operand2 = slot_f32(_pc, _sp)
     let operand1 = slot_f32(_pc, _sp)
     _fp0 = f64(min_f32(operand1, operand2))
     return nextOpDirect(_pc, _sp, _mem, _r0, _fp0)
 }
 
-def public op_f32_Max_sr(var _pc : pc_t; var _sp : m3stack_t; var _mem : M3MemoryHeader?; var _r0 : m3reg_t; var _fp0 : f64) : M3Result {
+def public op_f32_Max_sr(var _pc : pc_t&; var _sp : m3stack_t&; var _mem : M3MemoryHeader?&; var _r0 : m3reg_t&; var _fp0 : f64&) : M3Result {
     let operand = slot_f32(_pc, _sp)
     _fp0 = f64(max_f32(f32(_fp0), operand))
     return nextOpDirect(_pc, _sp, _mem, _r0, _fp0)
 }
 
-def public op_f32_Max_rs(var _pc : pc_t; var _sp : m3stack_t; var _mem : M3MemoryHeader?; var _r0 : m3reg_t; var _fp0 : f64) : M3Result {
+def public op_f32_Max_rs(var _pc : pc_t&; var _sp : m3stack_t&; var _mem : M3MemoryHeader?&; var _r0 : m3reg_t&; var _fp0 : f64&) : M3Result {
     let operand = slot_f32(_pc, _sp)
     _fp0 = f64(max_f32(operand, f32(_fp0)))
     return nextOpDirect(_pc, _sp, _mem, _r0, _fp0)
 }
 
-def public op_f32_Max_ss(var _pc : pc_t; var _sp : m3stack_t; var _mem : M3MemoryHeader?; var _r0 : m3reg_t; var _fp0 : f64) : M3Result {
+def public op_f32_Max_ss(var _pc : pc_t&; var _sp : m3stack_t&; var _mem : M3MemoryHeader?&; var _r0 : m3reg_t&; var _fp0 : f64&) : M3Result {
     let operand2 = slot_f32(_pc, _sp)
     let operand1 = slot_f32(_pc, _sp)
     _fp0 = f64(max_f32(operand1, operand2))
     return nextOpDirect(_pc, _sp, _mem, _r0, _fp0)
 }
 
-def public op_f32_CopySign_sr(var _pc : pc_t; var _sp : m3stack_t; var _mem : M3MemoryHeader?; var _r0 : m3reg_t; var _fp0 : f64) : M3Result {
+def public op_f32_CopySign_sr(var _pc : pc_t&; var _sp : m3stack_t&; var _mem : M3MemoryHeader?&; var _r0 : m3reg_t&; var _fp0 : f64&) : M3Result {
     let operand = slot_f32(_pc, _sp)
     _fp0 = f64(copysign_f32(f32(_fp0), operand))
     return nextOpDirect(_pc, _sp, _mem, _r0, _fp0)
 }
 
-def public op_f32_CopySign_rs(var _pc : pc_t; var _sp : m3stack_t; var _mem : M3MemoryHeader?; var _r0 : m3reg_t; var _fp0 : f64) : M3Result {
+def public op_f32_CopySign_rs(var _pc : pc_t&; var _sp : m3stack_t&; var _mem : M3MemoryHeader?&; var _r0 : m3reg_t&; var _fp0 : f64&) : M3Result {
     let operand = slot_f32(_pc, _sp)
     _fp0 = f64(copysign_f32(operand, f32(_fp0)))
     return nextOpDirect(_pc, _sp, _mem, _r0, _fp0)
 }
 
-def public op_f32_CopySign_ss(var _pc : pc_t; var _sp : m3stack_t; var _mem : M3MemoryHeader?; var _r0 : m3reg_t; var _fp0 : f64) : M3Result {
+def public op_f32_CopySign_ss(var _pc : pc_t&; var _sp : m3stack_t&; var _mem : M3MemoryHeader?&; var _r0 : m3reg_t&; var _fp0 : f64&) : M3Result {
     let operand2 = slot_f32(_pc, _sp)
     let operand1 = slot_f32(_pc, _sp)
     _fp0 = f64(copysign_f32(operand1, operand2))
     return nextOpDirect(_pc, _sp, _mem, _r0, _fp0)
 }
 
-def public op_f64_Min_sr(var _pc : pc_t; var _sp : m3stack_t; var _mem : M3MemoryHeader?; var _r0 : m3reg_t; var _fp0 : f64) : M3Result {
+def public op_f64_Min_sr(var _pc : pc_t&; var _sp : m3stack_t&; var _mem : M3MemoryHeader?&; var _r0 : m3reg_t&; var _fp0 : f64&) : M3Result {
     let operand = slot_f64(_pc, _sp)
     _fp0 = min_f64(_fp0, operand)
     return nextOpDirect(_pc, _sp, _mem, _r0, _fp0)
 }
 
-def public op_f64_Min_rs(var _pc : pc_t; var _sp : m3stack_t; var _mem : M3MemoryHeader?; var _r0 : m3reg_t; var _fp0 : f64) : M3Result {
+def public op_f64_Min_rs(var _pc : pc_t&; var _sp : m3stack_t&; var _mem : M3MemoryHeader?&; var _r0 : m3reg_t&; var _fp0 : f64&) : M3Result {
     let operand = slot_f64(_pc, _sp)
     _fp0 = min_f64(operand, _fp0)
     return nextOpDirect(_pc, _sp, _mem, _r0, _fp0)
 }
 
-def public op_f64_Min_ss(var _pc : pc_t; var _sp : m3stack_t; var _mem : M3MemoryHeader?; var _r0 : m3reg_t; var _fp0 : f64) : M3Result {
+def public op_f64_Min_ss(var _pc : pc_t&; var _sp : m3stack_t&; var _mem : M3MemoryHeader?&; var _r0 : m3reg_t&; var _fp0 : f64&) : M3Result {
     let operand2 = slot_f64(_pc, _sp)
     let operand1 = slot_f64(_pc, _sp)
     _fp0 = min_f64(operand1, operand2)
     return nextOpDirect(_pc, _sp, _mem, _r0, _fp0)
 }
 
-def public op_f64_Max_sr(var _pc : pc_t; var _sp : m3stack_t; var _mem : M3MemoryHeader?; var _r0 : m3reg_t; var _fp0 : f64) : M3Result {
+def public op_f64_Max_sr(var _pc : pc_t&; var _sp : m3stack_t&; var _mem : M3MemoryHeader?&; var _r0 : m3reg_t&; var _fp0 : f64&) : M3Result {
     let operand = slot_f64(_pc, _sp)
     _fp0 = max_f64(_fp0, operand)
     return nextOpDirect(_pc, _sp, _mem, _r0, _fp0)
 }
 
-def public op_f64_Max_rs(var _pc : pc_t; var _sp : m3stack_t; var _mem : M3MemoryHeader?; var _r0 : m3reg_t; var _fp0 : f64) : M3Result {
+def public op_f64_Max_rs(var _pc : pc_t&; var _sp : m3stack_t&; var _mem : M3MemoryHeader?&; var _r0 : m3reg_t&; var _fp0 : f64&) : M3Result {
     let operand = slot_f64(_pc, _sp)
     _fp0 = max_f64(operand, _fp0)
     return nextOpDirect(_pc, _sp, _mem, _r0, _fp0)
 }
 
-def public op_f64_Max_ss(var _pc : pc_t; var _sp : m3stack_t; var _mem : M3MemoryHeader?; var _r0 : m3reg_t; var _fp0 : f64) : M3Result {
+def public op_f64_Max_ss(var _pc : pc_t&; var _sp : m3stack_t&; var _mem : M3MemoryHeader?&; var _r0 : m3reg_t&; var _fp0 : f64&) : M3Result {
     let operand2 = slot_f64(_pc, _sp)
     let operand1 = slot_f64(_pc, _sp)
     _fp0 = max_f64(operand1, operand2)
     return nextOpDirect(_pc, _sp, _mem, _r0, _fp0)
 }
 
-def public op_f64_CopySign_sr(var _pc : pc_t; var _sp : m3stack_t; var _mem : M3MemoryHeader?; var _r0 : m3reg_t; var _fp0 : f64) : M3Result {
+def public op_f64_CopySign_sr(var _pc : pc_t&; var _sp : m3stack_t&; var _mem : M3MemoryHeader?&; var _r0 : m3reg_t&; var _fp0 : f64&) : M3Result {
     let operand = slot_f64(_pc, _sp)
     _fp0 = copysign_f64(_fp0, operand)
     return nextOpDirect(_pc, _sp, _mem, _r0, _fp0)
 }
 
-def public op_f64_CopySign_rs(var _pc : pc_t; var _sp : m3stack_t; var _mem : M3MemoryHeader?; var _r0 : m3reg_t; var _fp0 : f64) : M3Result {
+def public op_f64_CopySign_rs(var _pc : pc_t&; var _sp : m3stack_t&; var _mem : M3MemoryHeader?&; var _r0 : m3reg_t&; var _fp0 : f64&) : M3Result {
     let operand = slot_f64(_pc, _sp)
     _fp0 = copysign_f64(operand, _fp0)
     return nextOpDirect(_pc, _sp, _mem, _r0, _fp0)
 }
 
-def public op_f64_CopySign_ss(var _pc : pc_t; var _sp : m3stack_t; var _mem : M3MemoryHeader?; var _r0 : m3reg_t; var _fp0 : f64) : M3Result {
+def public op_f64_CopySign_ss(var _pc : pc_t&; var _sp : m3stack_t&; var _mem : M3MemoryHeader?&; var _r0 : m3reg_t&; var _fp0 : f64&) : M3Result {
     let operand2 = slot_f64(_pc, _sp)
     let operand1 = slot_f64(_pc, _sp)
     _fp0 = copysign_f64(operand1, operand2)
     return nextOpDirect(_pc, _sp, _mem, _r0, _fp0)
 }
 
-def public op_f32_Abs_r(var _pc : pc_t; var _sp : m3stack_t; var _mem : M3MemoryHeader?; var _r0 : m3reg_t; var _fp0 : f64) : M3Result {
+def public op_f32_Abs_r(var _pc : pc_t&; var _sp : m3stack_t&; var _mem : M3MemoryHeader?&; var _r0 : m3reg_t&; var _fp0 : f64&) : M3Result {
     _fp0 = f64(fabsf(f32(_fp0)))
     return nextOpDirect(_pc, _sp, _mem, _r0, _fp0)
 }
 
-def public op_f32_Abs_s(var _pc : pc_t; var _sp : m3stack_t; var _mem : M3MemoryHeader?; var _r0 : m3reg_t; var _fp0 : f64) : M3Result {
+def public op_f32_Abs_s(var _pc : pc_t&; var _sp : m3stack_t&; var _mem : M3MemoryHeader?&; var _r0 : m3reg_t&; var _fp0 : f64&) : M3Result {
     let operand = slot_f32(_pc, _sp)
     _fp0 = f64(fabsf(operand))
     return nextOpDirect(_pc, _sp, _mem, _r0, _fp0)
 }
 
-def public op_f32_Ceil_r(var _pc : pc_t; var _sp : m3stack_t; var _mem : M3MemoryHeader?; var _r0 : m3reg_t; var _fp0 : f64) : M3Result {
+def public op_f32_Ceil_r(var _pc : pc_t&; var _sp : m3stack_t&; var _mem : M3MemoryHeader?&; var _r0 : m3reg_t&; var _fp0 : f64&) : M3Result {
     _fp0 = f64(ceilf(f32(_fp0)))
     return nextOpDirect(_pc, _sp, _mem, _r0, _fp0)
 }
 
-def public op_f32_Ceil_s(var _pc : pc_t; var _sp : m3stack_t; var _mem : M3MemoryHeader?; var _r0 : m3reg_t; var _fp0 : f64) : M3Result {
+def public op_f32_Ceil_s(var _pc : pc_t&; var _sp : m3stack_t&; var _mem : M3MemoryHeader?&; var _r0 : m3reg_t&; var _fp0 : f64&) : M3Result {
     let operand = slot_f32(_pc, _sp)
     _fp0 = f64(ceilf(operand))
     return nextOpDirect(_pc, _sp, _mem, _r0, _fp0)
 }
 
-def public op_f32_Floor_r(var _pc : pc_t; var _sp : m3stack_t; var _mem : M3MemoryHeader?; var _r0 : m3reg_t; var _fp0 : f64) : M3Result {
+def public op_f32_Floor_r(var _pc : pc_t&; var _sp : m3stack_t&; var _mem : M3MemoryHeader?&; var _r0 : m3reg_t&; var _fp0 : f64&) : M3Result {
     _fp0 = f64(floorf(f32(_fp0)))
     return nextOpDirect(_pc, _sp, _mem, _r0, _fp0)
 }
 
-def public op_f32_Floor_s(var _pc : pc_t; var _sp : m3stack_t; var _mem : M3MemoryHeader?; var _r0 : m3reg_t; var _fp0 : f64) : M3Result {
+def public op_f32_Floor_s(var _pc : pc_t&; var _sp : m3stack_t&; var _mem : M3MemoryHeader?&; var _r0 : m3reg_t&; var _fp0 : f64&) : M3Result {
     let operand = slot_f32(_pc, _sp)
     _fp0 = f64(floorf(operand))
     return nextOpDirect(_pc, _sp, _mem, _r0, _fp0)
 }
 
-def public op_f32_Trunc_r(var _pc : pc_t; var _sp : m3stack_t; var _mem : M3MemoryHeader?; var _r0 : m3reg_t; var _fp0 : f64) : M3Result {
+def public op_f32_Trunc_r(var _pc : pc_t&; var _sp : m3stack_t&; var _mem : M3MemoryHeader?&; var _r0 : m3reg_t&; var _fp0 : f64&) : M3Result {
     _fp0 = f64((math::trunc(f32(_fp0))))
     return nextOpDirect(_pc, _sp, _mem, _r0, _fp0)
 }
 
-def public op_f32_Trunc_s(var _pc : pc_t; var _sp : m3stack_t; var _mem : M3MemoryHeader?; var _r0 : m3reg_t; var _fp0 : f64) : M3Result {
+def public op_f32_Trunc_s(var _pc : pc_t&; var _sp : m3stack_t&; var _mem : M3MemoryHeader?&; var _r0 : m3reg_t&; var _fp0 : f64&) : M3Result {
     let operand = slot_f32(_pc, _sp)
     _fp0 = f64((math::trunc(operand)))
     return nextOpDirect(_pc, _sp, _mem, _r0, _fp0)
 }
 
-def public op_f32_Sqrt_r(var _pc : pc_t; var _sp : m3stack_t; var _mem : M3MemoryHeader?; var _r0 : m3reg_t; var _fp0 : f64) : M3Result {
+def public op_f32_Sqrt_r(var _pc : pc_t&; var _sp : m3stack_t&; var _mem : M3MemoryHeader?&; var _r0 : m3reg_t&; var _fp0 : f64&) : M3Result {
     _fp0 = f64((math::sqrt(f32(_fp0))))
     return nextOpDirect(_pc, _sp, _mem, _r0, _fp0)
 }
 
-def public op_f32_Sqrt_s(var _pc : pc_t; var _sp : m3stack_t; var _mem : M3MemoryHeader?; var _r0 : m3reg_t; var _fp0 : f64) : M3Result {
+def public op_f32_Sqrt_s(var _pc : pc_t&; var _sp : m3stack_t&; var _mem : M3MemoryHeader?&; var _r0 : m3reg_t&; var _fp0 : f64&) : M3Result {
     let operand = slot_f32(_pc, _sp)
     _fp0 = f64((math::sqrt(operand)))
     return nextOpDirect(_pc, _sp, _mem, _r0, _fp0)
 }
 
-def public op_f32_Nearest_r(var _pc : pc_t; var _sp : m3stack_t; var _mem : M3MemoryHeader?; var _r0 : m3reg_t; var _fp0 : f64) : M3Result {
+def public op_f32_Nearest_r(var _pc : pc_t&; var _sp : m3stack_t&; var _mem : M3MemoryHeader?&; var _r0 : m3reg_t&; var _fp0 : f64&) : M3Result {
     _fp0 = f64(rintf(f32(_fp0)))
     return nextOpDirect(_pc, _sp, _mem, _r0, _fp0)
 }
 
-def public op_f32_Nearest_s(var _pc : pc_t; var _sp : m3stack_t; var _mem : M3MemoryHeader?; var _r0 : m3reg_t; var _fp0 : f64) : M3Result {
+def public op_f32_Nearest_s(var _pc : pc_t&; var _sp : m3stack_t&; var _mem : M3MemoryHeader?&; var _r0 : m3reg_t&; var _fp0 : f64&) : M3Result {
     let operand = slot_f32(_pc, _sp)
     _fp0 = f64(rintf(operand))
     return nextOpDirect(_pc, _sp, _mem, _r0, _fp0)
 }
 
-def public op_f32_Negate_r(var _pc : pc_t; var _sp : m3stack_t; var _mem : M3MemoryHeader?; var _r0 : m3reg_t; var _fp0 : f64) : M3Result {
+def public op_f32_Negate_r(var _pc : pc_t&; var _sp : m3stack_t&; var _mem : M3MemoryHeader?&; var _r0 : m3reg_t&; var _fp0 : f64&) : M3Result {
     _fp0 = f64(-(f32(_fp0)))
     return nextOpDirect(_pc, _sp, _mem, _r0, _fp0)
 }
 
-def public op_f32_Negate_s(var _pc : pc_t; var _sp : m3stack_t; var _mem : M3MemoryHeader?; var _r0 : m3reg_t; var _fp0 : f64) : M3Result {
+def public op_f32_Negate_s(var _pc : pc_t&; var _sp : m3stack_t&; var _mem : M3MemoryHeader?&; var _r0 : m3reg_t&; var _fp0 : f64&) : M3Result {
     let operand = slot_f32(_pc, _sp)
     _fp0 = f64(-(operand))
     return nextOpDirect(_pc, _sp, _mem, _r0, _fp0)
 }
 
-def public op_f64_Abs_r(var _pc : pc_t; var _sp : m3stack_t; var _mem : M3MemoryHeader?; var _r0 : m3reg_t; var _fp0 : f64) : M3Result {
+def public op_f64_Abs_r(var _pc : pc_t&; var _sp : m3stack_t&; var _mem : M3MemoryHeader?&; var _r0 : m3reg_t&; var _fp0 : f64&) : M3Result {
     _fp0 = fabs(_fp0)
     return nextOpDirect(_pc, _sp, _mem, _r0, _fp0)
 }
 
-def public op_f64_Abs_s(var _pc : pc_t; var _sp : m3stack_t; var _mem : M3MemoryHeader?; var _r0 : m3reg_t; var _fp0 : f64) : M3Result {
+def public op_f64_Abs_s(var _pc : pc_t&; var _sp : m3stack_t&; var _mem : M3MemoryHeader?&; var _r0 : m3reg_t&; var _fp0 : f64&) : M3Result {
     let operand = slot_f64(_pc, _sp)
     _fp0 = fabs(operand)
     return nextOpDirect(_pc, _sp, _mem, _r0, _fp0)
 }
 
-def public op_f64_Ceil_r(var _pc : pc_t; var _sp : m3stack_t; var _mem : M3MemoryHeader?; var _r0 : m3reg_t; var _fp0 : f64) : M3Result {
+def public op_f64_Ceil_r(var _pc : pc_t&; var _sp : m3stack_t&; var _mem : M3MemoryHeader?&; var _r0 : m3reg_t&; var _fp0 : f64&) : M3Result {
     _fp0 = (math::ceil(_fp0))
     return nextOpDirect(_pc, _sp, _mem, _r0, _fp0)
 }
 
-def public op_f64_Ceil_s(var _pc : pc_t; var _sp : m3stack_t; var _mem : M3MemoryHeader?; var _r0 : m3reg_t; var _fp0 : f64) : M3Result {
+def public op_f64_Ceil_s(var _pc : pc_t&; var _sp : m3stack_t&; var _mem : M3MemoryHeader?&; var _r0 : m3reg_t&; var _fp0 : f64&) : M3Result {
     let operand = slot_f64(_pc, _sp)
     _fp0 = (math::ceil(operand))
     return nextOpDirect(_pc, _sp, _mem, _r0, _fp0)
 }
 
-def public op_f64_Floor_r(var _pc : pc_t; var _sp : m3stack_t; var _mem : M3MemoryHeader?; var _r0 : m3reg_t; var _fp0 : f64) : M3Result {
+def public op_f64_Floor_r(var _pc : pc_t&; var _sp : m3stack_t&; var _mem : M3MemoryHeader?&; var _r0 : m3reg_t&; var _fp0 : f64&) : M3Result {
     _fp0 = (math::floor(_fp0))
     return nextOpDirect(_pc, _sp, _mem, _r0, _fp0)
 }
 
-def public op_f64_Floor_s(var _pc : pc_t; var _sp : m3stack_t; var _mem : M3MemoryHeader?; var _r0 : m3reg_t; var _fp0 : f64) : M3Result {
+def public op_f64_Floor_s(var _pc : pc_t&; var _sp : m3stack_t&; var _mem : M3MemoryHeader?&; var _r0 : m3reg_t&; var _fp0 : f64&) : M3Result {
     let operand = slot_f64(_pc, _sp)
     _fp0 = (math::floor(operand))
     return nextOpDirect(_pc, _sp, _mem, _r0, _fp0)
 }
 
-def public op_f64_Trunc_r(var _pc : pc_t; var _sp : m3stack_t; var _mem : M3MemoryHeader?; var _r0 : m3reg_t; var _fp0 : f64) : M3Result {
+def public op_f64_Trunc_r(var _pc : pc_t&; var _sp : m3stack_t&; var _mem : M3MemoryHeader?&; var _r0 : m3reg_t&; var _fp0 : f64&) : M3Result {
     _fp0 = (math::trunc(_fp0))
     return nextOpDirect(_pc, _sp, _mem, _r0, _fp0)
 }
 
-def public op_f64_Trunc_s(var _pc : pc_t; var _sp : m3stack_t; var _mem : M3MemoryHeader?; var _r0 : m3reg_t; var _fp0 : f64) : M3Result {
+def public op_f64_Trunc_s(var _pc : pc_t&; var _sp : m3stack_t&; var _mem : M3MemoryHeader?&; var _r0 : m3reg_t&; var _fp0 : f64&) : M3Result {
     let operand = slot_f64(_pc, _sp)
     _fp0 = (math::trunc(operand))
     return nextOpDirect(_pc, _sp, _mem, _r0, _fp0)
 }
 
-def public op_f64_Sqrt_r(var _pc : pc_t; var _sp : m3stack_t; var _mem : M3MemoryHeader?; var _r0 : m3reg_t; var _fp0 : f64) : M3Result {
+def public op_f64_Sqrt_r(var _pc : pc_t&; var _sp : m3stack_t&; var _mem : M3MemoryHeader?&; var _r0 : m3reg_t&; var _fp0 : f64&) : M3Result {
     _fp0 = (math::sqrt(_fp0))
     return nextOpDirect(_pc, _sp, _mem, _r0, _fp0)
 }
 
-def public op_f64_Sqrt_s(var _pc : pc_t; var _sp : m3stack_t; var _mem : M3MemoryHeader?; var _r0 : m3reg_t; var _fp0 : f64) : M3Result {
+def public op_f64_Sqrt_s(var _pc : pc_t&; var _sp : m3stack_t&; var _mem : M3MemoryHeader?&; var _r0 : m3reg_t&; var _fp0 : f64&) : M3Result {
     let operand = slot_f64(_pc, _sp)
     _fp0 = (math::sqrt(operand))
     return nextOpDirect(_pc, _sp, _mem, _r0, _fp0)
 }
 
-def public op_f64_Nearest_r(var _pc : pc_t; var _sp : m3stack_t; var _mem : M3MemoryHeader?; var _r0 : m3reg_t; var _fp0 : f64) : M3Result {
+def public op_f64_Nearest_r(var _pc : pc_t&; var _sp : m3stack_t&; var _mem : M3MemoryHeader?&; var _r0 : m3reg_t&; var _fp0 : f64&) : M3Result {
     _fp0 = rint(_fp0)
     return nextOpDirect(_pc, _sp, _mem, _r0, _fp0)
 }
 
-def public op_f64_Nearest_s(var _pc : pc_t; var _sp : m3stack_t; var _mem : M3MemoryHeader?; var _r0 : m3reg_t; var _fp0 : f64) : M3Result {
+def public op_f64_Nearest_s(var _pc : pc_t&; var _sp : m3stack_t&; var _mem : M3MemoryHeader?&; var _r0 : m3reg_t&; var _fp0 : f64&) : M3Result {
     let operand = slot_f64(_pc, _sp)
     _fp0 = rint(operand)
     return nextOpDirect(_pc, _sp, _mem, _r0, _fp0)
 }
 
-def public op_f64_Negate_r(var _pc : pc_t; var _sp : m3stack_t; var _mem : M3MemoryHeader?; var _r0 : m3reg_t; var _fp0 : f64) : M3Result {
+def public op_f64_Negate_r(var _pc : pc_t&; var _sp : m3stack_t&; var _mem : M3MemoryHeader?&; var _r0 : m3reg_t&; var _fp0 : f64&) : M3Result {
     _fp0 = (-(_fp0))
     return nextOpDirect(_pc, _sp, _mem, _r0, _fp0)
 }
 
-def public op_f64_Negate_s(var _pc : pc_t; var _sp : m3stack_t; var _mem : M3MemoryHeader?; var _r0 : m3reg_t; var _fp0 : f64) : M3Result {
+def public op_f64_Negate_s(var _pc : pc_t&; var _sp : m3stack_t&; var _mem : M3MemoryHeader?&; var _r0 : m3reg_t&; var _fp0 : f64&) : M3Result {
     let operand = slot_f64(_pc, _sp)
     _fp0 = (-(operand))
     return nextOpDirect(_pc, _sp, _mem, _r0, _fp0)
 }
 
-def public op_i32_EqualToZero_r(var _pc : pc_t; var _sp : m3stack_t; var _mem : M3MemoryHeader?; var _r0 : m3reg_t; var _fp0 : f64) : M3Result {
+def public op_i32_EqualToZero_r(var _pc : pc_t&; var _sp : m3stack_t&; var _mem : M3MemoryHeader?&; var _r0 : m3reg_t&; var _fp0 : f64&) : M3Result {
     _r0 = bool_reg(i32(_r0) == 0)
     return nextOpDirect(_pc, _sp, _mem, _r0, _fp0)
 }
 
-def public op_i32_EqualToZero_s(var _pc : pc_t; var _sp : m3stack_t; var _mem : M3MemoryHeader?; var _r0 : m3reg_t; var _fp0 : f64) : M3Result {
+def public op_i32_EqualToZero_s(var _pc : pc_t&; var _sp : m3stack_t&; var _mem : M3MemoryHeader?&; var _r0 : m3reg_t&; var _fp0 : f64&) : M3Result {
     let operand = slot_i32(_pc, _sp)
     _r0 = bool_reg(operand == 0)
     return nextOpDirect(_pc, _sp, _mem, _r0, _fp0)
 }
 
-def public op_i64_EqualToZero_r(var _pc : pc_t; var _sp : m3stack_t; var _mem : M3MemoryHeader?; var _r0 : m3reg_t; var _fp0 : f64) : M3Result {
+def public op_i64_EqualToZero_r(var _pc : pc_t&; var _sp : m3stack_t&; var _mem : M3MemoryHeader?&; var _r0 : m3reg_t&; var _fp0 : f64&) : M3Result {
     _r0 = bool_reg(_r0 == 0)
     return nextOpDirect(_pc, _sp, _mem, _r0, _fp0)
 }
 
-def public op_i64_EqualToZero_s(var _pc : pc_t; var _sp : m3stack_t; var _mem : M3MemoryHeader?; var _r0 : m3reg_t; var _fp0 : f64) : M3Result {
+def public op_i64_EqualToZero_s(var _pc : pc_t&; var _sp : m3stack_t&; var _mem : M3MemoryHeader?&; var _r0 : m3reg_t&; var _fp0 : f64&) : M3Result {
     let operand = slot_i64(_pc, _sp)
     _r0 = bool_reg(operand == 0)
     return nextOpDirect(_pc, _sp, _mem, _r0, _fp0)
 }
 
-def public op_u32_Clz_r(var _pc : pc_t; var _sp : m3stack_t; var _mem : M3MemoryHeader?; var _r0 : m3reg_t; var _fp0 : f64) : M3Result {
+def public op_u32_Clz_r(var _pc : pc_t&; var _sp : m3stack_t&; var _mem : M3MemoryHeader?&; var _r0 : m3reg_t&; var _fp0 : f64&) : M3Result {
     _r0 = m3reg_t(OP_CLZ_32(u32(_r0)))
     return nextOpDirect(_pc, _sp, _mem, _r0, _fp0)
 }
 
-def public op_u32_Clz_s(var _pc : pc_t; var _sp : m3stack_t; var _mem : M3MemoryHeader?; var _r0 : m3reg_t; var _fp0 : f64) : M3Result {
+def public op_u32_Clz_s(var _pc : pc_t&; var _sp : m3stack_t&; var _mem : M3MemoryHeader?&; var _r0 : m3reg_t&; var _fp0 : f64&) : M3Result {
     let operand = slot_u32(_pc, _sp)
     _r0 = m3reg_t(OP_CLZ_32(operand))
     return nextOpDirect(_pc, _sp, _mem, _r0, _fp0)
 }
 
-def public op_u32_Ctz_r(var _pc : pc_t; var _sp : m3stack_t; var _mem : M3MemoryHeader?; var _r0 : m3reg_t; var _fp0 : f64) : M3Result {
+def public op_u32_Ctz_r(var _pc : pc_t&; var _sp : m3stack_t&; var _mem : M3MemoryHeader?&; var _r0 : m3reg_t&; var _fp0 : f64&) : M3Result {
     _r0 = m3reg_t(OP_CTZ_32(u32(_r0)))
     return nextOpDirect(_pc, _sp, _mem, _r0, _fp0)
 }
 
-def public op_u32_Ctz_s(var _pc : pc_t; var _sp : m3stack_t; var _mem : M3MemoryHeader?; var _r0 : m3reg_t; var _fp0 : f64) : M3Result {
+def public op_u32_Ctz_s(var _pc : pc_t&; var _sp : m3stack_t&; var _mem : M3MemoryHeader?&; var _r0 : m3reg_t&; var _fp0 : f64&) : M3Result {
     let operand = slot_u32(_pc, _sp)
     _r0 = m3reg_t(OP_CTZ_32(operand))
     return nextOpDirect(_pc, _sp, _mem, _r0, _fp0)
 }
 
-def public op_u32_Popcnt_r(var _pc : pc_t; var _sp : m3stack_t; var _mem : M3MemoryHeader?; var _r0 : m3reg_t; var _fp0 : f64) : M3Result {
+def public op_u32_Popcnt_r(var _pc : pc_t&; var _sp : m3stack_t&; var _mem : M3MemoryHeader?&; var _r0 : m3reg_t&; var _fp0 : f64&) : M3Result {
     _r0 = m3reg_t(popcnt(u32(_r0)))
     return nextOpDirect(_pc, _sp, _mem, _r0, _fp0)
 }
 
-def public op_u32_Popcnt_s(var _pc : pc_t; var _sp : m3stack_t; var _mem : M3MemoryHeader?; var _r0 : m3reg_t; var _fp0 : f64) : M3Result {
+def public op_u32_Popcnt_s(var _pc : pc_t&; var _sp : m3stack_t&; var _mem : M3MemoryHeader?&; var _r0 : m3reg_t&; var _fp0 : f64&) : M3Result {
     let operand = slot_u32(_pc, _sp)
     _r0 = m3reg_t(popcnt(operand))
     return nextOpDirect(_pc, _sp, _mem, _r0, _fp0)
 }
 
-def public op_u64_Clz_r(var _pc : pc_t; var _sp : m3stack_t; var _mem : M3MemoryHeader?; var _r0 : m3reg_t; var _fp0 : f64) : M3Result {
+def public op_u64_Clz_r(var _pc : pc_t&; var _sp : m3stack_t&; var _mem : M3MemoryHeader?&; var _r0 : m3reg_t&; var _fp0 : f64&) : M3Result {
     _r0 = m3reg_t(OP_CLZ_64(u64(_r0)))
     return nextOpDirect(_pc, _sp, _mem, _r0, _fp0)
 }
 
-def public op_u64_Clz_s(var _pc : pc_t; var _sp : m3stack_t; var _mem : M3MemoryHeader?; var _r0 : m3reg_t; var _fp0 : f64) : M3Result {
+def public op_u64_Clz_s(var _pc : pc_t&; var _sp : m3stack_t&; var _mem : M3MemoryHeader?&; var _r0 : m3reg_t&; var _fp0 : f64&) : M3Result {
     let operand = slot_u64(_pc, _sp)
     _r0 = m3reg_t(OP_CLZ_64(operand))
     return nextOpDirect(_pc, _sp, _mem, _r0, _fp0)
 }
 
-def public op_u64_Ctz_r(var _pc : pc_t; var _sp : m3stack_t; var _mem : M3MemoryHeader?; var _r0 : m3reg_t; var _fp0 : f64) : M3Result {
+def public op_u64_Ctz_r(var _pc : pc_t&; var _sp : m3stack_t&; var _mem : M3MemoryHeader?&; var _r0 : m3reg_t&; var _fp0 : f64&) : M3Result {
     _r0 = m3reg_t(OP_CTZ_64(u64(_r0)))
     return nextOpDirect(_pc, _sp, _mem, _r0, _fp0)
 }
 
-def public op_u64_Ctz_s(var _pc : pc_t; var _sp : m3stack_t; var _mem : M3MemoryHeader?; var _r0 : m3reg_t; var _fp0 : f64) : M3Result {
+def public op_u64_Ctz_s(var _pc : pc_t&; var _sp : m3stack_t&; var _mem : M3MemoryHeader?&; var _r0 : m3reg_t&; var _fp0 : f64&) : M3Result {
     let operand = slot_u64(_pc, _sp)
     _r0 = m3reg_t(OP_CTZ_64(operand))
     return nextOpDirect(_pc, _sp, _mem, _r0, _fp0)
 }
 
-def public op_u64_Popcnt_r(var _pc : pc_t; var _sp : m3stack_t; var _mem : M3MemoryHeader?; var _r0 : m3reg_t; var _fp0 : f64) : M3Result {
+def public op_u64_Popcnt_r(var _pc : pc_t&; var _sp : m3stack_t&; var _mem : M3MemoryHeader?&; var _r0 : m3reg_t&; var _fp0 : f64&) : M3Result {
     _r0 = m3reg_t(popcnt(u64(_r0)))
     return nextOpDirect(_pc, _sp, _mem, _r0, _fp0)
 }
 
-def public op_u64_Popcnt_s(var _pc : pc_t; var _sp : m3stack_t; var _mem : M3MemoryHeader?; var _r0 : m3reg_t; var _fp0 : f64) : M3Result {
+def public op_u64_Popcnt_s(var _pc : pc_t&; var _sp : m3stack_t&; var _mem : M3MemoryHeader?&; var _r0 : m3reg_t&; var _fp0 : f64&) : M3Result {
     let operand = slot_u64(_pc, _sp)
     _r0 = m3reg_t(popcnt(operand))
     return nextOpDirect(_pc, _sp, _mem, _r0, _fp0)
 }
 
-def public op_i32_Wrap_i64_r(var _pc : pc_t; var _sp : m3stack_t; var _mem : M3MemoryHeader?; var _r0 : m3reg_t; var _fp0 : f64) : M3Result {
+def public op_i32_Wrap_i64_r(var _pc : pc_t&; var _sp : m3stack_t&; var _mem : M3MemoryHeader?&; var _r0 : m3reg_t&; var _fp0 : f64&) : M3Result {
     _r0 = m3reg_t(u32(u64(_r0) & 0xfffffffful))
     return nextOpDirect(_pc, _sp, _mem, _r0, _fp0)
 }
 
-def public op_i32_Wrap_i64_s(var _pc : pc_t; var _sp : m3stack_t; var _mem : M3MemoryHeader?; var _r0 : m3reg_t; var _fp0 : f64) : M3Result {
+def public op_i32_Wrap_i64_s(var _pc : pc_t&; var _sp : m3stack_t&; var _mem : M3MemoryHeader?&; var _r0 : m3reg_t&; var _fp0 : f64&) : M3Result {
     let operand = slot_i64(_pc, _sp)
     _r0 = m3reg_t(u32(u64(operand) & 0xfffffffful))
     return nextOpDirect(_pc, _sp, _mem, _r0, _fp0)
 }
 
-def public op_i32_Extend8_s_r(var _pc : pc_t; var _sp : m3stack_t; var _mem : M3MemoryHeader?; var _r0 : m3reg_t; var _fp0 : f64) : M3Result {
+def public op_i32_Extend8_s_r(var _pc : pc_t&; var _sp : m3stack_t&; var _mem : M3MemoryHeader?&; var _r0 : m3reg_t&; var _fp0 : f64&) : M3Result {
     _r0 = m3reg_t(i32(i8(i32(_r0))))
     return nextOpDirect(_pc, _sp, _mem, _r0, _fp0)
 }
 
-def public op_i32_Extend8_s_s(var _pc : pc_t; var _sp : m3stack_t; var _mem : M3MemoryHeader?; var _r0 : m3reg_t; var _fp0 : f64) : M3Result {
+def public op_i32_Extend8_s_s(var _pc : pc_t&; var _sp : m3stack_t&; var _mem : M3MemoryHeader?&; var _r0 : m3reg_t&; var _fp0 : f64&) : M3Result {
     let operand = slot_i32(_pc, _sp)
     _r0 = m3reg_t(i32(i8(operand)))
     return nextOpDirect(_pc, _sp, _mem, _r0, _fp0)
 }
 
-def public op_i32_Extend16_s_r(var _pc : pc_t; var _sp : m3stack_t; var _mem : M3MemoryHeader?; var _r0 : m3reg_t; var _fp0 : f64) : M3Result {
+def public op_i32_Extend16_s_r(var _pc : pc_t&; var _sp : m3stack_t&; var _mem : M3MemoryHeader?&; var _r0 : m3reg_t&; var _fp0 : f64&) : M3Result {
     _r0 = m3reg_t(i32(i16(i32(_r0))))
     return nextOpDirect(_pc, _sp, _mem, _r0, _fp0)
 }
 
-def public op_i32_Extend16_s_s(var _pc : pc_t; var _sp : m3stack_t; var _mem : M3MemoryHeader?; var _r0 : m3reg_t; var _fp0 : f64) : M3Result {
+def public op_i32_Extend16_s_s(var _pc : pc_t&; var _sp : m3stack_t&; var _mem : M3MemoryHeader?&; var _r0 : m3reg_t&; var _fp0 : f64&) : M3Result {
     let operand = slot_i32(_pc, _sp)
     _r0 = m3reg_t(i32(i16(operand)))
     return nextOpDirect(_pc, _sp, _mem, _r0, _fp0)
 }
 
-def public op_i64_Extend8_s_r(var _pc : pc_t; var _sp : m3stack_t; var _mem : M3MemoryHeader?; var _r0 : m3reg_t; var _fp0 : f64) : M3Result {
+def public op_i64_Extend8_s_r(var _pc : pc_t&; var _sp : m3stack_t&; var _mem : M3MemoryHeader?&; var _r0 : m3reg_t&; var _fp0 : f64&) : M3Result {
     _r0 = i64(i8(_r0))
     return nextOpDirect(_pc, _sp, _mem, _r0, _fp0)
 }
 
-def public op_i64_Extend8_s_s(var _pc : pc_t; var _sp : m3stack_t; var _mem : M3MemoryHeader?; var _r0 : m3reg_t; var _fp0 : f64) : M3Result {
+def public op_i64_Extend8_s_s(var _pc : pc_t&; var _sp : m3stack_t&; var _mem : M3MemoryHeader?&; var _r0 : m3reg_t&; var _fp0 : f64&) : M3Result {
     let operand = slot_i64(_pc, _sp)
     _r0 = i64(i8(operand))
     return nextOpDirect(_pc, _sp, _mem, _r0, _fp0)
 }
 
-def public op_i64_Extend16_s_r(var _pc : pc_t; var _sp : m3stack_t; var _mem : M3MemoryHeader?; var _r0 : m3reg_t; var _fp0 : f64) : M3Result {
+def public op_i64_Extend16_s_r(var _pc : pc_t&; var _sp : m3stack_t&; var _mem : M3MemoryHeader?&; var _r0 : m3reg_t&; var _fp0 : f64&) : M3Result {
     _r0 = i64(i16(_r0))
     return nextOpDirect(_pc, _sp, _mem, _r0, _fp0)
 }
 
-def public op_i64_Extend16_s_s(var _pc : pc_t; var _sp : m3stack_t; var _mem : M3MemoryHeader?; var _r0 : m3reg_t; var _fp0 : f64) : M3Result {
+def public op_i64_Extend16_s_s(var _pc : pc_t&; var _sp : m3stack_t&; var _mem : M3MemoryHeader?&; var _r0 : m3reg_t&; var _fp0 : f64&) : M3Result {
     let operand = slot_i64(_pc, _sp)
     _r0 = i64(i16(operand))
     return nextOpDirect(_pc, _sp, _mem, _r0, _fp0)
 }
 
-def public op_i64_Extend32_s_r(var _pc : pc_t; var _sp : m3stack_t; var _mem : M3MemoryHeader?; var _r0 : m3reg_t; var _fp0 : f64) : M3Result {
+def public op_i64_Extend32_s_r(var _pc : pc_t&; var _sp : m3stack_t&; var _mem : M3MemoryHeader?&; var _r0 : m3reg_t&; var _fp0 : f64&) : M3Result {
     _r0 = i64(i32(_r0))
     return nextOpDirect(_pc, _sp, _mem, _r0, _fp0)
 }
 
-def public op_i64_Extend32_s_s(var _pc : pc_t; var _sp : m3stack_t; var _mem : M3MemoryHeader?; var _r0 : m3reg_t; var _fp0 : f64) : M3Result {
+def public op_i64_Extend32_s_s(var _pc : pc_t&; var _sp : m3stack_t&; var _mem : M3MemoryHeader?&; var _r0 : m3reg_t&; var _fp0 : f64&) : M3Result {
     let operand = slot_i64(_pc, _sp)
     _r0 = i64(i32(operand))
     return nextOpDirect(_pc, _sp, _mem, _r0, _fp0)
 }
 
-def public op_i32_Trunc_f32_r_r(var _pc : pc_t; var _sp : m3stack_t; var _mem : M3MemoryHeader?; var _r0 : m3reg_t; var _fp0 : f64) : M3Result {
+def public op_i32_Trunc_f32_r_r(var _pc : pc_t&; var _sp : m3stack_t&; var _mem : M3MemoryHeader?&; var _r0 : m3reg_t&; var _fp0 : f64&) : M3Result {
     var RES : i32
     let result = OP_I32_TRUNC_F32(RES, f32(_fp0))
     if (result != m3Err_none) { return result }
@@ -2045,7 +2059,7 @@ def public op_i32_Trunc_f32_r_r(var _pc : pc_t; var _sp : m3stack_t; var _mem : 
     return nextOpDirect(_pc, _sp, _mem, _r0, _fp0)
 }
 
-def public op_i32_Trunc_f32_r_s(var _pc : pc_t; var _sp : m3stack_t; var _mem : M3MemoryHeader?; var _r0 : m3reg_t; var _fp0 : f64) : M3Result {
+def public op_i32_Trunc_f32_r_s(var _pc : pc_t&; var _sp : m3stack_t&; var _mem : M3MemoryHeader?&; var _r0 : m3reg_t&; var _fp0 : f64&) : M3Result {
     let source = slot_f32(_pc, _sp)
     var RES : i32
     let result = OP_I32_TRUNC_F32(RES, source)
@@ -2054,7 +2068,7 @@ def public op_i32_Trunc_f32_r_s(var _pc : pc_t; var _sp : m3stack_t; var _mem : 
     return nextOpDirect(_pc, _sp, _mem, _r0, _fp0)
 }
 
-def public op_i32_Trunc_f32_s_r(var _pc : pc_t; var _sp : m3stack_t; var _mem : M3MemoryHeader?; var _r0 : m3reg_t; var _fp0 : f64) : M3Result {
+def public op_i32_Trunc_f32_s_r(var _pc : pc_t&; var _sp : m3stack_t&; var _mem : M3MemoryHeader?&; var _r0 : m3reg_t&; var _fp0 : f64&) : M3Result {
     var dest = slot_ptr_i32(_pc, _sp)
     var RES : i32
     let result = OP_I32_TRUNC_F32(RES, f32(_fp0))
@@ -2063,7 +2077,7 @@ def public op_i32_Trunc_f32_s_r(var _pc : pc_t; var _sp : m3stack_t; var _mem : 
     return nextOpDirect(_pc, _sp, _mem, _r0, _fp0)
 }
 
-def public op_i32_Trunc_f32_s_s(var _pc : pc_t; var _sp : m3stack_t; var _mem : M3MemoryHeader?; var _r0 : m3reg_t; var _fp0 : f64) : M3Result {
+def public op_i32_Trunc_f32_s_s(var _pc : pc_t&; var _sp : m3stack_t&; var _mem : M3MemoryHeader?&; var _r0 : m3reg_t&; var _fp0 : f64&) : M3Result {
     let source = slot_f32(_pc, _sp)
     var dest = slot_ptr_i32(_pc, _sp)
     var RES : i32
@@ -2073,7 +2087,7 @@ def public op_i32_Trunc_f32_s_s(var _pc : pc_t; var _sp : m3stack_t; var _mem : 
     return nextOpDirect(_pc, _sp, _mem, _r0, _fp0)
 }
 
-def public op_u32_Trunc_f32_r_r(var _pc : pc_t; var _sp : m3stack_t; var _mem : M3MemoryHeader?; var _r0 : m3reg_t; var _fp0 : f64) : M3Result {
+def public op_u32_Trunc_f32_r_r(var _pc : pc_t&; var _sp : m3stack_t&; var _mem : M3MemoryHeader?&; var _r0 : m3reg_t&; var _fp0 : f64&) : M3Result {
     var RES : u32
     let result = OP_U32_TRUNC_F32(RES, f32(_fp0))
     if (result != m3Err_none) { return result }
@@ -2081,7 +2095,7 @@ def public op_u32_Trunc_f32_r_r(var _pc : pc_t; var _sp : m3stack_t; var _mem : 
     return nextOpDirect(_pc, _sp, _mem, _r0, _fp0)
 }
 
-def public op_u32_Trunc_f32_r_s(var _pc : pc_t; var _sp : m3stack_t; var _mem : M3MemoryHeader?; var _r0 : m3reg_t; var _fp0 : f64) : M3Result {
+def public op_u32_Trunc_f32_r_s(var _pc : pc_t&; var _sp : m3stack_t&; var _mem : M3MemoryHeader?&; var _r0 : m3reg_t&; var _fp0 : f64&) : M3Result {
     let source = slot_f32(_pc, _sp)
     var RES : u32
     let result = OP_U32_TRUNC_F32(RES, source)
@@ -2090,7 +2104,7 @@ def public op_u32_Trunc_f32_r_s(var _pc : pc_t; var _sp : m3stack_t; var _mem : 
     return nextOpDirect(_pc, _sp, _mem, _r0, _fp0)
 }
 
-def public op_u32_Trunc_f32_s_r(var _pc : pc_t; var _sp : m3stack_t; var _mem : M3MemoryHeader?; var _r0 : m3reg_t; var _fp0 : f64) : M3Result {
+def public op_u32_Trunc_f32_s_r(var _pc : pc_t&; var _sp : m3stack_t&; var _mem : M3MemoryHeader?&; var _r0 : m3reg_t&; var _fp0 : f64&) : M3Result {
     var dest = slot_ptr_u32(_pc, _sp)
     var RES : u32
     let result = OP_U32_TRUNC_F32(RES, f32(_fp0))
@@ -2099,7 +2113,7 @@ def public op_u32_Trunc_f32_s_r(var _pc : pc_t; var _sp : m3stack_t; var _mem : 
     return nextOpDirect(_pc, _sp, _mem, _r0, _fp0)
 }
 
-def public op_u32_Trunc_f32_s_s(var _pc : pc_t; var _sp : m3stack_t; var _mem : M3MemoryHeader?; var _r0 : m3reg_t; var _fp0 : f64) : M3Result {
+def public op_u32_Trunc_f32_s_s(var _pc : pc_t&; var _sp : m3stack_t&; var _mem : M3MemoryHeader?&; var _r0 : m3reg_t&; var _fp0 : f64&) : M3Result {
     let source = slot_f32(_pc, _sp)
     var dest = slot_ptr_u32(_pc, _sp)
     var RES : u32
@@ -2109,7 +2123,7 @@ def public op_u32_Trunc_f32_s_s(var _pc : pc_t; var _sp : m3stack_t; var _mem : 
     return nextOpDirect(_pc, _sp, _mem, _r0, _fp0)
 }
 
-def public op_i32_Trunc_f64_r_r(var _pc : pc_t; var _sp : m3stack_t; var _mem : M3MemoryHeader?; var _r0 : m3reg_t; var _fp0 : f64) : M3Result {
+def public op_i32_Trunc_f64_r_r(var _pc : pc_t&; var _sp : m3stack_t&; var _mem : M3MemoryHeader?&; var _r0 : m3reg_t&; var _fp0 : f64&) : M3Result {
     var RES : i32
     let result = OP_I32_TRUNC_F64(RES, _fp0)
     if (result != m3Err_none) { return result }
@@ -2117,7 +2131,7 @@ def public op_i32_Trunc_f64_r_r(var _pc : pc_t; var _sp : m3stack_t; var _mem : 
     return nextOpDirect(_pc, _sp, _mem, _r0, _fp0)
 }
 
-def public op_i32_Trunc_f64_r_s(var _pc : pc_t; var _sp : m3stack_t; var _mem : M3MemoryHeader?; var _r0 : m3reg_t; var _fp0 : f64) : M3Result {
+def public op_i32_Trunc_f64_r_s(var _pc : pc_t&; var _sp : m3stack_t&; var _mem : M3MemoryHeader?&; var _r0 : m3reg_t&; var _fp0 : f64&) : M3Result {
     let source = slot_f64(_pc, _sp)
     var RES : i32
     let result = OP_I32_TRUNC_F64(RES, source)
@@ -2126,7 +2140,7 @@ def public op_i32_Trunc_f64_r_s(var _pc : pc_t; var _sp : m3stack_t; var _mem : 
     return nextOpDirect(_pc, _sp, _mem, _r0, _fp0)
 }
 
-def public op_i32_Trunc_f64_s_r(var _pc : pc_t; var _sp : m3stack_t; var _mem : M3MemoryHeader?; var _r0 : m3reg_t; var _fp0 : f64) : M3Result {
+def public op_i32_Trunc_f64_s_r(var _pc : pc_t&; var _sp : m3stack_t&; var _mem : M3MemoryHeader?&; var _r0 : m3reg_t&; var _fp0 : f64&) : M3Result {
     var dest = slot_ptr_i32(_pc, _sp)
     var RES : i32
     let result = OP_I32_TRUNC_F64(RES, _fp0)
@@ -2135,7 +2149,7 @@ def public op_i32_Trunc_f64_s_r(var _pc : pc_t; var _sp : m3stack_t; var _mem : 
     return nextOpDirect(_pc, _sp, _mem, _r0, _fp0)
 }
 
-def public op_i32_Trunc_f64_s_s(var _pc : pc_t; var _sp : m3stack_t; var _mem : M3MemoryHeader?; var _r0 : m3reg_t; var _fp0 : f64) : M3Result {
+def public op_i32_Trunc_f64_s_s(var _pc : pc_t&; var _sp : m3stack_t&; var _mem : M3MemoryHeader?&; var _r0 : m3reg_t&; var _fp0 : f64&) : M3Result {
     let source = slot_f64(_pc, _sp)
     var dest = slot_ptr_i32(_pc, _sp)
     var RES : i32
@@ -2145,7 +2159,7 @@ def public op_i32_Trunc_f64_s_s(var _pc : pc_t; var _sp : m3stack_t; var _mem : 
     return nextOpDirect(_pc, _sp, _mem, _r0, _fp0)
 }
 
-def public op_u32_Trunc_f64_r_r(var _pc : pc_t; var _sp : m3stack_t; var _mem : M3MemoryHeader?; var _r0 : m3reg_t; var _fp0 : f64) : M3Result {
+def public op_u32_Trunc_f64_r_r(var _pc : pc_t&; var _sp : m3stack_t&; var _mem : M3MemoryHeader?&; var _r0 : m3reg_t&; var _fp0 : f64&) : M3Result {
     var RES : u32
     let result = OP_U32_TRUNC_F64(RES, _fp0)
     if (result != m3Err_none) { return result }
@@ -2153,7 +2167,7 @@ def public op_u32_Trunc_f64_r_r(var _pc : pc_t; var _sp : m3stack_t; var _mem : 
     return nextOpDirect(_pc, _sp, _mem, _r0, _fp0)
 }
 
-def public op_u32_Trunc_f64_r_s(var _pc : pc_t; var _sp : m3stack_t; var _mem : M3MemoryHeader?; var _r0 : m3reg_t; var _fp0 : f64) : M3Result {
+def public op_u32_Trunc_f64_r_s(var _pc : pc_t&; var _sp : m3stack_t&; var _mem : M3MemoryHeader?&; var _r0 : m3reg_t&; var _fp0 : f64&) : M3Result {
     let source = slot_f64(_pc, _sp)
     var RES : u32
     let result = OP_U32_TRUNC_F64(RES, source)
@@ -2162,7 +2176,7 @@ def public op_u32_Trunc_f64_r_s(var _pc : pc_t; var _sp : m3stack_t; var _mem : 
     return nextOpDirect(_pc, _sp, _mem, _r0, _fp0)
 }
 
-def public op_u32_Trunc_f64_s_r(var _pc : pc_t; var _sp : m3stack_t; var _mem : M3MemoryHeader?; var _r0 : m3reg_t; var _fp0 : f64) : M3Result {
+def public op_u32_Trunc_f64_s_r(var _pc : pc_t&; var _sp : m3stack_t&; var _mem : M3MemoryHeader?&; var _r0 : m3reg_t&; var _fp0 : f64&) : M3Result {
     var dest = slot_ptr_u32(_pc, _sp)
     var RES : u32
     let result = OP_U32_TRUNC_F64(RES, _fp0)
@@ -2171,7 +2185,7 @@ def public op_u32_Trunc_f64_s_r(var _pc : pc_t; var _sp : m3stack_t; var _mem : 
     return nextOpDirect(_pc, _sp, _mem, _r0, _fp0)
 }
 
-def public op_u32_Trunc_f64_s_s(var _pc : pc_t; var _sp : m3stack_t; var _mem : M3MemoryHeader?; var _r0 : m3reg_t; var _fp0 : f64) : M3Result {
+def public op_u32_Trunc_f64_s_s(var _pc : pc_t&; var _sp : m3stack_t&; var _mem : M3MemoryHeader?&; var _r0 : m3reg_t&; var _fp0 : f64&) : M3Result {
     let source = slot_f64(_pc, _sp)
     var dest = slot_ptr_u32(_pc, _sp)
     var RES : u32
@@ -2181,7 +2195,7 @@ def public op_u32_Trunc_f64_s_s(var _pc : pc_t; var _sp : m3stack_t; var _mem : 
     return nextOpDirect(_pc, _sp, _mem, _r0, _fp0)
 }
 
-def public op_i64_Trunc_f32_r_r(var _pc : pc_t; var _sp : m3stack_t; var _mem : M3MemoryHeader?; var _r0 : m3reg_t; var _fp0 : f64) : M3Result {
+def public op_i64_Trunc_f32_r_r(var _pc : pc_t&; var _sp : m3stack_t&; var _mem : M3MemoryHeader?&; var _r0 : m3reg_t&; var _fp0 : f64&) : M3Result {
     var RES : i64
     let result = OP_I64_TRUNC_F32(RES, f32(_fp0))
     if (result != m3Err_none) { return result }
@@ -2189,7 +2203,7 @@ def public op_i64_Trunc_f32_r_r(var _pc : pc_t; var _sp : m3stack_t; var _mem : 
     return nextOpDirect(_pc, _sp, _mem, _r0, _fp0)
 }
 
-def public op_i64_Trunc_f32_r_s(var _pc : pc_t; var _sp : m3stack_t; var _mem : M3MemoryHeader?; var _r0 : m3reg_t; var _fp0 : f64) : M3Result {
+def public op_i64_Trunc_f32_r_s(var _pc : pc_t&; var _sp : m3stack_t&; var _mem : M3MemoryHeader?&; var _r0 : m3reg_t&; var _fp0 : f64&) : M3Result {
     let source = slot_f32(_pc, _sp)
     var RES : i64
     let result = OP_I64_TRUNC_F32(RES, source)
@@ -2198,7 +2212,7 @@ def public op_i64_Trunc_f32_r_s(var _pc : pc_t; var _sp : m3stack_t; var _mem : 
     return nextOpDirect(_pc, _sp, _mem, _r0, _fp0)
 }
 
-def public op_i64_Trunc_f32_s_r(var _pc : pc_t; var _sp : m3stack_t; var _mem : M3MemoryHeader?; var _r0 : m3reg_t; var _fp0 : f64) : M3Result {
+def public op_i64_Trunc_f32_s_r(var _pc : pc_t&; var _sp : m3stack_t&; var _mem : M3MemoryHeader?&; var _r0 : m3reg_t&; var _fp0 : f64&) : M3Result {
     var dest = slot_ptr_i64(_pc, _sp)
     var RES : i64
     let result = OP_I64_TRUNC_F32(RES, f32(_fp0))
@@ -2207,7 +2221,7 @@ def public op_i64_Trunc_f32_s_r(var _pc : pc_t; var _sp : m3stack_t; var _mem : 
     return nextOpDirect(_pc, _sp, _mem, _r0, _fp0)
 }
 
-def public op_i64_Trunc_f32_s_s(var _pc : pc_t; var _sp : m3stack_t; var _mem : M3MemoryHeader?; var _r0 : m3reg_t; var _fp0 : f64) : M3Result {
+def public op_i64_Trunc_f32_s_s(var _pc : pc_t&; var _sp : m3stack_t&; var _mem : M3MemoryHeader?&; var _r0 : m3reg_t&; var _fp0 : f64&) : M3Result {
     let source = slot_f32(_pc, _sp)
     var dest = slot_ptr_i64(_pc, _sp)
     var RES : i64
@@ -2217,7 +2231,7 @@ def public op_i64_Trunc_f32_s_s(var _pc : pc_t; var _sp : m3stack_t; var _mem : 
     return nextOpDirect(_pc, _sp, _mem, _r0, _fp0)
 }
 
-def public op_u64_Trunc_f32_r_r(var _pc : pc_t; var _sp : m3stack_t; var _mem : M3MemoryHeader?; var _r0 : m3reg_t; var _fp0 : f64) : M3Result {
+def public op_u64_Trunc_f32_r_r(var _pc : pc_t&; var _sp : m3stack_t&; var _mem : M3MemoryHeader?&; var _r0 : m3reg_t&; var _fp0 : f64&) : M3Result {
     var RES : u64
     let result = OP_U64_TRUNC_F32(RES, f32(_fp0))
     if (result != m3Err_none) { return result }
@@ -2225,7 +2239,7 @@ def public op_u64_Trunc_f32_r_r(var _pc : pc_t; var _sp : m3stack_t; var _mem : 
     return nextOpDirect(_pc, _sp, _mem, _r0, _fp0)
 }
 
-def public op_u64_Trunc_f32_r_s(var _pc : pc_t; var _sp : m3stack_t; var _mem : M3MemoryHeader?; var _r0 : m3reg_t; var _fp0 : f64) : M3Result {
+def public op_u64_Trunc_f32_r_s(var _pc : pc_t&; var _sp : m3stack_t&; var _mem : M3MemoryHeader?&; var _r0 : m3reg_t&; var _fp0 : f64&) : M3Result {
     let source = slot_f32(_pc, _sp)
     var RES : u64
     let result = OP_U64_TRUNC_F32(RES, source)
@@ -2234,7 +2248,7 @@ def public op_u64_Trunc_f32_r_s(var _pc : pc_t; var _sp : m3stack_t; var _mem : 
     return nextOpDirect(_pc, _sp, _mem, _r0, _fp0)
 }
 
-def public op_u64_Trunc_f32_s_r(var _pc : pc_t; var _sp : m3stack_t; var _mem : M3MemoryHeader?; var _r0 : m3reg_t; var _fp0 : f64) : M3Result {
+def public op_u64_Trunc_f32_s_r(var _pc : pc_t&; var _sp : m3stack_t&; var _mem : M3MemoryHeader?&; var _r0 : m3reg_t&; var _fp0 : f64&) : M3Result {
     var dest = slot_ptr_u64(_pc, _sp)
     var RES : u64
     let result = OP_U64_TRUNC_F32(RES, f32(_fp0))
@@ -2243,7 +2257,7 @@ def public op_u64_Trunc_f32_s_r(var _pc : pc_t; var _sp : m3stack_t; var _mem : 
     return nextOpDirect(_pc, _sp, _mem, _r0, _fp0)
 }
 
-def public op_u64_Trunc_f32_s_s(var _pc : pc_t; var _sp : m3stack_t; var _mem : M3MemoryHeader?; var _r0 : m3reg_t; var _fp0 : f64) : M3Result {
+def public op_u64_Trunc_f32_s_s(var _pc : pc_t&; var _sp : m3stack_t&; var _mem : M3MemoryHeader?&; var _r0 : m3reg_t&; var _fp0 : f64&) : M3Result {
     let source = slot_f32(_pc, _sp)
     var dest = slot_ptr_u64(_pc, _sp)
     var RES : u64
@@ -2253,7 +2267,7 @@ def public op_u64_Trunc_f32_s_s(var _pc : pc_t; var _sp : m3stack_t; var _mem : 
     return nextOpDirect(_pc, _sp, _mem, _r0, _fp0)
 }
 
-def public op_i64_Trunc_f64_r_r(var _pc : pc_t; var _sp : m3stack_t; var _mem : M3MemoryHeader?; var _r0 : m3reg_t; var _fp0 : f64) : M3Result {
+def public op_i64_Trunc_f64_r_r(var _pc : pc_t&; var _sp : m3stack_t&; var _mem : M3MemoryHeader?&; var _r0 : m3reg_t&; var _fp0 : f64&) : M3Result {
     var RES : i64
     let result = OP_I64_TRUNC_F64(RES, _fp0)
     if (result != m3Err_none) { return result }
@@ -2261,7 +2275,7 @@ def public op_i64_Trunc_f64_r_r(var _pc : pc_t; var _sp : m3stack_t; var _mem : 
     return nextOpDirect(_pc, _sp, _mem, _r0, _fp0)
 }
 
-def public op_i64_Trunc_f64_r_s(var _pc : pc_t; var _sp : m3stack_t; var _mem : M3MemoryHeader?; var _r0 : m3reg_t; var _fp0 : f64) : M3Result {
+def public op_i64_Trunc_f64_r_s(var _pc : pc_t&; var _sp : m3stack_t&; var _mem : M3MemoryHeader?&; var _r0 : m3reg_t&; var _fp0 : f64&) : M3Result {
     let source = slot_f64(_pc, _sp)
     var RES : i64
     let result = OP_I64_TRUNC_F64(RES, source)
@@ -2270,7 +2284,7 @@ def public op_i64_Trunc_f64_r_s(var _pc : pc_t; var _sp : m3stack_t; var _mem : 
     return nextOpDirect(_pc, _sp, _mem, _r0, _fp0)
 }
 
-def public op_i64_Trunc_f64_s_r(var _pc : pc_t; var _sp : m3stack_t; var _mem : M3MemoryHeader?; var _r0 : m3reg_t; var _fp0 : f64) : M3Result {
+def public op_i64_Trunc_f64_s_r(var _pc : pc_t&; var _sp : m3stack_t&; var _mem : M3MemoryHeader?&; var _r0 : m3reg_t&; var _fp0 : f64&) : M3Result {
     var dest = slot_ptr_i64(_pc, _sp)
     var RES : i64
     let result = OP_I64_TRUNC_F64(RES, _fp0)
@@ -2279,7 +2293,7 @@ def public op_i64_Trunc_f64_s_r(var _pc : pc_t; var _sp : m3stack_t; var _mem : 
     return nextOpDirect(_pc, _sp, _mem, _r0, _fp0)
 }
 
-def public op_i64_Trunc_f64_s_s(var _pc : pc_t; var _sp : m3stack_t; var _mem : M3MemoryHeader?; var _r0 : m3reg_t; var _fp0 : f64) : M3Result {
+def public op_i64_Trunc_f64_s_s(var _pc : pc_t&; var _sp : m3stack_t&; var _mem : M3MemoryHeader?&; var _r0 : m3reg_t&; var _fp0 : f64&) : M3Result {
     let source = slot_f64(_pc, _sp)
     var dest = slot_ptr_i64(_pc, _sp)
     var RES : i64
@@ -2289,7 +2303,7 @@ def public op_i64_Trunc_f64_s_s(var _pc : pc_t; var _sp : m3stack_t; var _mem : 
     return nextOpDirect(_pc, _sp, _mem, _r0, _fp0)
 }
 
-def public op_u64_Trunc_f64_r_r(var _pc : pc_t; var _sp : m3stack_t; var _mem : M3MemoryHeader?; var _r0 : m3reg_t; var _fp0 : f64) : M3Result {
+def public op_u64_Trunc_f64_r_r(var _pc : pc_t&; var _sp : m3stack_t&; var _mem : M3MemoryHeader?&; var _r0 : m3reg_t&; var _fp0 : f64&) : M3Result {
     var RES : u64
     let result = OP_U64_TRUNC_F64(RES, _fp0)
     if (result != m3Err_none) { return result }
@@ -2297,7 +2311,7 @@ def public op_u64_Trunc_f64_r_r(var _pc : pc_t; var _sp : m3stack_t; var _mem : 
     return nextOpDirect(_pc, _sp, _mem, _r0, _fp0)
 }
 
-def public op_u64_Trunc_f64_r_s(var _pc : pc_t; var _sp : m3stack_t; var _mem : M3MemoryHeader?; var _r0 : m3reg_t; var _fp0 : f64) : M3Result {
+def public op_u64_Trunc_f64_r_s(var _pc : pc_t&; var _sp : m3stack_t&; var _mem : M3MemoryHeader?&; var _r0 : m3reg_t&; var _fp0 : f64&) : M3Result {
     let source = slot_f64(_pc, _sp)
     var RES : u64
     let result = OP_U64_TRUNC_F64(RES, source)
@@ -2306,7 +2320,7 @@ def public op_u64_Trunc_f64_r_s(var _pc : pc_t; var _sp : m3stack_t; var _mem : 
     return nextOpDirect(_pc, _sp, _mem, _r0, _fp0)
 }
 
-def public op_u64_Trunc_f64_s_r(var _pc : pc_t; var _sp : m3stack_t; var _mem : M3MemoryHeader?; var _r0 : m3reg_t; var _fp0 : f64) : M3Result {
+def public op_u64_Trunc_f64_s_r(var _pc : pc_t&; var _sp : m3stack_t&; var _mem : M3MemoryHeader?&; var _r0 : m3reg_t&; var _fp0 : f64&) : M3Result {
     var dest = slot_ptr_u64(_pc, _sp)
     var RES : u64
     let result = OP_U64_TRUNC_F64(RES, _fp0)
@@ -2315,7 +2329,7 @@ def public op_u64_Trunc_f64_s_r(var _pc : pc_t; var _sp : m3stack_t; var _mem : 
     return nextOpDirect(_pc, _sp, _mem, _r0, _fp0)
 }
 
-def public op_u64_Trunc_f64_s_s(var _pc : pc_t; var _sp : m3stack_t; var _mem : M3MemoryHeader?; var _r0 : m3reg_t; var _fp0 : f64) : M3Result {
+def public op_u64_Trunc_f64_s_s(var _pc : pc_t&; var _sp : m3stack_t&; var _mem : M3MemoryHeader?&; var _r0 : m3reg_t&; var _fp0 : f64&) : M3Result {
     let source = slot_f64(_pc, _sp)
     var dest = slot_ptr_u64(_pc, _sp)
     var RES : u64
@@ -2325,14 +2339,14 @@ def public op_u64_Trunc_f64_s_s(var _pc : pc_t; var _sp : m3stack_t; var _mem : 
     return nextOpDirect(_pc, _sp, _mem, _r0, _fp0)
 }
 
-def public op_i32_TruncSat_f32_r_r(var _pc : pc_t; var _sp : m3stack_t; var _mem : M3MemoryHeader?; var _r0 : m3reg_t; var _fp0 : f64) : M3Result {
+def public op_i32_TruncSat_f32_r_r(var _pc : pc_t&; var _sp : m3stack_t&; var _mem : M3MemoryHeader?&; var _r0 : m3reg_t&; var _fp0 : f64&) : M3Result {
     var RES : i32
     OP_I32_TRUNC_SAT_F32(RES, f32(_fp0))
     _r0 = m3reg_t(RES)
     return nextOpDirect(_pc, _sp, _mem, _r0, _fp0)
 }
 
-def public op_i32_TruncSat_f32_r_s(var _pc : pc_t; var _sp : m3stack_t; var _mem : M3MemoryHeader?; var _r0 : m3reg_t; var _fp0 : f64) : M3Result {
+def public op_i32_TruncSat_f32_r_s(var _pc : pc_t&; var _sp : m3stack_t&; var _mem : M3MemoryHeader?&; var _r0 : m3reg_t&; var _fp0 : f64&) : M3Result {
     let source = slot_f32(_pc, _sp)
     var RES : i32
     OP_I32_TRUNC_SAT_F32(RES, source)
@@ -2340,7 +2354,7 @@ def public op_i32_TruncSat_f32_r_s(var _pc : pc_t; var _sp : m3stack_t; var _mem
     return nextOpDirect(_pc, _sp, _mem, _r0, _fp0)
 }
 
-def public op_i32_TruncSat_f32_s_r(var _pc : pc_t; var _sp : m3stack_t; var _mem : M3MemoryHeader?; var _r0 : m3reg_t; var _fp0 : f64) : M3Result {
+def public op_i32_TruncSat_f32_s_r(var _pc : pc_t&; var _sp : m3stack_t&; var _mem : M3MemoryHeader?&; var _r0 : m3reg_t&; var _fp0 : f64&) : M3Result {
     var dest = slot_ptr_i32(_pc, _sp)
     var RES : i32
     OP_I32_TRUNC_SAT_F32(RES, f32(_fp0))
@@ -2348,7 +2362,7 @@ def public op_i32_TruncSat_f32_s_r(var _pc : pc_t; var _sp : m3stack_t; var _mem
     return nextOpDirect(_pc, _sp, _mem, _r0, _fp0)
 }
 
-def public op_i32_TruncSat_f32_s_s(var _pc : pc_t; var _sp : m3stack_t; var _mem : M3MemoryHeader?; var _r0 : m3reg_t; var _fp0 : f64) : M3Result {
+def public op_i32_TruncSat_f32_s_s(var _pc : pc_t&; var _sp : m3stack_t&; var _mem : M3MemoryHeader?&; var _r0 : m3reg_t&; var _fp0 : f64&) : M3Result {
     let source = slot_f32(_pc, _sp)
     var dest = slot_ptr_i32(_pc, _sp)
     var RES : i32
@@ -2357,14 +2371,14 @@ def public op_i32_TruncSat_f32_s_s(var _pc : pc_t; var _sp : m3stack_t; var _mem
     return nextOpDirect(_pc, _sp, _mem, _r0, _fp0)
 }
 
-def public op_u32_TruncSat_f32_r_r(var _pc : pc_t; var _sp : m3stack_t; var _mem : M3MemoryHeader?; var _r0 : m3reg_t; var _fp0 : f64) : M3Result {
+def public op_u32_TruncSat_f32_r_r(var _pc : pc_t&; var _sp : m3stack_t&; var _mem : M3MemoryHeader?&; var _r0 : m3reg_t&; var _fp0 : f64&) : M3Result {
     var RES : u32
     OP_U32_TRUNC_SAT_F32(RES, f32(_fp0))
     _r0 = m3reg_t(RES)
     return nextOpDirect(_pc, _sp, _mem, _r0, _fp0)
 }
 
-def public op_u32_TruncSat_f32_r_s(var _pc : pc_t; var _sp : m3stack_t; var _mem : M3MemoryHeader?; var _r0 : m3reg_t; var _fp0 : f64) : M3Result {
+def public op_u32_TruncSat_f32_r_s(var _pc : pc_t&; var _sp : m3stack_t&; var _mem : M3MemoryHeader?&; var _r0 : m3reg_t&; var _fp0 : f64&) : M3Result {
     let source = slot_f32(_pc, _sp)
     var RES : u32
     OP_U32_TRUNC_SAT_F32(RES, source)
@@ -2372,7 +2386,7 @@ def public op_u32_TruncSat_f32_r_s(var _pc : pc_t; var _sp : m3stack_t; var _mem
     return nextOpDirect(_pc, _sp, _mem, _r0, _fp0)
 }
 
-def public op_u32_TruncSat_f32_s_r(var _pc : pc_t; var _sp : m3stack_t; var _mem : M3MemoryHeader?; var _r0 : m3reg_t; var _fp0 : f64) : M3Result {
+def public op_u32_TruncSat_f32_s_r(var _pc : pc_t&; var _sp : m3stack_t&; var _mem : M3MemoryHeader?&; var _r0 : m3reg_t&; var _fp0 : f64&) : M3Result {
     var dest = slot_ptr_u32(_pc, _sp)
     var RES : u32
     OP_U32_TRUNC_SAT_F32(RES, f32(_fp0))
@@ -2380,7 +2394,7 @@ def public op_u32_TruncSat_f32_s_r(var _pc : pc_t; var _sp : m3stack_t; var _mem
     return nextOpDirect(_pc, _sp, _mem, _r0, _fp0)
 }
 
-def public op_u32_TruncSat_f32_s_s(var _pc : pc_t; var _sp : m3stack_t; var _mem : M3MemoryHeader?; var _r0 : m3reg_t; var _fp0 : f64) : M3Result {
+def public op_u32_TruncSat_f32_s_s(var _pc : pc_t&; var _sp : m3stack_t&; var _mem : M3MemoryHeader?&; var _r0 : m3reg_t&; var _fp0 : f64&) : M3Result {
     let source = slot_f32(_pc, _sp)
     var dest = slot_ptr_u32(_pc, _sp)
     var RES : u32
@@ -2389,14 +2403,14 @@ def public op_u32_TruncSat_f32_s_s(var _pc : pc_t; var _sp : m3stack_t; var _mem
     return nextOpDirect(_pc, _sp, _mem, _r0, _fp0)
 }
 
-def public op_i32_TruncSat_f64_r_r(var _pc : pc_t; var _sp : m3stack_t; var _mem : M3MemoryHeader?; var _r0 : m3reg_t; var _fp0 : f64) : M3Result {
+def public op_i32_TruncSat_f64_r_r(var _pc : pc_t&; var _sp : m3stack_t&; var _mem : M3MemoryHeader?&; var _r0 : m3reg_t&; var _fp0 : f64&) : M3Result {
     var RES : i32
     OP_I32_TRUNC_SAT_F64(RES, _fp0)
     _r0 = m3reg_t(RES)
     return nextOpDirect(_pc, _sp, _mem, _r0, _fp0)
 }
 
-def public op_i32_TruncSat_f64_r_s(var _pc : pc_t; var _sp : m3stack_t; var _mem : M3MemoryHeader?; var _r0 : m3reg_t; var _fp0 : f64) : M3Result {
+def public op_i32_TruncSat_f64_r_s(var _pc : pc_t&; var _sp : m3stack_t&; var _mem : M3MemoryHeader?&; var _r0 : m3reg_t&; var _fp0 : f64&) : M3Result {
     let source = slot_f64(_pc, _sp)
     var RES : i32
     OP_I32_TRUNC_SAT_F64(RES, source)
@@ -2404,7 +2418,7 @@ def public op_i32_TruncSat_f64_r_s(var _pc : pc_t; var _sp : m3stack_t; var _mem
     return nextOpDirect(_pc, _sp, _mem, _r0, _fp0)
 }
 
-def public op_i32_TruncSat_f64_s_r(var _pc : pc_t; var _sp : m3stack_t; var _mem : M3MemoryHeader?; var _r0 : m3reg_t; var _fp0 : f64) : M3Result {
+def public op_i32_TruncSat_f64_s_r(var _pc : pc_t&; var _sp : m3stack_t&; var _mem : M3MemoryHeader?&; var _r0 : m3reg_t&; var _fp0 : f64&) : M3Result {
     var dest = slot_ptr_i32(_pc, _sp)
     var RES : i32
     OP_I32_TRUNC_SAT_F64(RES, _fp0)
@@ -2412,7 +2426,7 @@ def public op_i32_TruncSat_f64_s_r(var _pc : pc_t; var _sp : m3stack_t; var _mem
     return nextOpDirect(_pc, _sp, _mem, _r0, _fp0)
 }
 
-def public op_i32_TruncSat_f64_s_s(var _pc : pc_t; var _sp : m3stack_t; var _mem : M3MemoryHeader?; var _r0 : m3reg_t; var _fp0 : f64) : M3Result {
+def public op_i32_TruncSat_f64_s_s(var _pc : pc_t&; var _sp : m3stack_t&; var _mem : M3MemoryHeader?&; var _r0 : m3reg_t&; var _fp0 : f64&) : M3Result {
     let source = slot_f64(_pc, _sp)
     var dest = slot_ptr_i32(_pc, _sp)
     var RES : i32
@@ -2421,14 +2435,14 @@ def public op_i32_TruncSat_f64_s_s(var _pc : pc_t; var _sp : m3stack_t; var _mem
     return nextOpDirect(_pc, _sp, _mem, _r0, _fp0)
 }
 
-def public op_u32_TruncSat_f64_r_r(var _pc : pc_t; var _sp : m3stack_t; var _mem : M3MemoryHeader?; var _r0 : m3reg_t; var _fp0 : f64) : M3Result {
+def public op_u32_TruncSat_f64_r_r(var _pc : pc_t&; var _sp : m3stack_t&; var _mem : M3MemoryHeader?&; var _r0 : m3reg_t&; var _fp0 : f64&) : M3Result {
     var RES : u32
     OP_U32_TRUNC_SAT_F64(RES, _fp0)
     _r0 = m3reg_t(RES)
     return nextOpDirect(_pc, _sp, _mem, _r0, _fp0)
 }
 
-def public op_u32_TruncSat_f64_r_s(var _pc : pc_t; var _sp : m3stack_t; var _mem : M3MemoryHeader?; var _r0 : m3reg_t; var _fp0 : f64) : M3Result {
+def public op_u32_TruncSat_f64_r_s(var _pc : pc_t&; var _sp : m3stack_t&; var _mem : M3MemoryHeader?&; var _r0 : m3reg_t&; var _fp0 : f64&) : M3Result {
     let source = slot_f64(_pc, _sp)
     var RES : u32
     OP_U32_TRUNC_SAT_F64(RES, source)
@@ -2436,7 +2450,7 @@ def public op_u32_TruncSat_f64_r_s(var _pc : pc_t; var _sp : m3stack_t; var _mem
     return nextOpDirect(_pc, _sp, _mem, _r0, _fp0)
 }
 
-def public op_u32_TruncSat_f64_s_r(var _pc : pc_t; var _sp : m3stack_t; var _mem : M3MemoryHeader?; var _r0 : m3reg_t; var _fp0 : f64) : M3Result {
+def public op_u32_TruncSat_f64_s_r(var _pc : pc_t&; var _sp : m3stack_t&; var _mem : M3MemoryHeader?&; var _r0 : m3reg_t&; var _fp0 : f64&) : M3Result {
     var dest = slot_ptr_u32(_pc, _sp)
     var RES : u32
     OP_U32_TRUNC_SAT_F64(RES, _fp0)
@@ -2444,7 +2458,7 @@ def public op_u32_TruncSat_f64_s_r(var _pc : pc_t; var _sp : m3stack_t; var _mem
     return nextOpDirect(_pc, _sp, _mem, _r0, _fp0)
 }
 
-def public op_u32_TruncSat_f64_s_s(var _pc : pc_t; var _sp : m3stack_t; var _mem : M3MemoryHeader?; var _r0 : m3reg_t; var _fp0 : f64) : M3Result {
+def public op_u32_TruncSat_f64_s_s(var _pc : pc_t&; var _sp : m3stack_t&; var _mem : M3MemoryHeader?&; var _r0 : m3reg_t&; var _fp0 : f64&) : M3Result {
     let source = slot_f64(_pc, _sp)
     var dest = slot_ptr_u32(_pc, _sp)
     var RES : u32
@@ -2453,14 +2467,14 @@ def public op_u32_TruncSat_f64_s_s(var _pc : pc_t; var _sp : m3stack_t; var _mem
     return nextOpDirect(_pc, _sp, _mem, _r0, _fp0)
 }
 
-def public op_i64_TruncSat_f32_r_r(var _pc : pc_t; var _sp : m3stack_t; var _mem : M3MemoryHeader?; var _r0 : m3reg_t; var _fp0 : f64) : M3Result {
+def public op_i64_TruncSat_f32_r_r(var _pc : pc_t&; var _sp : m3stack_t&; var _mem : M3MemoryHeader?&; var _r0 : m3reg_t&; var _fp0 : f64&) : M3Result {
     var RES : i64
     OP_I64_TRUNC_SAT_F32(RES, f32(_fp0))
     _r0 = RES
     return nextOpDirect(_pc, _sp, _mem, _r0, _fp0)
 }
 
-def public op_i64_TruncSat_f32_r_s(var _pc : pc_t; var _sp : m3stack_t; var _mem : M3MemoryHeader?; var _r0 : m3reg_t; var _fp0 : f64) : M3Result {
+def public op_i64_TruncSat_f32_r_s(var _pc : pc_t&; var _sp : m3stack_t&; var _mem : M3MemoryHeader?&; var _r0 : m3reg_t&; var _fp0 : f64&) : M3Result {
     let source = slot_f32(_pc, _sp)
     var RES : i64
     OP_I64_TRUNC_SAT_F32(RES, source)
@@ -2468,7 +2482,7 @@ def public op_i64_TruncSat_f32_r_s(var _pc : pc_t; var _sp : m3stack_t; var _mem
     return nextOpDirect(_pc, _sp, _mem, _r0, _fp0)
 }
 
-def public op_i64_TruncSat_f32_s_r(var _pc : pc_t; var _sp : m3stack_t; var _mem : M3MemoryHeader?; var _r0 : m3reg_t; var _fp0 : f64) : M3Result {
+def public op_i64_TruncSat_f32_s_r(var _pc : pc_t&; var _sp : m3stack_t&; var _mem : M3MemoryHeader?&; var _r0 : m3reg_t&; var _fp0 : f64&) : M3Result {
     var dest = slot_ptr_i64(_pc, _sp)
     var RES : i64
     OP_I64_TRUNC_SAT_F32(RES, f32(_fp0))
@@ -2476,7 +2490,7 @@ def public op_i64_TruncSat_f32_s_r(var _pc : pc_t; var _sp : m3stack_t; var _mem
     return nextOpDirect(_pc, _sp, _mem, _r0, _fp0)
 }
 
-def public op_i64_TruncSat_f32_s_s(var _pc : pc_t; var _sp : m3stack_t; var _mem : M3MemoryHeader?; var _r0 : m3reg_t; var _fp0 : f64) : M3Result {
+def public op_i64_TruncSat_f32_s_s(var _pc : pc_t&; var _sp : m3stack_t&; var _mem : M3MemoryHeader?&; var _r0 : m3reg_t&; var _fp0 : f64&) : M3Result {
     let source = slot_f32(_pc, _sp)
     var dest = slot_ptr_i64(_pc, _sp)
     var RES : i64
@@ -2485,14 +2499,14 @@ def public op_i64_TruncSat_f32_s_s(var _pc : pc_t; var _sp : m3stack_t; var _mem
     return nextOpDirect(_pc, _sp, _mem, _r0, _fp0)
 }
 
-def public op_u64_TruncSat_f32_r_r(var _pc : pc_t; var _sp : m3stack_t; var _mem : M3MemoryHeader?; var _r0 : m3reg_t; var _fp0 : f64) : M3Result {
+def public op_u64_TruncSat_f32_r_r(var _pc : pc_t&; var _sp : m3stack_t&; var _mem : M3MemoryHeader?&; var _r0 : m3reg_t&; var _fp0 : f64&) : M3Result {
     var RES : u64
     OP_U64_TRUNC_SAT_F32(RES, f32(_fp0))
     _r0 = m3reg_t(RES)
     return nextOpDirect(_pc, _sp, _mem, _r0, _fp0)
 }
 
-def public op_u64_TruncSat_f32_r_s(var _pc : pc_t; var _sp : m3stack_t; var _mem : M3MemoryHeader?; var _r0 : m3reg_t; var _fp0 : f64) : M3Result {
+def public op_u64_TruncSat_f32_r_s(var _pc : pc_t&; var _sp : m3stack_t&; var _mem : M3MemoryHeader?&; var _r0 : m3reg_t&; var _fp0 : f64&) : M3Result {
     let source = slot_f32(_pc, _sp)
     var RES : u64
     OP_U64_TRUNC_SAT_F32(RES, source)
@@ -2500,7 +2514,7 @@ def public op_u64_TruncSat_f32_r_s(var _pc : pc_t; var _sp : m3stack_t; var _mem
     return nextOpDirect(_pc, _sp, _mem, _r0, _fp0)
 }
 
-def public op_u64_TruncSat_f32_s_r(var _pc : pc_t; var _sp : m3stack_t; var _mem : M3MemoryHeader?; var _r0 : m3reg_t; var _fp0 : f64) : M3Result {
+def public op_u64_TruncSat_f32_s_r(var _pc : pc_t&; var _sp : m3stack_t&; var _mem : M3MemoryHeader?&; var _r0 : m3reg_t&; var _fp0 : f64&) : M3Result {
     var dest = slot_ptr_u64(_pc, _sp)
     var RES : u64
     OP_U64_TRUNC_SAT_F32(RES, f32(_fp0))
@@ -2508,7 +2522,7 @@ def public op_u64_TruncSat_f32_s_r(var _pc : pc_t; var _sp : m3stack_t; var _mem
     return nextOpDirect(_pc, _sp, _mem, _r0, _fp0)
 }
 
-def public op_u64_TruncSat_f32_s_s(var _pc : pc_t; var _sp : m3stack_t; var _mem : M3MemoryHeader?; var _r0 : m3reg_t; var _fp0 : f64) : M3Result {
+def public op_u64_TruncSat_f32_s_s(var _pc : pc_t&; var _sp : m3stack_t&; var _mem : M3MemoryHeader?&; var _r0 : m3reg_t&; var _fp0 : f64&) : M3Result {
     let source = slot_f32(_pc, _sp)
     var dest = slot_ptr_u64(_pc, _sp)
     var RES : u64
@@ -2517,14 +2531,14 @@ def public op_u64_TruncSat_f32_s_s(var _pc : pc_t; var _sp : m3stack_t; var _mem
     return nextOpDirect(_pc, _sp, _mem, _r0, _fp0)
 }
 
-def public op_i64_TruncSat_f64_r_r(var _pc : pc_t; var _sp : m3stack_t; var _mem : M3MemoryHeader?; var _r0 : m3reg_t; var _fp0 : f64) : M3Result {
+def public op_i64_TruncSat_f64_r_r(var _pc : pc_t&; var _sp : m3stack_t&; var _mem : M3MemoryHeader?&; var _r0 : m3reg_t&; var _fp0 : f64&) : M3Result {
     var RES : i64
     OP_I64_TRUNC_SAT_F64(RES, _fp0)
     _r0 = RES
     return nextOpDirect(_pc, _sp, _mem, _r0, _fp0)
 }
 
-def public op_i64_TruncSat_f64_r_s(var _pc : pc_t; var _sp : m3stack_t; var _mem : M3MemoryHeader?; var _r0 : m3reg_t; var _fp0 : f64) : M3Result {
+def public op_i64_TruncSat_f64_r_s(var _pc : pc_t&; var _sp : m3stack_t&; var _mem : M3MemoryHeader?&; var _r0 : m3reg_t&; var _fp0 : f64&) : M3Result {
     let source = slot_f64(_pc, _sp)
     var RES : i64
     OP_I64_TRUNC_SAT_F64(RES, source)
@@ -2532,7 +2546,7 @@ def public op_i64_TruncSat_f64_r_s(var _pc : pc_t; var _sp : m3stack_t; var _mem
     return nextOpDirect(_pc, _sp, _mem, _r0, _fp0)
 }
 
-def public op_i64_TruncSat_f64_s_r(var _pc : pc_t; var _sp : m3stack_t; var _mem : M3MemoryHeader?; var _r0 : m3reg_t; var _fp0 : f64) : M3Result {
+def public op_i64_TruncSat_f64_s_r(var _pc : pc_t&; var _sp : m3stack_t&; var _mem : M3MemoryHeader?&; var _r0 : m3reg_t&; var _fp0 : f64&) : M3Result {
     var dest = slot_ptr_i64(_pc, _sp)
     var RES : i64
     OP_I64_TRUNC_SAT_F64(RES, _fp0)
@@ -2540,7 +2554,7 @@ def public op_i64_TruncSat_f64_s_r(var _pc : pc_t; var _sp : m3stack_t; var _mem
     return nextOpDirect(_pc, _sp, _mem, _r0, _fp0)
 }
 
-def public op_i64_TruncSat_f64_s_s(var _pc : pc_t; var _sp : m3stack_t; var _mem : M3MemoryHeader?; var _r0 : m3reg_t; var _fp0 : f64) : M3Result {
+def public op_i64_TruncSat_f64_s_s(var _pc : pc_t&; var _sp : m3stack_t&; var _mem : M3MemoryHeader?&; var _r0 : m3reg_t&; var _fp0 : f64&) : M3Result {
     let source = slot_f64(_pc, _sp)
     var dest = slot_ptr_i64(_pc, _sp)
     var RES : i64
@@ -2549,14 +2563,14 @@ def public op_i64_TruncSat_f64_s_s(var _pc : pc_t; var _sp : m3stack_t; var _mem
     return nextOpDirect(_pc, _sp, _mem, _r0, _fp0)
 }
 
-def public op_u64_TruncSat_f64_r_r(var _pc : pc_t; var _sp : m3stack_t; var _mem : M3MemoryHeader?; var _r0 : m3reg_t; var _fp0 : f64) : M3Result {
+def public op_u64_TruncSat_f64_r_r(var _pc : pc_t&; var _sp : m3stack_t&; var _mem : M3MemoryHeader?&; var _r0 : m3reg_t&; var _fp0 : f64&) : M3Result {
     var RES : u64
     OP_U64_TRUNC_SAT_F64(RES, _fp0)
     _r0 = m3reg_t(RES)
     return nextOpDirect(_pc, _sp, _mem, _r0, _fp0)
 }
 
-def public op_u64_TruncSat_f64_r_s(var _pc : pc_t; var _sp : m3stack_t; var _mem : M3MemoryHeader?; var _r0 : m3reg_t; var _fp0 : f64) : M3Result {
+def public op_u64_TruncSat_f64_r_s(var _pc : pc_t&; var _sp : m3stack_t&; var _mem : M3MemoryHeader?&; var _r0 : m3reg_t&; var _fp0 : f64&) : M3Result {
     let source = slot_f64(_pc, _sp)
     var RES : u64
     OP_U64_TRUNC_SAT_F64(RES, source)
@@ -2564,7 +2578,7 @@ def public op_u64_TruncSat_f64_r_s(var _pc : pc_t; var _sp : m3stack_t; var _mem
     return nextOpDirect(_pc, _sp, _mem, _r0, _fp0)
 }
 
-def public op_u64_TruncSat_f64_s_r(var _pc : pc_t; var _sp : m3stack_t; var _mem : M3MemoryHeader?; var _r0 : m3reg_t; var _fp0 : f64) : M3Result {
+def public op_u64_TruncSat_f64_s_r(var _pc : pc_t&; var _sp : m3stack_t&; var _mem : M3MemoryHeader?&; var _r0 : m3reg_t&; var _fp0 : f64&) : M3Result {
     var dest = slot_ptr_u64(_pc, _sp)
     var RES : u64
     OP_U64_TRUNC_SAT_F64(RES, _fp0)
@@ -2572,7 +2586,7 @@ def public op_u64_TruncSat_f64_s_r(var _pc : pc_t; var _sp : m3stack_t; var _mem
     return nextOpDirect(_pc, _sp, _mem, _r0, _fp0)
 }
 
-def public op_u64_TruncSat_f64_s_s(var _pc : pc_t; var _sp : m3stack_t; var _mem : M3MemoryHeader?; var _r0 : m3reg_t; var _fp0 : f64) : M3Result {
+def public op_u64_TruncSat_f64_s_s(var _pc : pc_t&; var _sp : m3stack_t&; var _mem : M3MemoryHeader?&; var _r0 : m3reg_t&; var _fp0 : f64&) : M3Result {
     let source = slot_f64(_pc, _sp)
     var dest = slot_ptr_u64(_pc, _sp)
     var RES : u64
@@ -2581,359 +2595,359 @@ def public op_u64_TruncSat_f64_s_s(var _pc : pc_t; var _sp : m3stack_t; var _mem
     return nextOpDirect(_pc, _sp, _mem, _r0, _fp0)
 }
 
-def public op_i64_Extend_i32_r(var _pc : pc_t; var _sp : m3stack_t; var _mem : M3MemoryHeader?; var _r0 : m3reg_t; var _fp0 : f64) : M3Result {
+def public op_i64_Extend_i32_r(var _pc : pc_t&; var _sp : m3stack_t&; var _mem : M3MemoryHeader?&; var _r0 : m3reg_t&; var _fp0 : f64&) : M3Result {
     _r0 = i64(i32(_r0))
     return nextOpDirect(_pc, _sp, _mem, _r0, _fp0)
 }
 
-def public op_i64_Extend_i32_s(var _pc : pc_t; var _sp : m3stack_t; var _mem : M3MemoryHeader?; var _r0 : m3reg_t; var _fp0 : f64) : M3Result {
+def public op_i64_Extend_i32_s(var _pc : pc_t&; var _sp : m3stack_t&; var _mem : M3MemoryHeader?&; var _r0 : m3reg_t&; var _fp0 : f64&) : M3Result {
     _r0 = i64(slot_i32(_pc, _sp))
     return nextOpDirect(_pc, _sp, _mem, _r0, _fp0)
 }
 
-def public op_i64_Extend_u32_r(var _pc : pc_t; var _sp : m3stack_t; var _mem : M3MemoryHeader?; var _r0 : m3reg_t; var _fp0 : f64) : M3Result {
+def public op_i64_Extend_u32_r(var _pc : pc_t&; var _sp : m3stack_t&; var _mem : M3MemoryHeader?&; var _r0 : m3reg_t&; var _fp0 : f64&) : M3Result {
     _r0 = i64(u32(_r0))
     return nextOpDirect(_pc, _sp, _mem, _r0, _fp0)
 }
 
-def public op_i64_Extend_u32_s(var _pc : pc_t; var _sp : m3stack_t; var _mem : M3MemoryHeader?; var _r0 : m3reg_t; var _fp0 : f64) : M3Result {
+def public op_i64_Extend_u32_s(var _pc : pc_t&; var _sp : m3stack_t&; var _mem : M3MemoryHeader?&; var _r0 : m3reg_t&; var _fp0 : f64&) : M3Result {
     _r0 = i64(slot_u32(_pc, _sp))
     return nextOpDirect(_pc, _sp, _mem, _r0, _fp0)
 }
 
-def public op_f32_Demote_f64_r(var _pc : pc_t; var _sp : m3stack_t; var _mem : M3MemoryHeader?; var _r0 : m3reg_t; var _fp0 : f64) : M3Result {
+def public op_f32_Demote_f64_r(var _pc : pc_t&; var _sp : m3stack_t&; var _mem : M3MemoryHeader?&; var _r0 : m3reg_t&; var _fp0 : f64&) : M3Result {
     _fp0 = f64(f32(_fp0))
     return nextOpDirect(_pc, _sp, _mem, _r0, _fp0)
 }
 
-def public op_f32_Demote_f64_s(var _pc : pc_t; var _sp : m3stack_t; var _mem : M3MemoryHeader?; var _r0 : m3reg_t; var _fp0 : f64) : M3Result {
+def public op_f32_Demote_f64_s(var _pc : pc_t&; var _sp : m3stack_t&; var _mem : M3MemoryHeader?&; var _r0 : m3reg_t&; var _fp0 : f64&) : M3Result {
     _fp0 = f64(f32(slot_f64(_pc, _sp)))
     return nextOpDirect(_pc, _sp, _mem, _r0, _fp0)
 }
 
-def public op_f64_Promote_f32_r(var _pc : pc_t; var _sp : m3stack_t; var _mem : M3MemoryHeader?; var _r0 : m3reg_t; var _fp0 : f64) : M3Result {
+def public op_f64_Promote_f32_r(var _pc : pc_t&; var _sp : m3stack_t&; var _mem : M3MemoryHeader?&; var _r0 : m3reg_t&; var _fp0 : f64&) : M3Result {
     _fp0 = f64(f32(_fp0))
     return nextOpDirect(_pc, _sp, _mem, _r0, _fp0)
 }
 
-def public op_f64_Promote_f32_s(var _pc : pc_t; var _sp : m3stack_t; var _mem : M3MemoryHeader?; var _r0 : m3reg_t; var _fp0 : f64) : M3Result {
+def public op_f64_Promote_f32_s(var _pc : pc_t&; var _sp : m3stack_t&; var _mem : M3MemoryHeader?&; var _r0 : m3reg_t&; var _fp0 : f64&) : M3Result {
     _fp0 = f64(slot_f32(_pc, _sp))
     return nextOpDirect(_pc, _sp, _mem, _r0, _fp0)
 }
 
-def public op_f32_Convert_i32_r_r(var _pc : pc_t; var _sp : m3stack_t; var _mem : M3MemoryHeader?; var _r0 : m3reg_t; var _fp0 : f64) : M3Result {
+def public op_f32_Convert_i32_r_r(var _pc : pc_t&; var _sp : m3stack_t&; var _mem : M3MemoryHeader?&; var _r0 : m3reg_t&; var _fp0 : f64&) : M3Result {
     _fp0 = f64(f32(i32(_r0)))
     return nextOpDirect(_pc, _sp, _mem, _r0, _fp0)
 }
 
-def public op_f32_Convert_i32_s_r(var _pc : pc_t; var _sp : m3stack_t; var _mem : M3MemoryHeader?; var _r0 : m3reg_t; var _fp0 : f64) : M3Result {
+def public op_f32_Convert_i32_s_r(var _pc : pc_t&; var _sp : m3stack_t&; var _mem : M3MemoryHeader?&; var _r0 : m3reg_t&; var _fp0 : f64&) : M3Result {
     var dest = slot_ptr_f32(_pc, _sp)
     unsafe { dest[0] = f32(i32(_r0)) }
     return nextOpDirect(_pc, _sp, _mem, _r0, _fp0)
 }
 
-def public op_f32_Convert_i32_r_s(var _pc : pc_t; var _sp : m3stack_t; var _mem : M3MemoryHeader?; var _r0 : m3reg_t; var _fp0 : f64) : M3Result {
+def public op_f32_Convert_i32_r_s(var _pc : pc_t&; var _sp : m3stack_t&; var _mem : M3MemoryHeader?&; var _r0 : m3reg_t&; var _fp0 : f64&) : M3Result {
     let source = slot_i32(_pc, _sp)
     _fp0 = f64(f32(source))
     return nextOpDirect(_pc, _sp, _mem, _r0, _fp0)
 }
 
-def public op_f32_Convert_i32_s_s(var _pc : pc_t; var _sp : m3stack_t; var _mem : M3MemoryHeader?; var _r0 : m3reg_t; var _fp0 : f64) : M3Result {
+def public op_f32_Convert_i32_s_s(var _pc : pc_t&; var _sp : m3stack_t&; var _mem : M3MemoryHeader?&; var _r0 : m3reg_t&; var _fp0 : f64&) : M3Result {
     let source = slot_i32(_pc, _sp)
     var dest = slot_ptr_f32(_pc, _sp)
     unsafe { dest[0] = f32(source) }
     return nextOpDirect(_pc, _sp, _mem, _r0, _fp0)
 }
 
-def public op_f32_Convert_u32_r_r(var _pc : pc_t; var _sp : m3stack_t; var _mem : M3MemoryHeader?; var _r0 : m3reg_t; var _fp0 : f64) : M3Result {
+def public op_f32_Convert_u32_r_r(var _pc : pc_t&; var _sp : m3stack_t&; var _mem : M3MemoryHeader?&; var _r0 : m3reg_t&; var _fp0 : f64&) : M3Result {
     _fp0 = f64(f32(u32(_r0)))
     return nextOpDirect(_pc, _sp, _mem, _r0, _fp0)
 }
 
-def public op_f32_Convert_u32_s_r(var _pc : pc_t; var _sp : m3stack_t; var _mem : M3MemoryHeader?; var _r0 : m3reg_t; var _fp0 : f64) : M3Result {
+def public op_f32_Convert_u32_s_r(var _pc : pc_t&; var _sp : m3stack_t&; var _mem : M3MemoryHeader?&; var _r0 : m3reg_t&; var _fp0 : f64&) : M3Result {
     var dest = slot_ptr_f32(_pc, _sp)
     unsafe { dest[0] = f32(u32(_r0)) }
     return nextOpDirect(_pc, _sp, _mem, _r0, _fp0)
 }
 
-def public op_f32_Convert_u32_r_s(var _pc : pc_t; var _sp : m3stack_t; var _mem : M3MemoryHeader?; var _r0 : m3reg_t; var _fp0 : f64) : M3Result {
+def public op_f32_Convert_u32_r_s(var _pc : pc_t&; var _sp : m3stack_t&; var _mem : M3MemoryHeader?&; var _r0 : m3reg_t&; var _fp0 : f64&) : M3Result {
     let source = slot_u32(_pc, _sp)
     _fp0 = f64(f32(source))
     return nextOpDirect(_pc, _sp, _mem, _r0, _fp0)
 }
 
-def public op_f32_Convert_u32_s_s(var _pc : pc_t; var _sp : m3stack_t; var _mem : M3MemoryHeader?; var _r0 : m3reg_t; var _fp0 : f64) : M3Result {
+def public op_f32_Convert_u32_s_s(var _pc : pc_t&; var _sp : m3stack_t&; var _mem : M3MemoryHeader?&; var _r0 : m3reg_t&; var _fp0 : f64&) : M3Result {
     let source = slot_u32(_pc, _sp)
     var dest = slot_ptr_f32(_pc, _sp)
     unsafe { dest[0] = f32(source) }
     return nextOpDirect(_pc, _sp, _mem, _r0, _fp0)
 }
 
-def public op_f32_Convert_i64_r_r(var _pc : pc_t; var _sp : m3stack_t; var _mem : M3MemoryHeader?; var _r0 : m3reg_t; var _fp0 : f64) : M3Result {
+def public op_f32_Convert_i64_r_r(var _pc : pc_t&; var _sp : m3stack_t&; var _mem : M3MemoryHeader?&; var _r0 : m3reg_t&; var _fp0 : f64&) : M3Result {
     _fp0 = f64(f32(_r0))
     return nextOpDirect(_pc, _sp, _mem, _r0, _fp0)
 }
 
-def public op_f32_Convert_i64_s_r(var _pc : pc_t; var _sp : m3stack_t; var _mem : M3MemoryHeader?; var _r0 : m3reg_t; var _fp0 : f64) : M3Result {
+def public op_f32_Convert_i64_s_r(var _pc : pc_t&; var _sp : m3stack_t&; var _mem : M3MemoryHeader?&; var _r0 : m3reg_t&; var _fp0 : f64&) : M3Result {
     var dest = slot_ptr_f32(_pc, _sp)
     unsafe { dest[0] = f32(_r0) }
     return nextOpDirect(_pc, _sp, _mem, _r0, _fp0)
 }
 
-def public op_f32_Convert_i64_r_s(var _pc : pc_t; var _sp : m3stack_t; var _mem : M3MemoryHeader?; var _r0 : m3reg_t; var _fp0 : f64) : M3Result {
+def public op_f32_Convert_i64_r_s(var _pc : pc_t&; var _sp : m3stack_t&; var _mem : M3MemoryHeader?&; var _r0 : m3reg_t&; var _fp0 : f64&) : M3Result {
     let source = slot_i64(_pc, _sp)
     _fp0 = f64(f32(source))
     return nextOpDirect(_pc, _sp, _mem, _r0, _fp0)
 }
 
-def public op_f32_Convert_i64_s_s(var _pc : pc_t; var _sp : m3stack_t; var _mem : M3MemoryHeader?; var _r0 : m3reg_t; var _fp0 : f64) : M3Result {
+def public op_f32_Convert_i64_s_s(var _pc : pc_t&; var _sp : m3stack_t&; var _mem : M3MemoryHeader?&; var _r0 : m3reg_t&; var _fp0 : f64&) : M3Result {
     let source = slot_i64(_pc, _sp)
     var dest = slot_ptr_f32(_pc, _sp)
     unsafe { dest[0] = f32(source) }
     return nextOpDirect(_pc, _sp, _mem, _r0, _fp0)
 }
 
-def public op_f32_Convert_u64_r_r(var _pc : pc_t; var _sp : m3stack_t; var _mem : M3MemoryHeader?; var _r0 : m3reg_t; var _fp0 : f64) : M3Result {
+def public op_f32_Convert_u64_r_r(var _pc : pc_t&; var _sp : m3stack_t&; var _mem : M3MemoryHeader?&; var _r0 : m3reg_t&; var _fp0 : f64&) : M3Result {
     _fp0 = f64(f32(u64(_r0)))
     return nextOpDirect(_pc, _sp, _mem, _r0, _fp0)
 }
 
-def public op_f32_Convert_u64_s_r(var _pc : pc_t; var _sp : m3stack_t; var _mem : M3MemoryHeader?; var _r0 : m3reg_t; var _fp0 : f64) : M3Result {
+def public op_f32_Convert_u64_s_r(var _pc : pc_t&; var _sp : m3stack_t&; var _mem : M3MemoryHeader?&; var _r0 : m3reg_t&; var _fp0 : f64&) : M3Result {
     var dest = slot_ptr_f32(_pc, _sp)
     unsafe { dest[0] = f32(u64(_r0)) }
     return nextOpDirect(_pc, _sp, _mem, _r0, _fp0)
 }
 
-def public op_f32_Convert_u64_r_s(var _pc : pc_t; var _sp : m3stack_t; var _mem : M3MemoryHeader?; var _r0 : m3reg_t; var _fp0 : f64) : M3Result {
+def public op_f32_Convert_u64_r_s(var _pc : pc_t&; var _sp : m3stack_t&; var _mem : M3MemoryHeader?&; var _r0 : m3reg_t&; var _fp0 : f64&) : M3Result {
     let source = slot_u64(_pc, _sp)
     _fp0 = f64(f32(source))
     return nextOpDirect(_pc, _sp, _mem, _r0, _fp0)
 }
 
-def public op_f32_Convert_u64_s_s(var _pc : pc_t; var _sp : m3stack_t; var _mem : M3MemoryHeader?; var _r0 : m3reg_t; var _fp0 : f64) : M3Result {
+def public op_f32_Convert_u64_s_s(var _pc : pc_t&; var _sp : m3stack_t&; var _mem : M3MemoryHeader?&; var _r0 : m3reg_t&; var _fp0 : f64&) : M3Result {
     let source = slot_u64(_pc, _sp)
     var dest = slot_ptr_f32(_pc, _sp)
     unsafe { dest[0] = f32(source) }
     return nextOpDirect(_pc, _sp, _mem, _r0, _fp0)
 }
 
-def public op_f64_Convert_i32_r_r(var _pc : pc_t; var _sp : m3stack_t; var _mem : M3MemoryHeader?; var _r0 : m3reg_t; var _fp0 : f64) : M3Result {
+def public op_f64_Convert_i32_r_r(var _pc : pc_t&; var _sp : m3stack_t&; var _mem : M3MemoryHeader?&; var _r0 : m3reg_t&; var _fp0 : f64&) : M3Result {
     _fp0 = f64(i32(_r0))
     return nextOpDirect(_pc, _sp, _mem, _r0, _fp0)
 }
 
-def public op_f64_Convert_i32_s_r(var _pc : pc_t; var _sp : m3stack_t; var _mem : M3MemoryHeader?; var _r0 : m3reg_t; var _fp0 : f64) : M3Result {
+def public op_f64_Convert_i32_s_r(var _pc : pc_t&; var _sp : m3stack_t&; var _mem : M3MemoryHeader?&; var _r0 : m3reg_t&; var _fp0 : f64&) : M3Result {
     var dest = slot_ptr_f64(_pc, _sp)
     unsafe { dest[0] = f64(i32(_r0)) }
     return nextOpDirect(_pc, _sp, _mem, _r0, _fp0)
 }
 
-def public op_f64_Convert_i32_r_s(var _pc : pc_t; var _sp : m3stack_t; var _mem : M3MemoryHeader?; var _r0 : m3reg_t; var _fp0 : f64) : M3Result {
+def public op_f64_Convert_i32_r_s(var _pc : pc_t&; var _sp : m3stack_t&; var _mem : M3MemoryHeader?&; var _r0 : m3reg_t&; var _fp0 : f64&) : M3Result {
     let source = slot_i32(_pc, _sp)
     _fp0 = f64(source)
     return nextOpDirect(_pc, _sp, _mem, _r0, _fp0)
 }
 
-def public op_f64_Convert_i32_s_s(var _pc : pc_t; var _sp : m3stack_t; var _mem : M3MemoryHeader?; var _r0 : m3reg_t; var _fp0 : f64) : M3Result {
+def public op_f64_Convert_i32_s_s(var _pc : pc_t&; var _sp : m3stack_t&; var _mem : M3MemoryHeader?&; var _r0 : m3reg_t&; var _fp0 : f64&) : M3Result {
     let source = slot_i32(_pc, _sp)
     var dest = slot_ptr_f64(_pc, _sp)
     unsafe { dest[0] = f64(source) }
     return nextOpDirect(_pc, _sp, _mem, _r0, _fp0)
 }
 
-def public op_f64_Convert_u32_r_r(var _pc : pc_t; var _sp : m3stack_t; var _mem : M3MemoryHeader?; var _r0 : m3reg_t; var _fp0 : f64) : M3Result {
+def public op_f64_Convert_u32_r_r(var _pc : pc_t&; var _sp : m3stack_t&; var _mem : M3MemoryHeader?&; var _r0 : m3reg_t&; var _fp0 : f64&) : M3Result {
     _fp0 = f64(u32(_r0))
     return nextOpDirect(_pc, _sp, _mem, _r0, _fp0)
 }
 
-def public op_f64_Convert_u32_s_r(var _pc : pc_t; var _sp : m3stack_t; var _mem : M3MemoryHeader?; var _r0 : m3reg_t; var _fp0 : f64) : M3Result {
+def public op_f64_Convert_u32_s_r(var _pc : pc_t&; var _sp : m3stack_t&; var _mem : M3MemoryHeader?&; var _r0 : m3reg_t&; var _fp0 : f64&) : M3Result {
     var dest = slot_ptr_f64(_pc, _sp)
     unsafe { dest[0] = f64(u32(_r0)) }
     return nextOpDirect(_pc, _sp, _mem, _r0, _fp0)
 }
 
-def public op_f64_Convert_u32_r_s(var _pc : pc_t; var _sp : m3stack_t; var _mem : M3MemoryHeader?; var _r0 : m3reg_t; var _fp0 : f64) : M3Result {
+def public op_f64_Convert_u32_r_s(var _pc : pc_t&; var _sp : m3stack_t&; var _mem : M3MemoryHeader?&; var _r0 : m3reg_t&; var _fp0 : f64&) : M3Result {
     let source = slot_u32(_pc, _sp)
     _fp0 = f64(source)
     return nextOpDirect(_pc, _sp, _mem, _r0, _fp0)
 }
 
-def public op_f64_Convert_u32_s_s(var _pc : pc_t; var _sp : m3stack_t; var _mem : M3MemoryHeader?; var _r0 : m3reg_t; var _fp0 : f64) : M3Result {
+def public op_f64_Convert_u32_s_s(var _pc : pc_t&; var _sp : m3stack_t&; var _mem : M3MemoryHeader?&; var _r0 : m3reg_t&; var _fp0 : f64&) : M3Result {
     let source = slot_u32(_pc, _sp)
     var dest = slot_ptr_f64(_pc, _sp)
     unsafe { dest[0] = f64(source) }
     return nextOpDirect(_pc, _sp, _mem, _r0, _fp0)
 }
 
-def public op_f64_Convert_i64_r_r(var _pc : pc_t; var _sp : m3stack_t; var _mem : M3MemoryHeader?; var _r0 : m3reg_t; var _fp0 : f64) : M3Result {
+def public op_f64_Convert_i64_r_r(var _pc : pc_t&; var _sp : m3stack_t&; var _mem : M3MemoryHeader?&; var _r0 : m3reg_t&; var _fp0 : f64&) : M3Result {
     _fp0 = f64(_r0)
     return nextOpDirect(_pc, _sp, _mem, _r0, _fp0)
 }
 
-def public op_f64_Convert_i64_s_r(var _pc : pc_t; var _sp : m3stack_t; var _mem : M3MemoryHeader?; var _r0 : m3reg_t; var _fp0 : f64) : M3Result {
+def public op_f64_Convert_i64_s_r(var _pc : pc_t&; var _sp : m3stack_t&; var _mem : M3MemoryHeader?&; var _r0 : m3reg_t&; var _fp0 : f64&) : M3Result {
     var dest = slot_ptr_f64(_pc, _sp)
     unsafe { dest[0] = f64(_r0) }
     return nextOpDirect(_pc, _sp, _mem, _r0, _fp0)
 }
 
-def public op_f64_Convert_i64_r_s(var _pc : pc_t; var _sp : m3stack_t; var _mem : M3MemoryHeader?; var _r0 : m3reg_t; var _fp0 : f64) : M3Result {
+def public op_f64_Convert_i64_r_s(var _pc : pc_t&; var _sp : m3stack_t&; var _mem : M3MemoryHeader?&; var _r0 : m3reg_t&; var _fp0 : f64&) : M3Result {
     let source = slot_i64(_pc, _sp)
     _fp0 = f64(source)
     return nextOpDirect(_pc, _sp, _mem, _r0, _fp0)
 }
 
-def public op_f64_Convert_i64_s_s(var _pc : pc_t; var _sp : m3stack_t; var _mem : M3MemoryHeader?; var _r0 : m3reg_t; var _fp0 : f64) : M3Result {
+def public op_f64_Convert_i64_s_s(var _pc : pc_t&; var _sp : m3stack_t&; var _mem : M3MemoryHeader?&; var _r0 : m3reg_t&; var _fp0 : f64&) : M3Result {
     let source = slot_i64(_pc, _sp)
     var dest = slot_ptr_f64(_pc, _sp)
     unsafe { dest[0] = f64(source) }
     return nextOpDirect(_pc, _sp, _mem, _r0, _fp0)
 }
 
-def public op_f64_Convert_u64_r_r(var _pc : pc_t; var _sp : m3stack_t; var _mem : M3MemoryHeader?; var _r0 : m3reg_t; var _fp0 : f64) : M3Result {
+def public op_f64_Convert_u64_r_r(var _pc : pc_t&; var _sp : m3stack_t&; var _mem : M3MemoryHeader?&; var _r0 : m3reg_t&; var _fp0 : f64&) : M3Result {
     _fp0 = f64(u64(_r0))
     return nextOpDirect(_pc, _sp, _mem, _r0, _fp0)
 }
 
-def public op_f64_Convert_u64_s_r(var _pc : pc_t; var _sp : m3stack_t; var _mem : M3MemoryHeader?; var _r0 : m3reg_t; var _fp0 : f64) : M3Result {
+def public op_f64_Convert_u64_s_r(var _pc : pc_t&; var _sp : m3stack_t&; var _mem : M3MemoryHeader?&; var _r0 : m3reg_t&; var _fp0 : f64&) : M3Result {
     var dest = slot_ptr_f64(_pc, _sp)
     unsafe { dest[0] = f64(u64(_r0)) }
     return nextOpDirect(_pc, _sp, _mem, _r0, _fp0)
 }
 
-def public op_f64_Convert_u64_r_s(var _pc : pc_t; var _sp : m3stack_t; var _mem : M3MemoryHeader?; var _r0 : m3reg_t; var _fp0 : f64) : M3Result {
+def public op_f64_Convert_u64_r_s(var _pc : pc_t&; var _sp : m3stack_t&; var _mem : M3MemoryHeader?&; var _r0 : m3reg_t&; var _fp0 : f64&) : M3Result {
     let source = slot_u64(_pc, _sp)
     _fp0 = f64(source)
     return nextOpDirect(_pc, _sp, _mem, _r0, _fp0)
 }
 
-def public op_f64_Convert_u64_s_s(var _pc : pc_t; var _sp : m3stack_t; var _mem : M3MemoryHeader?; var _r0 : m3reg_t; var _fp0 : f64) : M3Result {
+def public op_f64_Convert_u64_s_s(var _pc : pc_t&; var _sp : m3stack_t&; var _mem : M3MemoryHeader?&; var _r0 : m3reg_t&; var _fp0 : f64&) : M3Result {
     let source = slot_u64(_pc, _sp)
     var dest = slot_ptr_f64(_pc, _sp)
     unsafe { dest[0] = f64(source) }
     return nextOpDirect(_pc, _sp, _mem, _r0, _fp0)
 }
 
-def public op_i32_Reinterpret_f32_r_r(var _pc : pc_t; var _sp : m3stack_t; var _mem : M3MemoryHeader?; var _r0 : m3reg_t; var _fp0 : f64) : M3Result {
+def public op_i32_Reinterpret_f32_r_r(var _pc : pc_t&; var _sp : m3stack_t&; var _mem : M3MemoryHeader?&; var _r0 : m3reg_t&; var _fp0 : f64&) : M3Result {
     _r0 = m3reg_t(unsafe(reinterpret<i32>(f32(_fp0))))
     return nextOpDirect(_pc, _sp, _mem, _r0, _fp0)
 }
 
-def public op_i32_Reinterpret_f32_r_s(var _pc : pc_t; var _sp : m3stack_t; var _mem : M3MemoryHeader?; var _r0 : m3reg_t; var _fp0 : f64) : M3Result {
+def public op_i32_Reinterpret_f32_r_s(var _pc : pc_t&; var _sp : m3stack_t&; var _mem : M3MemoryHeader?&; var _r0 : m3reg_t&; var _fp0 : f64&) : M3Result {
     let source = slot_f32(_pc, _sp)
     _r0 = m3reg_t(unsafe(reinterpret<i32>(source)))
     return nextOpDirect(_pc, _sp, _mem, _r0, _fp0)
 }
 
-def public op_i32_Reinterpret_f32_s_r(var _pc : pc_t; var _sp : m3stack_t; var _mem : M3MemoryHeader?; var _r0 : m3reg_t; var _fp0 : f64) : M3Result {
+def public op_i32_Reinterpret_f32_s_r(var _pc : pc_t&; var _sp : m3stack_t&; var _mem : M3MemoryHeader?&; var _r0 : m3reg_t&; var _fp0 : f64&) : M3Result {
     var dest = slot_ptr_i32(_pc, _sp)
     unsafe { dest[0] = unsafe(reinterpret<i32>(f32(_fp0))) }
     return nextOpDirect(_pc, _sp, _mem, _r0, _fp0)
 }
 
-def public op_i32_Reinterpret_f32_s_s(var _pc : pc_t; var _sp : m3stack_t; var _mem : M3MemoryHeader?; var _r0 : m3reg_t; var _fp0 : f64) : M3Result {
+def public op_i32_Reinterpret_f32_s_s(var _pc : pc_t&; var _sp : m3stack_t&; var _mem : M3MemoryHeader?&; var _r0 : m3reg_t&; var _fp0 : f64&) : M3Result {
     let source = slot_f32(_pc, _sp)
     var dest = slot_ptr_i32(_pc, _sp)
     unsafe { dest[0] = unsafe(reinterpret<i32>(source)) }
     return nextOpDirect(_pc, _sp, _mem, _r0, _fp0)
 }
 
-def public op_i64_Reinterpret_f64_r_r(var _pc : pc_t; var _sp : m3stack_t; var _mem : M3MemoryHeader?; var _r0 : m3reg_t; var _fp0 : f64) : M3Result {
+def public op_i64_Reinterpret_f64_r_r(var _pc : pc_t&; var _sp : m3stack_t&; var _mem : M3MemoryHeader?&; var _r0 : m3reg_t&; var _fp0 : f64&) : M3Result {
     _r0 = unsafe(reinterpret<i64>(_fp0))
     return nextOpDirect(_pc, _sp, _mem, _r0, _fp0)
 }
 
-def public op_i64_Reinterpret_f64_r_s(var _pc : pc_t; var _sp : m3stack_t; var _mem : M3MemoryHeader?; var _r0 : m3reg_t; var _fp0 : f64) : M3Result {
+def public op_i64_Reinterpret_f64_r_s(var _pc : pc_t&; var _sp : m3stack_t&; var _mem : M3MemoryHeader?&; var _r0 : m3reg_t&; var _fp0 : f64&) : M3Result {
     let source = slot_f64(_pc, _sp)
     _r0 = unsafe(reinterpret<i64>(source))
     return nextOpDirect(_pc, _sp, _mem, _r0, _fp0)
 }
 
-def public op_i64_Reinterpret_f64_s_r(var _pc : pc_t; var _sp : m3stack_t; var _mem : M3MemoryHeader?; var _r0 : m3reg_t; var _fp0 : f64) : M3Result {
+def public op_i64_Reinterpret_f64_s_r(var _pc : pc_t&; var _sp : m3stack_t&; var _mem : M3MemoryHeader?&; var _r0 : m3reg_t&; var _fp0 : f64&) : M3Result {
     var dest = slot_ptr_i64(_pc, _sp)
     unsafe { dest[0] = unsafe(reinterpret<i64>(_fp0)) }
     return nextOpDirect(_pc, _sp, _mem, _r0, _fp0)
 }
 
-def public op_i64_Reinterpret_f64_s_s(var _pc : pc_t; var _sp : m3stack_t; var _mem : M3MemoryHeader?; var _r0 : m3reg_t; var _fp0 : f64) : M3Result {
+def public op_i64_Reinterpret_f64_s_s(var _pc : pc_t&; var _sp : m3stack_t&; var _mem : M3MemoryHeader?&; var _r0 : m3reg_t&; var _fp0 : f64&) : M3Result {
     let source = slot_f64(_pc, _sp)
     var dest = slot_ptr_i64(_pc, _sp)
     unsafe { dest[0] = unsafe(reinterpret<i64>(source)) }
     return nextOpDirect(_pc, _sp, _mem, _r0, _fp0)
 }
 
-def public op_f32_Reinterpret_i32_r_r(var _pc : pc_t; var _sp : m3stack_t; var _mem : M3MemoryHeader?; var _r0 : m3reg_t; var _fp0 : f64) : M3Result {
+def public op_f32_Reinterpret_i32_r_r(var _pc : pc_t&; var _sp : m3stack_t&; var _mem : M3MemoryHeader?&; var _r0 : m3reg_t&; var _fp0 : f64&) : M3Result {
     _fp0 = f64(unsafe(reinterpret<f32>(i32(_r0))))
     return nextOpDirect(_pc, _sp, _mem, _r0, _fp0)
 }
 
-def public op_f32_Reinterpret_i32_r_s(var _pc : pc_t; var _sp : m3stack_t; var _mem : M3MemoryHeader?; var _r0 : m3reg_t; var _fp0 : f64) : M3Result {
+def public op_f32_Reinterpret_i32_r_s(var _pc : pc_t&; var _sp : m3stack_t&; var _mem : M3MemoryHeader?&; var _r0 : m3reg_t&; var _fp0 : f64&) : M3Result {
     let source = slot_i32(_pc, _sp)
     _fp0 = f64(unsafe(reinterpret<f32>(source)))
     return nextOpDirect(_pc, _sp, _mem, _r0, _fp0)
 }
 
-def public op_f32_Reinterpret_i32_s_r(var _pc : pc_t; var _sp : m3stack_t; var _mem : M3MemoryHeader?; var _r0 : m3reg_t; var _fp0 : f64) : M3Result {
+def public op_f32_Reinterpret_i32_s_r(var _pc : pc_t&; var _sp : m3stack_t&; var _mem : M3MemoryHeader?&; var _r0 : m3reg_t&; var _fp0 : f64&) : M3Result {
     var dest = slot_ptr_f32(_pc, _sp)
     unsafe { dest[0] = unsafe(reinterpret<f32>(i32(_r0))) }
     return nextOpDirect(_pc, _sp, _mem, _r0, _fp0)
 }
 
-def public op_f32_Reinterpret_i32_s_s(var _pc : pc_t; var _sp : m3stack_t; var _mem : M3MemoryHeader?; var _r0 : m3reg_t; var _fp0 : f64) : M3Result {
+def public op_f32_Reinterpret_i32_s_s(var _pc : pc_t&; var _sp : m3stack_t&; var _mem : M3MemoryHeader?&; var _r0 : m3reg_t&; var _fp0 : f64&) : M3Result {
     let source = slot_i32(_pc, _sp)
     var dest = slot_ptr_f32(_pc, _sp)
     unsafe { dest[0] = unsafe(reinterpret<f32>(source)) }
     return nextOpDirect(_pc, _sp, _mem, _r0, _fp0)
 }
 
-def public op_f64_Reinterpret_i64_r_r(var _pc : pc_t; var _sp : m3stack_t; var _mem : M3MemoryHeader?; var _r0 : m3reg_t; var _fp0 : f64) : M3Result {
+def public op_f64_Reinterpret_i64_r_r(var _pc : pc_t&; var _sp : m3stack_t&; var _mem : M3MemoryHeader?&; var _r0 : m3reg_t&; var _fp0 : f64&) : M3Result {
     _fp0 = unsafe(reinterpret<f64>(_r0))
     return nextOpDirect(_pc, _sp, _mem, _r0, _fp0)
 }
 
-def public op_f64_Reinterpret_i64_r_s(var _pc : pc_t; var _sp : m3stack_t; var _mem : M3MemoryHeader?; var _r0 : m3reg_t; var _fp0 : f64) : M3Result {
+def public op_f64_Reinterpret_i64_r_s(var _pc : pc_t&; var _sp : m3stack_t&; var _mem : M3MemoryHeader?&; var _r0 : m3reg_t&; var _fp0 : f64&) : M3Result {
     let source = slot_i64(_pc, _sp)
     _fp0 = unsafe(reinterpret<f64>(source))
     return nextOpDirect(_pc, _sp, _mem, _r0, _fp0)
 }
 
-def public op_f64_Reinterpret_i64_s_r(var _pc : pc_t; var _sp : m3stack_t; var _mem : M3MemoryHeader?; var _r0 : m3reg_t; var _fp0 : f64) : M3Result {
+def public op_f64_Reinterpret_i64_s_r(var _pc : pc_t&; var _sp : m3stack_t&; var _mem : M3MemoryHeader?&; var _r0 : m3reg_t&; var _fp0 : f64&) : M3Result {
     var dest = slot_ptr_f64(_pc, _sp)
     unsafe { dest[0] = unsafe(reinterpret<f64>(_r0)) }
     return nextOpDirect(_pc, _sp, _mem, _r0, _fp0)
 }
 
-def public op_f64_Reinterpret_i64_s_s(var _pc : pc_t; var _sp : m3stack_t; var _mem : M3MemoryHeader?; var _r0 : m3reg_t; var _fp0 : f64) : M3Result {
+def public op_f64_Reinterpret_i64_s_s(var _pc : pc_t&; var _sp : m3stack_t&; var _mem : M3MemoryHeader?&; var _r0 : m3reg_t&; var _fp0 : f64&) : M3Result {
     let source = slot_i64(_pc, _sp)
     var dest = slot_ptr_f64(_pc, _sp)
     unsafe { dest[0] = unsafe(reinterpret<f64>(source)) }
     return nextOpDirect(_pc, _sp, _mem, _r0, _fp0)
 }
 
-def public op_GetGlobal_s32(var _pc : pc_t; var _sp : m3stack_t; var _mem : M3MemoryHeader?; var _r0 : m3reg_t; var _fp0 : f64) : M3Result {
+def public op_GetGlobal_s32(var _pc : pc_t&; var _sp : m3stack_t&; var _mem : M3MemoryHeader?&; var _r0 : m3reg_t&; var _fp0 : f64&) : M3Result {
     var global = unsafe(reinterpret<u32?>(immediate_code(_pc)))
     unsafe { slot_ptr_u32(_pc, _sp)[0] = global[0] }
     return nextOpDirect(_pc, _sp, _mem, _r0, _fp0)
 }
 
-def public op_GetGlobal_s64(var _pc : pc_t; var _sp : m3stack_t; var _mem : M3MemoryHeader?; var _r0 : m3reg_t; var _fp0 : f64) : M3Result {
+def public op_GetGlobal_s64(var _pc : pc_t&; var _sp : m3stack_t&; var _mem : M3MemoryHeader?&; var _r0 : m3reg_t&; var _fp0 : f64&) : M3Result {
     var global = unsafe(reinterpret<u64?>(immediate_code(_pc)))
     unsafe { slot_ptr_u64(_pc, _sp)[0] = global[0] }
     return nextOpDirect(_pc, _sp, _mem, _r0, _fp0)
 }
 
-def public op_SetGlobal_i32(var _pc : pc_t; var _sp : m3stack_t; var _mem : M3MemoryHeader?; var _r0 : m3reg_t; var _fp0 : f64) : M3Result {
+def public op_SetGlobal_i32(var _pc : pc_t&; var _sp : m3stack_t&; var _mem : M3MemoryHeader?&; var _r0 : m3reg_t&; var _fp0 : f64&) : M3Result {
     var global = unsafe(reinterpret<u32?>(immediate_code(_pc)))
     unsafe { global[0] = u32(_r0) }
     return nextOpDirect(_pc, _sp, _mem, _r0, _fp0)
 }
 
-def public op_SetGlobal_i64(var _pc : pc_t; var _sp : m3stack_t; var _mem : M3MemoryHeader?; var _r0 : m3reg_t; var _fp0 : f64) : M3Result {
+def public op_SetGlobal_i64(var _pc : pc_t&; var _sp : m3stack_t&; var _mem : M3MemoryHeader?&; var _r0 : m3reg_t&; var _fp0 : f64&) : M3Result {
     var global = unsafe(reinterpret<u64?>(immediate_code(_pc)))
     unsafe { global[0] = u64(_r0) }
     return nextOpDirect(_pc, _sp, _mem, _r0, _fp0)
 }
 
-def public op_Call(var _pc : pc_t; var _sp : m3stack_t; var _mem : M3MemoryHeader?; var _r0 : m3reg_t; var _fp0 : f64) : M3Result {
+def public op_Call(var _pc : pc_t&; var _sp : m3stack_t&; var _mem : M3MemoryHeader?&; var _r0 : m3reg_t&; var _fp0 : f64&) : M3Result {
     var callPC = immediate_pc(_pc)
     let stackOffset = immediate_i32(_pc)
     let memory = m3MemInfo(_mem)
@@ -2945,7 +2959,7 @@ def public op_Call(var _pc : pc_t; var _sp : m3stack_t; var _mem : M3MemoryHeade
     return forwardTrap(r)
 }
 
-def public op_CallIndirect(var _pc : pc_t; var _sp : m3stack_t; var _mem : M3MemoryHeader?; var _r0 : m3reg_t; var _fp0 : f64) : M3Result {
+def public op_CallIndirect(var _pc : pc_t&; var _sp : m3stack_t&; var _mem : M3MemoryHeader?&; var _r0 : m3reg_t&; var _fp0 : f64&) : M3Result {
     let tableIndex = slot_u32(_pc, _sp)
     let _module = immediate_module(_pc)
     let _type = immediate_functype(_pc)
@@ -2973,7 +2987,7 @@ def public op_CallIndirect(var _pc : pc_t; var _sp : m3stack_t; var _mem : M3Mem
     return forwardTrap(r)
 }
 
-def public op_CallRawFunction(var _pc : pc_t; var _sp : m3stack_t; var _mem : M3MemoryHeader?; var _r0 : m3reg_t; var _fp0 : f64) : M3Result {
+def public op_CallRawFunction(var _pc : pc_t&; var _sp : m3stack_t&; var _mem : M3MemoryHeader?&; var _r0 : m3reg_t&; var _fp0 : f64&) : M3Result {
     var ctx : M3ImportContext
     let call = immediate_rawcall(_pc)
     ctx._function = immediate_function(_pc)
@@ -2989,13 +3003,13 @@ def public op_CallRawFunction(var _pc : pc_t; var _sp : m3stack_t; var _mem : M3
     return forwardTrap(possible_trap)
 }
 
-def public op_MemSize(var _pc : pc_t; var _sp : m3stack_t; var _mem : M3MemoryHeader?; var _r0 : m3reg_t; var _fp0 : f64) : M3Result {
+def public op_MemSize(var _pc : pc_t&; var _sp : m3stack_t&; var _mem : M3MemoryHeader?&; var _r0 : m3reg_t&; var _fp0 : f64&) : M3Result {
     let memory = m3MemInfo(_mem)
     _r0 = m3reg_t(memory.numPages)
     return nextOpDirect(_pc, _sp, _mem, _r0, _fp0)
 }
 
-def public op_MemGrow(var _pc : pc_t; var _sp : m3stack_t; var _mem : M3MemoryHeader?; var _r0 : m3reg_t; var _fp0 : f64) : M3Result {
+def public op_MemGrow(var _pc : pc_t&; var _sp : m3stack_t&; var _mem : M3MemoryHeader?&; var _r0 : m3reg_t&; var _fp0 : f64&) : M3Result {
     let runtime = m3MemRuntime(_mem)
     let memory = unsafe(addr(runtime.memory))
     let numPagesToGrow = i32(_r0)
@@ -3011,7 +3025,7 @@ def public op_MemGrow(var _pc : pc_t; var _sp : m3stack_t; var _mem : M3MemoryHe
     return nextOpDirect(_pc, _sp, _mem, _r0, _fp0)
 }
 
-def public op_MemCopy(var _pc : pc_t; var _sp : m3stack_t; var _mem : M3MemoryHeader?; var _r0 : m3reg_t; var _fp0 : f64) : M3Result {
+def public op_MemCopy(var _pc : pc_t&; var _sp : m3stack_t&; var _mem : M3MemoryHeader?&; var _r0 : m3reg_t&; var _fp0 : f64&) : M3Result {
     let size = u32(_r0)
     let source = u64(slot_u32(_pc, _sp))
     let destination = u64(slot_u32(_pc, _sp))
@@ -3026,7 +3040,7 @@ def public op_MemCopy(var _pc : pc_t; var _sp : m3stack_t; var _mem : M3MemoryHe
     return newTrap(_pc, _mem, m3Err_trapOutOfBoundsMemoryAccess)
 }
 
-def public op_MemFill(var _pc : pc_t; var _sp : m3stack_t; var _mem : M3MemoryHeader?; var _r0 : m3reg_t; var _fp0 : f64) : M3Result {
+def public op_MemFill(var _pc : pc_t&; var _sp : m3stack_t&; var _mem : M3MemoryHeader?&; var _r0 : m3reg_t&; var _fp0 : f64&) : M3Result {
     let size = u32(_r0)
     let byte = slot_u32(_pc, _sp)
     let destination = u64(slot_u32(_pc, _sp))
@@ -3037,10 +3051,11 @@ def public op_MemFill(var _pc : pc_t; var _sp : m3stack_t; var _mem : M3MemoryHe
     return newTrap(_pc, _mem, m3Err_trapOutOfBoundsMemoryAccess)
 }
 
-def public op_Compile(var _pc : pc_t; var _sp : m3stack_t; var _mem : M3MemoryHeader?; var _r0 : m3reg_t; var _fp0 : f64) : M3Result {
+def public op_Compile(var _pc : pc_t&; var _sp : m3stack_t&; var _mem : M3MemoryHeader?&; var _r0 : m3reg_t&; var _fp0 : f64&) : M3Result {
     unsafe {
         var rewrite = (_pc - 1)
-        rewrite[0] = unsafe(reinterpret<code_t>(@@op_Call))
+        // Through u64: the AOT backend lowers a function-to-pointer reinterpret to the value's address; see EmitWord in m3_code.das.
+        rewrite[0] = unsafe(reinterpret<code_t>(reinterpret<u64>(@@op_Call)))
     }
     let _function = immediate_function(_pc)
     var result : M3Result = m3Err_none
@@ -3054,7 +3069,7 @@ def public op_Compile(var _pc : pc_t; var _sp : m3stack_t; var _mem : M3MemoryHe
     return newTrap(_pc, _mem, result)
 }
 
-def public op_Entry(var _pc : pc_t; var _sp : m3stack_t; var _mem : M3MemoryHeader?; var _r0 : m3reg_t; var _fp0 : f64) : M3Result {
+def public op_Entry(var _pc : pc_t&; var _sp : m3stack_t&; var _mem : M3MemoryHeader?&; var _r0 : m3reg_t&; var _fp0 : f64&) : M3Result {
     _r0 = 0l
     _fp0 = 0.0lf
     let _function = immediate_function(_pc)
@@ -3076,7 +3091,7 @@ if (d_m3SkipStackCheck || intptr(stackEnd) < intptr(_mem.maxStack)) {
     return newTrap(_pc, _mem, m3Err_trapStackOverflow)
 }
 
-def public op_Loop(var _pc : pc_t; var _sp : m3stack_t; var _mem : M3MemoryHeader?; var _r0 : m3reg_t; var _fp0 : f64) : M3Result {
+def public op_Loop(var _pc : pc_t&; var _sp : m3stack_t&; var _mem : M3MemoryHeader?&; var _r0 : m3reg_t&; var _fp0 : f64&) : M3Result {
     _r0 = 0l
     _fp0 = 0.0lf
     var r : M3Result
@@ -3092,49 +3107,49 @@ def public op_Loop(var _pc : pc_t; var _sp : m3stack_t; var _mem : M3MemoryHeade
     return forwardTrap(r)
 }
 
-def public op_Branch(var _pc : pc_t; var _sp : m3stack_t; var _mem : M3MemoryHeader?; var _r0 : m3reg_t; var _fp0 : f64) : M3Result {
+def public op_Branch(var _pc : pc_t&; var _sp : m3stack_t&; var _mem : M3MemoryHeader?&; var _r0 : m3reg_t&; var _fp0 : f64&) : M3Result {
     unsafe {
         var branch = reinterpret<pc_t>(_pc[0])
-        return jumpOpDirect(branch, _sp, _mem, _r0, _fp0)
+        return jumpOpDirect(_pc, branch)
     }
 }
 
-def public op_If_r(var _pc : pc_t; var _sp : m3stack_t; var _mem : M3MemoryHeader?; var _r0 : m3reg_t; var _fp0 : f64) : M3Result {
+def public op_If_r(var _pc : pc_t&; var _sp : m3stack_t&; var _mem : M3MemoryHeader?&; var _r0 : m3reg_t&; var _fp0 : f64&) : M3Result {
     let condition = i32(_r0)
     var elsePC = immediate_pc(_pc)
     if (condition != 0) { return nextOpDirect(_pc, _sp, _mem, _r0, _fp0) }
-    return jumpOpDirect(elsePC, _sp, _mem, _r0, _fp0)
+    return jumpOpDirect(_pc, elsePC)
 }
 
-def public op_If_s(var _pc : pc_t; var _sp : m3stack_t; var _mem : M3MemoryHeader?; var _r0 : m3reg_t; var _fp0 : f64) : M3Result {
+def public op_If_s(var _pc : pc_t&; var _sp : m3stack_t&; var _mem : M3MemoryHeader?&; var _r0 : m3reg_t&; var _fp0 : f64&) : M3Result {
     let condition = slot_i32(_pc, _sp)
     var elsePC = immediate_pc(_pc)
     if (condition != 0) { return nextOpDirect(_pc, _sp, _mem, _r0, _fp0) }
-    return jumpOpDirect(elsePC, _sp, _mem, _r0, _fp0)
+    return jumpOpDirect(_pc, elsePC)
 }
 
-def public op_BranchTable(var _pc : pc_t; var _sp : m3stack_t; var _mem : M3MemoryHeader?; var _r0 : m3reg_t; var _fp0 : f64) : M3Result {
+def public op_BranchTable(var _pc : pc_t&; var _sp : m3stack_t&; var _mem : M3MemoryHeader?&; var _r0 : m3reg_t&; var _fp0 : f64&) : M3Result {
     var branchIndex = slot_u32(_pc, _sp)
     let numTargets = immediate_u32(_pc)
     var branches = unsafe(reinterpret<pc_t?>(_pc))
     if (branchIndex > numTargets) { branchIndex = numTargets }
     unsafe {
         var target : pc_t = branches[int(branchIndex)]
-        return jumpOpDirect(target, _sp, _mem, _r0, _fp0)
+        return jumpOpDirect(_pc, target)
     }
 }
 
-def public op_SetRegister_i32(var _pc : pc_t; var _sp : m3stack_t; var _mem : M3MemoryHeader?; var _r0 : m3reg_t; var _fp0 : f64) : M3Result {
+def public op_SetRegister_i32(var _pc : pc_t&; var _sp : m3stack_t&; var _mem : M3MemoryHeader?&; var _r0 : m3reg_t&; var _fp0 : f64&) : M3Result {
     _r0 = m3reg_t(slot_i32(_pc, _sp))
     return nextOpDirect(_pc, _sp, _mem, _r0, _fp0)
 }
 
-def public op_SetSlot_i32(var _pc : pc_t; var _sp : m3stack_t; var _mem : M3MemoryHeader?; var _r0 : m3reg_t; var _fp0 : f64) : M3Result {
+def public op_SetSlot_i32(var _pc : pc_t&; var _sp : m3stack_t&; var _mem : M3MemoryHeader?&; var _r0 : m3reg_t&; var _fp0 : f64&) : M3Result {
     unsafe { slot_ptr_i32(_pc, _sp)[0] = i32(_r0) }
     return nextOpDirect(_pc, _sp, _mem, _r0, _fp0)
 }
 
-def public op_PreserveSetSlot_i32(var _pc : pc_t; var _sp : m3stack_t; var _mem : M3MemoryHeader?; var _r0 : m3reg_t; var _fp0 : f64) : M3Result {
+def public op_PreserveSetSlot_i32(var _pc : pc_t&; var _sp : m3stack_t&; var _mem : M3MemoryHeader?&; var _r0 : m3reg_t&; var _fp0 : f64&) : M3Result {
     var stack = slot_ptr_i32(_pc, _sp)
     var preserve = slot_ptr_i32(_pc, _sp)
     unsafe { preserve[0] = stack[0] }
@@ -3142,17 +3157,17 @@ def public op_PreserveSetSlot_i32(var _pc : pc_t; var _sp : m3stack_t; var _mem 
     return nextOpDirect(_pc, _sp, _mem, _r0, _fp0)
 }
 
-def public op_SetRegister_i64(var _pc : pc_t; var _sp : m3stack_t; var _mem : M3MemoryHeader?; var _r0 : m3reg_t; var _fp0 : f64) : M3Result {
+def public op_SetRegister_i64(var _pc : pc_t&; var _sp : m3stack_t&; var _mem : M3MemoryHeader?&; var _r0 : m3reg_t&; var _fp0 : f64&) : M3Result {
     _r0 = slot_i64(_pc, _sp)
     return nextOpDirect(_pc, _sp, _mem, _r0, _fp0)
 }
 
-def public op_SetSlot_i64(var _pc : pc_t; var _sp : m3stack_t; var _mem : M3MemoryHeader?; var _r0 : m3reg_t; var _fp0 : f64) : M3Result {
+def public op_SetSlot_i64(var _pc : pc_t&; var _sp : m3stack_t&; var _mem : M3MemoryHeader?&; var _r0 : m3reg_t&; var _fp0 : f64&) : M3Result {
     unsafe { slot_ptr_i64(_pc, _sp)[0] = _r0 }
     return nextOpDirect(_pc, _sp, _mem, _r0, _fp0)
 }
 
-def public op_PreserveSetSlot_i64(var _pc : pc_t; var _sp : m3stack_t; var _mem : M3MemoryHeader?; var _r0 : m3reg_t; var _fp0 : f64) : M3Result {
+def public op_PreserveSetSlot_i64(var _pc : pc_t&; var _sp : m3stack_t&; var _mem : M3MemoryHeader?&; var _r0 : m3reg_t&; var _fp0 : f64&) : M3Result {
     var stack = slot_ptr_i64(_pc, _sp)
     var preserve = slot_ptr_i64(_pc, _sp)
     unsafe { preserve[0] = stack[0] }
@@ -3160,17 +3175,17 @@ def public op_PreserveSetSlot_i64(var _pc : pc_t; var _sp : m3stack_t; var _mem 
     return nextOpDirect(_pc, _sp, _mem, _r0, _fp0)
 }
 
-def public op_SetRegister_f32(var _pc : pc_t; var _sp : m3stack_t; var _mem : M3MemoryHeader?; var _r0 : m3reg_t; var _fp0 : f64) : M3Result {
+def public op_SetRegister_f32(var _pc : pc_t&; var _sp : m3stack_t&; var _mem : M3MemoryHeader?&; var _r0 : m3reg_t&; var _fp0 : f64&) : M3Result {
     _fp0 = f64(slot_f32(_pc, _sp))
     return nextOpDirect(_pc, _sp, _mem, _r0, _fp0)
 }
 
-def public op_SetSlot_f32(var _pc : pc_t; var _sp : m3stack_t; var _mem : M3MemoryHeader?; var _r0 : m3reg_t; var _fp0 : f64) : M3Result {
+def public op_SetSlot_f32(var _pc : pc_t&; var _sp : m3stack_t&; var _mem : M3MemoryHeader?&; var _r0 : m3reg_t&; var _fp0 : f64&) : M3Result {
     unsafe { slot_ptr_f32(_pc, _sp)[0] = f32(_fp0) }
     return nextOpDirect(_pc, _sp, _mem, _r0, _fp0)
 }
 
-def public op_PreserveSetSlot_f32(var _pc : pc_t; var _sp : m3stack_t; var _mem : M3MemoryHeader?; var _r0 : m3reg_t; var _fp0 : f64) : M3Result {
+def public op_PreserveSetSlot_f32(var _pc : pc_t&; var _sp : m3stack_t&; var _mem : M3MemoryHeader?&; var _r0 : m3reg_t&; var _fp0 : f64&) : M3Result {
     var stack = slot_ptr_f32(_pc, _sp)
     var preserve = slot_ptr_f32(_pc, _sp)
     unsafe { preserve[0] = stack[0] }
@@ -3178,17 +3193,17 @@ def public op_PreserveSetSlot_f32(var _pc : pc_t; var _sp : m3stack_t; var _mem 
     return nextOpDirect(_pc, _sp, _mem, _r0, _fp0)
 }
 
-def public op_SetRegister_f64(var _pc : pc_t; var _sp : m3stack_t; var _mem : M3MemoryHeader?; var _r0 : m3reg_t; var _fp0 : f64) : M3Result {
+def public op_SetRegister_f64(var _pc : pc_t&; var _sp : m3stack_t&; var _mem : M3MemoryHeader?&; var _r0 : m3reg_t&; var _fp0 : f64&) : M3Result {
     _fp0 = slot_f64(_pc, _sp)
     return nextOpDirect(_pc, _sp, _mem, _r0, _fp0)
 }
 
-def public op_SetSlot_f64(var _pc : pc_t; var _sp : m3stack_t; var _mem : M3MemoryHeader?; var _r0 : m3reg_t; var _fp0 : f64) : M3Result {
+def public op_SetSlot_f64(var _pc : pc_t&; var _sp : m3stack_t&; var _mem : M3MemoryHeader?&; var _r0 : m3reg_t&; var _fp0 : f64&) : M3Result {
     unsafe { slot_ptr_f64(_pc, _sp)[0] = _fp0 }
     return nextOpDirect(_pc, _sp, _mem, _r0, _fp0)
 }
 
-def public op_PreserveSetSlot_f64(var _pc : pc_t; var _sp : m3stack_t; var _mem : M3MemoryHeader?; var _r0 : m3reg_t; var _fp0 : f64) : M3Result {
+def public op_PreserveSetSlot_f64(var _pc : pc_t&; var _sp : m3stack_t&; var _mem : M3MemoryHeader?&; var _r0 : m3reg_t&; var _fp0 : f64&) : M3Result {
     var stack = slot_ptr_f64(_pc, _sp)
     var preserve = slot_ptr_f64(_pc, _sp)
     unsafe { preserve[0] = stack[0] }
@@ -3196,14 +3211,14 @@ def public op_PreserveSetSlot_f64(var _pc : pc_t; var _sp : m3stack_t; var _mem 
     return nextOpDirect(_pc, _sp, _mem, _r0, _fp0)
 }
 
-def public op_CopySlot_32(var _pc : pc_t; var _sp : m3stack_t; var _mem : M3MemoryHeader?; var _r0 : m3reg_t; var _fp0 : f64) : M3Result {
+def public op_CopySlot_32(var _pc : pc_t&; var _sp : m3stack_t&; var _mem : M3MemoryHeader?&; var _r0 : m3reg_t&; var _fp0 : f64&) : M3Result {
     var dst = slot_ptr_u32(_pc, _sp)
     var src = slot_ptr_u32(_pc, _sp)
     unsafe { dst[0] = src[0] }
     return nextOpDirect(_pc, _sp, _mem, _r0, _fp0)
 }
 
-def public op_PreserveCopySlot_32(var _pc : pc_t; var _sp : m3stack_t; var _mem : M3MemoryHeader?; var _r0 : m3reg_t; var _fp0 : f64) : M3Result {
+def public op_PreserveCopySlot_32(var _pc : pc_t&; var _sp : m3stack_t&; var _mem : M3MemoryHeader?&; var _r0 : m3reg_t&; var _fp0 : f64&) : M3Result {
     var dest = slot_ptr_u32(_pc, _sp)
     var src = slot_ptr_u32(_pc, _sp)
     var preserve = slot_ptr_u32(_pc, _sp)
@@ -3212,14 +3227,14 @@ def public op_PreserveCopySlot_32(var _pc : pc_t; var _sp : m3stack_t; var _mem 
     return nextOpDirect(_pc, _sp, _mem, _r0, _fp0)
 }
 
-def public op_CopySlot_64(var _pc : pc_t; var _sp : m3stack_t; var _mem : M3MemoryHeader?; var _r0 : m3reg_t; var _fp0 : f64) : M3Result {
+def public op_CopySlot_64(var _pc : pc_t&; var _sp : m3stack_t&; var _mem : M3MemoryHeader?&; var _r0 : m3reg_t&; var _fp0 : f64&) : M3Result {
     var dst = slot_ptr_u64(_pc, _sp)
     var src = slot_ptr_u64(_pc, _sp)
     unsafe { dst[0] = src[0] }
     return nextOpDirect(_pc, _sp, _mem, _r0, _fp0)
 }
 
-def public op_PreserveCopySlot_64(var _pc : pc_t; var _sp : m3stack_t; var _mem : M3MemoryHeader?; var _r0 : m3reg_t; var _fp0 : f64) : M3Result {
+def public op_PreserveCopySlot_64(var _pc : pc_t&; var _sp : m3stack_t&; var _mem : M3MemoryHeader?&; var _r0 : m3reg_t&; var _fp0 : f64&) : M3Result {
     var dest = slot_ptr_u64(_pc, _sp)
     var src = slot_ptr_u64(_pc, _sp)
     var preserve = slot_ptr_u64(_pc, _sp)
@@ -3230,7 +3245,7 @@ def public op_PreserveCopySlot_64(var _pc : pc_t; var _sp : m3stack_t; var _mem 
 
 // compiled out under the active configuration: d_m3EnableOpTracing == false (op_DumpStack)
 
-def public op_Select_i32_rss(var _pc : pc_t; var _sp : m3stack_t; var _mem : M3MemoryHeader?; var _r0 : m3reg_t; var _fp0 : f64) : M3Result {
+def public op_Select_i32_rss(var _pc : pc_t&; var _sp : m3stack_t&; var _mem : M3MemoryHeader?&; var _r0 : m3reg_t&; var _fp0 : f64&) : M3Result {
     let condition = i32(_r0)
     let operand2 = slot_i32(_pc, _sp)
     let operand1 = slot_i32(_pc, _sp)
@@ -3238,21 +3253,21 @@ def public op_Select_i32_rss(var _pc : pc_t; var _sp : m3stack_t; var _mem : M3M
     return nextOpDirect(_pc, _sp, _mem, _r0, _fp0)
 }
 
-def public op_Select_i32_srs(var _pc : pc_t; var _sp : m3stack_t; var _mem : M3MemoryHeader?; var _r0 : m3reg_t; var _fp0 : f64) : M3Result {
+def public op_Select_i32_srs(var _pc : pc_t&; var _sp : m3stack_t&; var _mem : M3MemoryHeader?&; var _r0 : m3reg_t&; var _fp0 : f64&) : M3Result {
     let condition = slot_i32(_pc, _sp)
     let operand1 = slot_i32(_pc, _sp)
     if (condition != 0) { _r0 = m3reg_t(operand1) } else { _r0 = m3reg_t(i32(_r0)) }
     return nextOpDirect(_pc, _sp, _mem, _r0, _fp0)
 }
 
-def public op_Select_i32_ssr(var _pc : pc_t; var _sp : m3stack_t; var _mem : M3MemoryHeader?; var _r0 : m3reg_t; var _fp0 : f64) : M3Result {
+def public op_Select_i32_ssr(var _pc : pc_t&; var _sp : m3stack_t&; var _mem : M3MemoryHeader?&; var _r0 : m3reg_t&; var _fp0 : f64&) : M3Result {
     let condition = slot_i32(_pc, _sp)
     let operand2 = slot_i32(_pc, _sp)
     if (condition != 0) { _r0 = m3reg_t(i32(_r0)) } else { _r0 = m3reg_t(operand2) }
     return nextOpDirect(_pc, _sp, _mem, _r0, _fp0)
 }
 
-def public op_Select_i32_sss(var _pc : pc_t; var _sp : m3stack_t; var _mem : M3MemoryHeader?; var _r0 : m3reg_t; var _fp0 : f64) : M3Result {
+def public op_Select_i32_sss(var _pc : pc_t&; var _sp : m3stack_t&; var _mem : M3MemoryHeader?&; var _r0 : m3reg_t&; var _fp0 : f64&) : M3Result {
     let condition = slot_i32(_pc, _sp)
     let operand2 = slot_i32(_pc, _sp)
     let operand1 = slot_i32(_pc, _sp)
@@ -3260,7 +3275,7 @@ def public op_Select_i32_sss(var _pc : pc_t; var _sp : m3stack_t; var _mem : M3M
     return nextOpDirect(_pc, _sp, _mem, _r0, _fp0)
 }
 
-def public op_Select_i64_rss(var _pc : pc_t; var _sp : m3stack_t; var _mem : M3MemoryHeader?; var _r0 : m3reg_t; var _fp0 : f64) : M3Result {
+def public op_Select_i64_rss(var _pc : pc_t&; var _sp : m3stack_t&; var _mem : M3MemoryHeader?&; var _r0 : m3reg_t&; var _fp0 : f64&) : M3Result {
     let condition = i32(_r0)
     let operand2 = slot_i64(_pc, _sp)
     let operand1 = slot_i64(_pc, _sp)
@@ -3268,21 +3283,21 @@ def public op_Select_i64_rss(var _pc : pc_t; var _sp : m3stack_t; var _mem : M3M
     return nextOpDirect(_pc, _sp, _mem, _r0, _fp0)
 }
 
-def public op_Select_i64_srs(var _pc : pc_t; var _sp : m3stack_t; var _mem : M3MemoryHeader?; var _r0 : m3reg_t; var _fp0 : f64) : M3Result {
+def public op_Select_i64_srs(var _pc : pc_t&; var _sp : m3stack_t&; var _mem : M3MemoryHeader?&; var _r0 : m3reg_t&; var _fp0 : f64&) : M3Result {
     let condition = slot_i32(_pc, _sp)
     let operand1 = slot_i64(_pc, _sp)
     if (condition != 0) { _r0 = operand1 } else { _r0 = _r0 }
     return nextOpDirect(_pc, _sp, _mem, _r0, _fp0)
 }
 
-def public op_Select_i64_ssr(var _pc : pc_t; var _sp : m3stack_t; var _mem : M3MemoryHeader?; var _r0 : m3reg_t; var _fp0 : f64) : M3Result {
+def public op_Select_i64_ssr(var _pc : pc_t&; var _sp : m3stack_t&; var _mem : M3MemoryHeader?&; var _r0 : m3reg_t&; var _fp0 : f64&) : M3Result {
     let condition = slot_i32(_pc, _sp)
     let operand2 = slot_i64(_pc, _sp)
     if (condition != 0) { _r0 = _r0 } else { _r0 = operand2 }
     return nextOpDirect(_pc, _sp, _mem, _r0, _fp0)
 }
 
-def public op_Select_i64_sss(var _pc : pc_t; var _sp : m3stack_t; var _mem : M3MemoryHeader?; var _r0 : m3reg_t; var _fp0 : f64) : M3Result {
+def public op_Select_i64_sss(var _pc : pc_t&; var _sp : m3stack_t&; var _mem : M3MemoryHeader?&; var _r0 : m3reg_t&; var _fp0 : f64&) : M3Result {
     let condition = slot_i32(_pc, _sp)
     let operand2 = slot_i64(_pc, _sp)
     let operand1 = slot_i64(_pc, _sp)
@@ -3290,7 +3305,7 @@ def public op_Select_i64_sss(var _pc : pc_t; var _sp : m3stack_t; var _mem : M3M
     return nextOpDirect(_pc, _sp, _mem, _r0, _fp0)
 }
 
-def public op_Select_f32_sss(var _pc : pc_t; var _sp : m3stack_t; var _mem : M3MemoryHeader?; var _r0 : m3reg_t; var _fp0 : f64) : M3Result {
+def public op_Select_f32_sss(var _pc : pc_t&; var _sp : m3stack_t&; var _mem : M3MemoryHeader?&; var _r0 : m3reg_t&; var _fp0 : f64&) : M3Result {
     let condition = slot_i32(_pc, _sp)
     let operand2 = slot_f32(_pc, _sp)
     let operand1 = slot_f32(_pc, _sp)
@@ -3298,21 +3313,21 @@ def public op_Select_f32_sss(var _pc : pc_t; var _sp : m3stack_t; var _mem : M3M
     return nextOpDirect(_pc, _sp, _mem, _r0, _fp0)
 }
 
-def public op_Select_f32_srs(var _pc : pc_t; var _sp : m3stack_t; var _mem : M3MemoryHeader?; var _r0 : m3reg_t; var _fp0 : f64) : M3Result {
+def public op_Select_f32_srs(var _pc : pc_t&; var _sp : m3stack_t&; var _mem : M3MemoryHeader?&; var _r0 : m3reg_t&; var _fp0 : f64&) : M3Result {
     let condition = slot_i32(_pc, _sp)
     let operand1 = slot_f32(_pc, _sp)
     if (condition != 0) { _fp0 = f64(operand1) } else { _fp0 = f64(f32(_fp0)) }
     return nextOpDirect(_pc, _sp, _mem, _r0, _fp0)
 }
 
-def public op_Select_f32_ssr(var _pc : pc_t; var _sp : m3stack_t; var _mem : M3MemoryHeader?; var _r0 : m3reg_t; var _fp0 : f64) : M3Result {
+def public op_Select_f32_ssr(var _pc : pc_t&; var _sp : m3stack_t&; var _mem : M3MemoryHeader?&; var _r0 : m3reg_t&; var _fp0 : f64&) : M3Result {
     let condition = slot_i32(_pc, _sp)
     let operand2 = slot_f32(_pc, _sp)
     if (condition != 0) { _fp0 = f64(f32(_fp0)) } else { _fp0 = f64(operand2) }
     return nextOpDirect(_pc, _sp, _mem, _r0, _fp0)
 }
 
-def public op_Select_f32_rss(var _pc : pc_t; var _sp : m3stack_t; var _mem : M3MemoryHeader?; var _r0 : m3reg_t; var _fp0 : f64) : M3Result {
+def public op_Select_f32_rss(var _pc : pc_t&; var _sp : m3stack_t&; var _mem : M3MemoryHeader?&; var _r0 : m3reg_t&; var _fp0 : f64&) : M3Result {
     let condition = i32(_r0)
     let operand2 = slot_f32(_pc, _sp)
     let operand1 = slot_f32(_pc, _sp)
@@ -3320,21 +3335,21 @@ def public op_Select_f32_rss(var _pc : pc_t; var _sp : m3stack_t; var _mem : M3M
     return nextOpDirect(_pc, _sp, _mem, _r0, _fp0)
 }
 
-def public op_Select_f32_rrs(var _pc : pc_t; var _sp : m3stack_t; var _mem : M3MemoryHeader?; var _r0 : m3reg_t; var _fp0 : f64) : M3Result {
+def public op_Select_f32_rrs(var _pc : pc_t&; var _sp : m3stack_t&; var _mem : M3MemoryHeader?&; var _r0 : m3reg_t&; var _fp0 : f64&) : M3Result {
     let condition = i32(_r0)
     let operand1 = slot_f32(_pc, _sp)
     if (condition != 0) { _fp0 = f64(operand1) } else { _fp0 = f64(f32(_fp0)) }
     return nextOpDirect(_pc, _sp, _mem, _r0, _fp0)
 }
 
-def public op_Select_f32_rsr(var _pc : pc_t; var _sp : m3stack_t; var _mem : M3MemoryHeader?; var _r0 : m3reg_t; var _fp0 : f64) : M3Result {
+def public op_Select_f32_rsr(var _pc : pc_t&; var _sp : m3stack_t&; var _mem : M3MemoryHeader?&; var _r0 : m3reg_t&; var _fp0 : f64&) : M3Result {
     let condition = i32(_r0)
     let operand2 = slot_f32(_pc, _sp)
     if (condition != 0) { _fp0 = f64(f32(_fp0)) } else { _fp0 = f64(operand2) }
     return nextOpDirect(_pc, _sp, _mem, _r0, _fp0)
 }
 
-def public op_Select_f64_sss(var _pc : pc_t; var _sp : m3stack_t; var _mem : M3MemoryHeader?; var _r0 : m3reg_t; var _fp0 : f64) : M3Result {
+def public op_Select_f64_sss(var _pc : pc_t&; var _sp : m3stack_t&; var _mem : M3MemoryHeader?&; var _r0 : m3reg_t&; var _fp0 : f64&) : M3Result {
     let condition = slot_i32(_pc, _sp)
     let operand2 = slot_f64(_pc, _sp)
     let operand1 = slot_f64(_pc, _sp)
@@ -3342,21 +3357,21 @@ def public op_Select_f64_sss(var _pc : pc_t; var _sp : m3stack_t; var _mem : M3M
     return nextOpDirect(_pc, _sp, _mem, _r0, _fp0)
 }
 
-def public op_Select_f64_srs(var _pc : pc_t; var _sp : m3stack_t; var _mem : M3MemoryHeader?; var _r0 : m3reg_t; var _fp0 : f64) : M3Result {
+def public op_Select_f64_srs(var _pc : pc_t&; var _sp : m3stack_t&; var _mem : M3MemoryHeader?&; var _r0 : m3reg_t&; var _fp0 : f64&) : M3Result {
     let condition = slot_i32(_pc, _sp)
     let operand1 = slot_f64(_pc, _sp)
     if (condition != 0) { _fp0 = operand1 } else { _fp0 = _fp0 }
     return nextOpDirect(_pc, _sp, _mem, _r0, _fp0)
 }
 
-def public op_Select_f64_ssr(var _pc : pc_t; var _sp : m3stack_t; var _mem : M3MemoryHeader?; var _r0 : m3reg_t; var _fp0 : f64) : M3Result {
+def public op_Select_f64_ssr(var _pc : pc_t&; var _sp : m3stack_t&; var _mem : M3MemoryHeader?&; var _r0 : m3reg_t&; var _fp0 : f64&) : M3Result {
     let condition = slot_i32(_pc, _sp)
     let operand2 = slot_f64(_pc, _sp)
     if (condition != 0) { _fp0 = _fp0 } else { _fp0 = operand2 }
     return nextOpDirect(_pc, _sp, _mem, _r0, _fp0)
 }
 
-def public op_Select_f64_rss(var _pc : pc_t; var _sp : m3stack_t; var _mem : M3MemoryHeader?; var _r0 : m3reg_t; var _fp0 : f64) : M3Result {
+def public op_Select_f64_rss(var _pc : pc_t&; var _sp : m3stack_t&; var _mem : M3MemoryHeader?&; var _r0 : m3reg_t&; var _fp0 : f64&) : M3Result {
     let condition = i32(_r0)
     let operand2 = slot_f64(_pc, _sp)
     let operand1 = slot_f64(_pc, _sp)
@@ -3364,67 +3379,67 @@ def public op_Select_f64_rss(var _pc : pc_t; var _sp : m3stack_t; var _mem : M3M
     return nextOpDirect(_pc, _sp, _mem, _r0, _fp0)
 }
 
-def public op_Select_f64_rrs(var _pc : pc_t; var _sp : m3stack_t; var _mem : M3MemoryHeader?; var _r0 : m3reg_t; var _fp0 : f64) : M3Result {
+def public op_Select_f64_rrs(var _pc : pc_t&; var _sp : m3stack_t&; var _mem : M3MemoryHeader?&; var _r0 : m3reg_t&; var _fp0 : f64&) : M3Result {
     let condition = i32(_r0)
     let operand1 = slot_f64(_pc, _sp)
     if (condition != 0) { _fp0 = operand1 } else { _fp0 = _fp0 }
     return nextOpDirect(_pc, _sp, _mem, _r0, _fp0)
 }
 
-def public op_Select_f64_rsr(var _pc : pc_t; var _sp : m3stack_t; var _mem : M3MemoryHeader?; var _r0 : m3reg_t; var _fp0 : f64) : M3Result {
+def public op_Select_f64_rsr(var _pc : pc_t&; var _sp : m3stack_t&; var _mem : M3MemoryHeader?&; var _r0 : m3reg_t&; var _fp0 : f64&) : M3Result {
     let condition = i32(_r0)
     let operand2 = slot_f64(_pc, _sp)
     if (condition != 0) { _fp0 = _fp0 } else { _fp0 = operand2 }
     return nextOpDirect(_pc, _sp, _mem, _r0, _fp0)
 }
 
-def public op_Return(var _pc : pc_t; var _sp : m3stack_t; var _mem : M3MemoryHeader?; var _r0 : m3reg_t; var _fp0 : f64) : M3Result {
-    m3StackCheck()
+def public op_Return(var _pc : pc_t&; var _sp : m3stack_t&; var _mem : M3MemoryHeader?&; var _r0 : m3reg_t&; var _fp0 : f64&) : M3Result {
+    if (d_m3LogNativeStack) { m3StackCheck() }   // C: an empty macro unless d_m3LogNativeStack
     return m3Err_none
 }
 
-def public op_BranchIf_r(var _pc : pc_t; var _sp : m3stack_t; var _mem : M3MemoryHeader?; var _r0 : m3reg_t; var _fp0 : f64) : M3Result {
+def public op_BranchIf_r(var _pc : pc_t&; var _sp : m3stack_t&; var _mem : M3MemoryHeader?&; var _r0 : m3reg_t&; var _fp0 : f64&) : M3Result {
     let condition = i32(_r0)
     var branch = immediate_pc(_pc)
-    if (condition != 0) { return jumpOpDirect(branch, _sp, _mem, _r0, _fp0) }
+    if (condition != 0) { return jumpOpDirect(_pc, branch) }
     return nextOpDirect(_pc, _sp, _mem, _r0, _fp0)
 }
 
-def public op_BranchIf_s(var _pc : pc_t; var _sp : m3stack_t; var _mem : M3MemoryHeader?; var _r0 : m3reg_t; var _fp0 : f64) : M3Result {
+def public op_BranchIf_s(var _pc : pc_t&; var _sp : m3stack_t&; var _mem : M3MemoryHeader?&; var _r0 : m3reg_t&; var _fp0 : f64&) : M3Result {
     let condition = slot_i32(_pc, _sp)
     var branch = immediate_pc(_pc)
-    if (condition != 0) { return jumpOpDirect(branch, _sp, _mem, _r0, _fp0) }
+    if (condition != 0) { return jumpOpDirect(_pc, branch) }
     return nextOpDirect(_pc, _sp, _mem, _r0, _fp0)
 }
 
-def public op_BranchIfPrologue_r(var _pc : pc_t; var _sp : m3stack_t; var _mem : M3MemoryHeader?; var _r0 : m3reg_t; var _fp0 : f64) : M3Result {
+def public op_BranchIfPrologue_r(var _pc : pc_t&; var _sp : m3stack_t&; var _mem : M3MemoryHeader?&; var _r0 : m3reg_t&; var _fp0 : f64&) : M3Result {
     let condition = i32(_r0)
     var branch = immediate_pc(_pc)
     if (condition != 0) { return nextOpDirect(_pc, _sp, _mem, _r0, _fp0) }
-    return jumpOpDirect(branch, _sp, _mem, _r0, _fp0)
+    return jumpOpDirect(_pc, branch)
 }
 
-def public op_BranchIfPrologue_s(var _pc : pc_t; var _sp : m3stack_t; var _mem : M3MemoryHeader?; var _r0 : m3reg_t; var _fp0 : f64) : M3Result {
+def public op_BranchIfPrologue_s(var _pc : pc_t&; var _sp : m3stack_t&; var _mem : M3MemoryHeader?&; var _r0 : m3reg_t&; var _fp0 : f64&) : M3Result {
     let condition = slot_i32(_pc, _sp)
     var branch = immediate_pc(_pc)
     if (condition != 0) { return nextOpDirect(_pc, _sp, _mem, _r0, _fp0) }
-    return jumpOpDirect(branch, _sp, _mem, _r0, _fp0)
+    return jumpOpDirect(_pc, branch)
 }
 
-def public op_ContinueLoop(var _pc : pc_t; var _sp : m3stack_t; var _mem : M3MemoryHeader?; var _r0 : m3reg_t; var _fp0 : f64) : M3Result {
-    m3StackCheck()
+def public op_ContinueLoop(var _pc : pc_t&; var _sp : m3stack_t&; var _mem : M3MemoryHeader?&; var _r0 : m3reg_t&; var _fp0 : f64&) : M3Result {
+    if (d_m3LogNativeStack) { m3StackCheck() }   // C: an empty macro unless d_m3LogNativeStack
     let loopId = immediate_code(_pc)
     return unsafe(reinterpret<M3Result>(loopId))
 }
 
-def public op_ContinueLoopIf(var _pc : pc_t; var _sp : m3stack_t; var _mem : M3MemoryHeader?; var _r0 : m3reg_t; var _fp0 : f64) : M3Result {
+def public op_ContinueLoopIf(var _pc : pc_t&; var _sp : m3stack_t&; var _mem : M3MemoryHeader?&; var _r0 : m3reg_t&; var _fp0 : f64&) : M3Result {
     let condition = i32(_r0)
     let loopId = immediate_code(_pc)
     if (condition != 0) { return unsafe(reinterpret<M3Result>(loopId)) }
     return nextOpDirect(_pc, _sp, _mem, _r0, _fp0)
 }
 
-def public op_Const32(var _pc : pc_t; var _sp : m3stack_t; var _mem : M3MemoryHeader?; var _r0 : m3reg_t; var _fp0 : f64) : M3Result {
+def public op_Const32(var _pc : pc_t&; var _sp : m3stack_t&; var _mem : M3MemoryHeader?&; var _r0 : m3reg_t&; var _fp0 : f64&) : M3Result {
     let p = unsafe(reinterpret<u32 const?>(_pc))
     let value = unsafe(p[0])
     unsafe { _pc++ }
@@ -3432,7 +3447,7 @@ def public op_Const32(var _pc : pc_t; var _sp : m3stack_t; var _mem : M3MemoryHe
     return nextOpDirect(_pc, _sp, _mem, _r0, _fp0)
 }
 
-def public op_Const64(var _pc : pc_t; var _sp : m3stack_t; var _mem : M3MemoryHeader?; var _r0 : m3reg_t; var _fp0 : f64) : M3Result {
+def public op_Const64(var _pc : pc_t&; var _sp : m3stack_t&; var _mem : M3MemoryHeader?&; var _r0 : m3reg_t&; var _fp0 : f64&) : M3Result {
     var value : u64
     unsafe {
         let p = reinterpret<u64 const?>(_pc)
@@ -3443,45 +3458,45 @@ def public op_Const64(var _pc : pc_t; var _sp : m3stack_t; var _mem : M3MemoryHe
     return nextOpDirect(_pc, _sp, _mem, _r0, _fp0)
 }
 
-def public op_Unsupported(var _pc : pc_t; var _sp : m3stack_t; var _mem : M3MemoryHeader?; var _r0 : m3reg_t; var _fp0 : f64) : M3Result {
+def public op_Unsupported(var _pc : pc_t&; var _sp : m3stack_t&; var _mem : M3MemoryHeader?&; var _r0 : m3reg_t&; var _fp0 : f64&) : M3Result {
     return newTrap(_pc, _mem, "unsupported instruction executed")
 }
 
-def public op_Unreachable(var _pc : pc_t; var _sp : m3stack_t; var _mem : M3MemoryHeader?; var _r0 : m3reg_t; var _fp0 : f64) : M3Result {
-    m3StackCheck()
+def public op_Unreachable(var _pc : pc_t&; var _sp : m3stack_t&; var _mem : M3MemoryHeader?&; var _r0 : m3reg_t&; var _fp0 : f64&) : M3Result {
+    if (d_m3LogNativeStack) { m3StackCheck() }   // C: an empty macro unless d_m3LogNativeStack
     return newTrap(_pc, _mem, m3Err_trapUnreachable)
 }
 
-def public op_End(var _pc : pc_t; var _sp : m3stack_t; var _mem : M3MemoryHeader?; var _r0 : m3reg_t; var _fp0 : f64) : M3Result {
-    m3StackCheck()
+def public op_End(var _pc : pc_t&; var _sp : m3stack_t&; var _mem : M3MemoryHeader?&; var _r0 : m3reg_t&; var _fp0 : f64&) : M3Result {
+    if (d_m3LogNativeStack) { m3StackCheck() }   // C: an empty macro unless d_m3LogNativeStack
     return m3Err_none
 }
 
-def public op_SetGlobal_s32(var _pc : pc_t; var _sp : m3stack_t; var _mem : M3MemoryHeader?; var _r0 : m3reg_t; var _fp0 : f64) : M3Result {
+def public op_SetGlobal_s32(var _pc : pc_t&; var _sp : m3stack_t&; var _mem : M3MemoryHeader?&; var _r0 : m3reg_t&; var _fp0 : f64&) : M3Result {
     var global = unsafe(reinterpret<u32?>(immediate_code(_pc)))
     unsafe { global[0] = slot_u32(_pc, _sp) }
     return nextOpDirect(_pc, _sp, _mem, _r0, _fp0)
 }
 
-def public op_SetGlobal_s64(var _pc : pc_t; var _sp : m3stack_t; var _mem : M3MemoryHeader?; var _r0 : m3reg_t; var _fp0 : f64) : M3Result {
+def public op_SetGlobal_s64(var _pc : pc_t&; var _sp : m3stack_t&; var _mem : M3MemoryHeader?&; var _r0 : m3reg_t&; var _fp0 : f64&) : M3Result {
     var global = unsafe(reinterpret<u64?>(immediate_code(_pc)))
     unsafe { global[0] = slot_u64(_pc, _sp) }
     return nextOpDirect(_pc, _sp, _mem, _r0, _fp0)
 }
 
-def public op_SetGlobal_f32(var _pc : pc_t; var _sp : m3stack_t; var _mem : M3MemoryHeader?; var _r0 : m3reg_t; var _fp0 : f64) : M3Result {
+def public op_SetGlobal_f32(var _pc : pc_t&; var _sp : m3stack_t&; var _mem : M3MemoryHeader?&; var _r0 : m3reg_t&; var _fp0 : f64&) : M3Result {
     var global = unsafe(reinterpret<f32?>(immediate_code(_pc)))
     unsafe { global[0] = f32(_fp0) }
     return nextOpDirect(_pc, _sp, _mem, _r0, _fp0)
 }
 
-def public op_SetGlobal_f64(var _pc : pc_t; var _sp : m3stack_t; var _mem : M3MemoryHeader?; var _r0 : m3reg_t; var _fp0 : f64) : M3Result {
+def public op_SetGlobal_f64(var _pc : pc_t&; var _sp : m3stack_t&; var _mem : M3MemoryHeader?&; var _r0 : m3reg_t&; var _fp0 : f64&) : M3Result {
     var global = unsafe(reinterpret<f64?>(immediate_code(_pc)))
     unsafe { global[0] = _fp0 }
     return nextOpDirect(_pc, _sp, _mem, _r0, _fp0)
 }
 
-def public op_f32_Load_f32_r(var _pc : pc_t; var _sp : m3stack_t; var _mem : M3MemoryHeader?; var _r0 : m3reg_t; var _fp0 : f64) : M3Result {
+def public op_f32_Load_f32_r(var _pc : pc_t&; var _sp : m3stack_t&; var _mem : M3MemoryHeader?&; var _r0 : m3reg_t&; var _fp0 : f64&) : M3Result {
     let offset = immediate_u32(_pc)
     var operand = u64(u32(_r0))
     operand += u64(offset)
@@ -3494,7 +3509,7 @@ def public op_f32_Load_f32_r(var _pc : pc_t; var _sp : m3stack_t; var _mem : M3M
     return newTrap(_pc, _mem, m3Err_trapOutOfBoundsMemoryAccess)
 }
 
-def public op_f32_Load_f32_s(var _pc : pc_t; var _sp : m3stack_t; var _mem : M3MemoryHeader?; var _r0 : m3reg_t; var _fp0 : f64) : M3Result {
+def public op_f32_Load_f32_s(var _pc : pc_t&; var _sp : m3stack_t&; var _mem : M3MemoryHeader?&; var _r0 : m3reg_t&; var _fp0 : f64&) : M3Result {
     var operand = u64(slot_u32(_pc, _sp))
     let offset = immediate_u32(_pc)
     operand += u64(offset)
@@ -3507,7 +3522,7 @@ def public op_f32_Load_f32_s(var _pc : pc_t; var _sp : m3stack_t; var _mem : M3M
     return newTrap(_pc, _mem, m3Err_trapOutOfBoundsMemoryAccess)
 }
 
-def public op_f64_Load_f64_r(var _pc : pc_t; var _sp : m3stack_t; var _mem : M3MemoryHeader?; var _r0 : m3reg_t; var _fp0 : f64) : M3Result {
+def public op_f64_Load_f64_r(var _pc : pc_t&; var _sp : m3stack_t&; var _mem : M3MemoryHeader?&; var _r0 : m3reg_t&; var _fp0 : f64&) : M3Result {
     let offset = immediate_u32(_pc)
     var operand = u64(u32(_r0))
     operand += u64(offset)
@@ -3520,7 +3535,7 @@ def public op_f64_Load_f64_r(var _pc : pc_t; var _sp : m3stack_t; var _mem : M3M
     return newTrap(_pc, _mem, m3Err_trapOutOfBoundsMemoryAccess)
 }
 
-def public op_f64_Load_f64_s(var _pc : pc_t; var _sp : m3stack_t; var _mem : M3MemoryHeader?; var _r0 : m3reg_t; var _fp0 : f64) : M3Result {
+def public op_f64_Load_f64_s(var _pc : pc_t&; var _sp : m3stack_t&; var _mem : M3MemoryHeader?&; var _r0 : m3reg_t&; var _fp0 : f64&) : M3Result {
     var operand = u64(slot_u32(_pc, _sp))
     let offset = immediate_u32(_pc)
     operand += u64(offset)
@@ -3533,7 +3548,7 @@ def public op_f64_Load_f64_s(var _pc : pc_t; var _sp : m3stack_t; var _mem : M3M
     return newTrap(_pc, _mem, m3Err_trapOutOfBoundsMemoryAccess)
 }
 
-def public op_i32_Load_i8_r(var _pc : pc_t; var _sp : m3stack_t; var _mem : M3MemoryHeader?; var _r0 : m3reg_t; var _fp0 : f64) : M3Result {
+def public op_i32_Load_i8_r(var _pc : pc_t&; var _sp : m3stack_t&; var _mem : M3MemoryHeader?&; var _r0 : m3reg_t&; var _fp0 : f64&) : M3Result {
     let offset = immediate_u32(_pc)
     var operand = u64(u32(_r0))
     operand += u64(offset)
@@ -3546,7 +3561,7 @@ def public op_i32_Load_i8_r(var _pc : pc_t; var _sp : m3stack_t; var _mem : M3Me
     return newTrap(_pc, _mem, m3Err_trapOutOfBoundsMemoryAccess)
 }
 
-def public op_i32_Load_i8_s(var _pc : pc_t; var _sp : m3stack_t; var _mem : M3MemoryHeader?; var _r0 : m3reg_t; var _fp0 : f64) : M3Result {
+def public op_i32_Load_i8_s(var _pc : pc_t&; var _sp : m3stack_t&; var _mem : M3MemoryHeader?&; var _r0 : m3reg_t&; var _fp0 : f64&) : M3Result {
     var operand = u64(slot_u32(_pc, _sp))
     let offset = immediate_u32(_pc)
     operand += u64(offset)
@@ -3559,7 +3574,7 @@ def public op_i32_Load_i8_s(var _pc : pc_t; var _sp : m3stack_t; var _mem : M3Me
     return newTrap(_pc, _mem, m3Err_trapOutOfBoundsMemoryAccess)
 }
 
-def public op_i32_Load_u8_r(var _pc : pc_t; var _sp : m3stack_t; var _mem : M3MemoryHeader?; var _r0 : m3reg_t; var _fp0 : f64) : M3Result {
+def public op_i32_Load_u8_r(var _pc : pc_t&; var _sp : m3stack_t&; var _mem : M3MemoryHeader?&; var _r0 : m3reg_t&; var _fp0 : f64&) : M3Result {
     let offset = immediate_u32(_pc)
     var operand = u64(u32(_r0))
     operand += u64(offset)
@@ -3572,7 +3587,7 @@ def public op_i32_Load_u8_r(var _pc : pc_t; var _sp : m3stack_t; var _mem : M3Me
     return newTrap(_pc, _mem, m3Err_trapOutOfBoundsMemoryAccess)
 }
 
-def public op_i32_Load_u8_s(var _pc : pc_t; var _sp : m3stack_t; var _mem : M3MemoryHeader?; var _r0 : m3reg_t; var _fp0 : f64) : M3Result {
+def public op_i32_Load_u8_s(var _pc : pc_t&; var _sp : m3stack_t&; var _mem : M3MemoryHeader?&; var _r0 : m3reg_t&; var _fp0 : f64&) : M3Result {
     var operand = u64(slot_u32(_pc, _sp))
     let offset = immediate_u32(_pc)
     operand += u64(offset)
@@ -3585,7 +3600,7 @@ def public op_i32_Load_u8_s(var _pc : pc_t; var _sp : m3stack_t; var _mem : M3Me
     return newTrap(_pc, _mem, m3Err_trapOutOfBoundsMemoryAccess)
 }
 
-def public op_i32_Load_i16_r(var _pc : pc_t; var _sp : m3stack_t; var _mem : M3MemoryHeader?; var _r0 : m3reg_t; var _fp0 : f64) : M3Result {
+def public op_i32_Load_i16_r(var _pc : pc_t&; var _sp : m3stack_t&; var _mem : M3MemoryHeader?&; var _r0 : m3reg_t&; var _fp0 : f64&) : M3Result {
     let offset = immediate_u32(_pc)
     var operand = u64(u32(_r0))
     operand += u64(offset)
@@ -3598,7 +3613,7 @@ def public op_i32_Load_i16_r(var _pc : pc_t; var _sp : m3stack_t; var _mem : M3M
     return newTrap(_pc, _mem, m3Err_trapOutOfBoundsMemoryAccess)
 }
 
-def public op_i32_Load_i16_s(var _pc : pc_t; var _sp : m3stack_t; var _mem : M3MemoryHeader?; var _r0 : m3reg_t; var _fp0 : f64) : M3Result {
+def public op_i32_Load_i16_s(var _pc : pc_t&; var _sp : m3stack_t&; var _mem : M3MemoryHeader?&; var _r0 : m3reg_t&; var _fp0 : f64&) : M3Result {
     var operand = u64(slot_u32(_pc, _sp))
     let offset = immediate_u32(_pc)
     operand += u64(offset)
@@ -3611,7 +3626,7 @@ def public op_i32_Load_i16_s(var _pc : pc_t; var _sp : m3stack_t; var _mem : M3M
     return newTrap(_pc, _mem, m3Err_trapOutOfBoundsMemoryAccess)
 }
 
-def public op_i32_Load_u16_r(var _pc : pc_t; var _sp : m3stack_t; var _mem : M3MemoryHeader?; var _r0 : m3reg_t; var _fp0 : f64) : M3Result {
+def public op_i32_Load_u16_r(var _pc : pc_t&; var _sp : m3stack_t&; var _mem : M3MemoryHeader?&; var _r0 : m3reg_t&; var _fp0 : f64&) : M3Result {
     let offset = immediate_u32(_pc)
     var operand = u64(u32(_r0))
     operand += u64(offset)
@@ -3624,7 +3639,7 @@ def public op_i32_Load_u16_r(var _pc : pc_t; var _sp : m3stack_t; var _mem : M3M
     return newTrap(_pc, _mem, m3Err_trapOutOfBoundsMemoryAccess)
 }
 
-def public op_i32_Load_u16_s(var _pc : pc_t; var _sp : m3stack_t; var _mem : M3MemoryHeader?; var _r0 : m3reg_t; var _fp0 : f64) : M3Result {
+def public op_i32_Load_u16_s(var _pc : pc_t&; var _sp : m3stack_t&; var _mem : M3MemoryHeader?&; var _r0 : m3reg_t&; var _fp0 : f64&) : M3Result {
     var operand = u64(slot_u32(_pc, _sp))
     let offset = immediate_u32(_pc)
     operand += u64(offset)
@@ -3637,7 +3652,7 @@ def public op_i32_Load_u16_s(var _pc : pc_t; var _sp : m3stack_t; var _mem : M3M
     return newTrap(_pc, _mem, m3Err_trapOutOfBoundsMemoryAccess)
 }
 
-def public op_i32_Load_i32_r(var _pc : pc_t; var _sp : m3stack_t; var _mem : M3MemoryHeader?; var _r0 : m3reg_t; var _fp0 : f64) : M3Result {
+def public op_i32_Load_i32_r(var _pc : pc_t&; var _sp : m3stack_t&; var _mem : M3MemoryHeader?&; var _r0 : m3reg_t&; var _fp0 : f64&) : M3Result {
     let offset = immediate_u32(_pc)
     var operand = u64(u32(_r0))
     operand += u64(offset)
@@ -3650,7 +3665,7 @@ def public op_i32_Load_i32_r(var _pc : pc_t; var _sp : m3stack_t; var _mem : M3M
     return newTrap(_pc, _mem, m3Err_trapOutOfBoundsMemoryAccess)
 }
 
-def public op_i32_Load_i32_s(var _pc : pc_t; var _sp : m3stack_t; var _mem : M3MemoryHeader?; var _r0 : m3reg_t; var _fp0 : f64) : M3Result {
+def public op_i32_Load_i32_s(var _pc : pc_t&; var _sp : m3stack_t&; var _mem : M3MemoryHeader?&; var _r0 : m3reg_t&; var _fp0 : f64&) : M3Result {
     var operand = u64(slot_u32(_pc, _sp))
     let offset = immediate_u32(_pc)
     operand += u64(offset)
@@ -3663,7 +3678,7 @@ def public op_i32_Load_i32_s(var _pc : pc_t; var _sp : m3stack_t; var _mem : M3M
     return newTrap(_pc, _mem, m3Err_trapOutOfBoundsMemoryAccess)
 }
 
-def public op_i64_Load_i8_r(var _pc : pc_t; var _sp : m3stack_t; var _mem : M3MemoryHeader?; var _r0 : m3reg_t; var _fp0 : f64) : M3Result {
+def public op_i64_Load_i8_r(var _pc : pc_t&; var _sp : m3stack_t&; var _mem : M3MemoryHeader?&; var _r0 : m3reg_t&; var _fp0 : f64&) : M3Result {
     let offset = immediate_u32(_pc)
     var operand = u64(u32(_r0))
     operand += u64(offset)
@@ -3676,7 +3691,7 @@ def public op_i64_Load_i8_r(var _pc : pc_t; var _sp : m3stack_t; var _mem : M3Me
     return newTrap(_pc, _mem, m3Err_trapOutOfBoundsMemoryAccess)
 }
 
-def public op_i64_Load_i8_s(var _pc : pc_t; var _sp : m3stack_t; var _mem : M3MemoryHeader?; var _r0 : m3reg_t; var _fp0 : f64) : M3Result {
+def public op_i64_Load_i8_s(var _pc : pc_t&; var _sp : m3stack_t&; var _mem : M3MemoryHeader?&; var _r0 : m3reg_t&; var _fp0 : f64&) : M3Result {
     var operand = u64(slot_u32(_pc, _sp))
     let offset = immediate_u32(_pc)
     operand += u64(offset)
@@ -3689,7 +3704,7 @@ def public op_i64_Load_i8_s(var _pc : pc_t; var _sp : m3stack_t; var _mem : M3Me
     return newTrap(_pc, _mem, m3Err_trapOutOfBoundsMemoryAccess)
 }
 
-def public op_i64_Load_u8_r(var _pc : pc_t; var _sp : m3stack_t; var _mem : M3MemoryHeader?; var _r0 : m3reg_t; var _fp0 : f64) : M3Result {
+def public op_i64_Load_u8_r(var _pc : pc_t&; var _sp : m3stack_t&; var _mem : M3MemoryHeader?&; var _r0 : m3reg_t&; var _fp0 : f64&) : M3Result {
     let offset = immediate_u32(_pc)
     var operand = u64(u32(_r0))
     operand += u64(offset)
@@ -3702,7 +3717,7 @@ def public op_i64_Load_u8_r(var _pc : pc_t; var _sp : m3stack_t; var _mem : M3Me
     return newTrap(_pc, _mem, m3Err_trapOutOfBoundsMemoryAccess)
 }
 
-def public op_i64_Load_u8_s(var _pc : pc_t; var _sp : m3stack_t; var _mem : M3MemoryHeader?; var _r0 : m3reg_t; var _fp0 : f64) : M3Result {
+def public op_i64_Load_u8_s(var _pc : pc_t&; var _sp : m3stack_t&; var _mem : M3MemoryHeader?&; var _r0 : m3reg_t&; var _fp0 : f64&) : M3Result {
     var operand = u64(slot_u32(_pc, _sp))
     let offset = immediate_u32(_pc)
     operand += u64(offset)
@@ -3715,7 +3730,7 @@ def public op_i64_Load_u8_s(var _pc : pc_t; var _sp : m3stack_t; var _mem : M3Me
     return newTrap(_pc, _mem, m3Err_trapOutOfBoundsMemoryAccess)
 }
 
-def public op_i64_Load_i16_r(var _pc : pc_t; var _sp : m3stack_t; var _mem : M3MemoryHeader?; var _r0 : m3reg_t; var _fp0 : f64) : M3Result {
+def public op_i64_Load_i16_r(var _pc : pc_t&; var _sp : m3stack_t&; var _mem : M3MemoryHeader?&; var _r0 : m3reg_t&; var _fp0 : f64&) : M3Result {
     let offset = immediate_u32(_pc)
     var operand = u64(u32(_r0))
     operand += u64(offset)
@@ -3728,7 +3743,7 @@ def public op_i64_Load_i16_r(var _pc : pc_t; var _sp : m3stack_t; var _mem : M3M
     return newTrap(_pc, _mem, m3Err_trapOutOfBoundsMemoryAccess)
 }
 
-def public op_i64_Load_i16_s(var _pc : pc_t; var _sp : m3stack_t; var _mem : M3MemoryHeader?; var _r0 : m3reg_t; var _fp0 : f64) : M3Result {
+def public op_i64_Load_i16_s(var _pc : pc_t&; var _sp : m3stack_t&; var _mem : M3MemoryHeader?&; var _r0 : m3reg_t&; var _fp0 : f64&) : M3Result {
     var operand = u64(slot_u32(_pc, _sp))
     let offset = immediate_u32(_pc)
     operand += u64(offset)
@@ -3741,7 +3756,7 @@ def public op_i64_Load_i16_s(var _pc : pc_t; var _sp : m3stack_t; var _mem : M3M
     return newTrap(_pc, _mem, m3Err_trapOutOfBoundsMemoryAccess)
 }
 
-def public op_i64_Load_u16_r(var _pc : pc_t; var _sp : m3stack_t; var _mem : M3MemoryHeader?; var _r0 : m3reg_t; var _fp0 : f64) : M3Result {
+def public op_i64_Load_u16_r(var _pc : pc_t&; var _sp : m3stack_t&; var _mem : M3MemoryHeader?&; var _r0 : m3reg_t&; var _fp0 : f64&) : M3Result {
     let offset = immediate_u32(_pc)
     var operand = u64(u32(_r0))
     operand += u64(offset)
@@ -3754,7 +3769,7 @@ def public op_i64_Load_u16_r(var _pc : pc_t; var _sp : m3stack_t; var _mem : M3M
     return newTrap(_pc, _mem, m3Err_trapOutOfBoundsMemoryAccess)
 }
 
-def public op_i64_Load_u16_s(var _pc : pc_t; var _sp : m3stack_t; var _mem : M3MemoryHeader?; var _r0 : m3reg_t; var _fp0 : f64) : M3Result {
+def public op_i64_Load_u16_s(var _pc : pc_t&; var _sp : m3stack_t&; var _mem : M3MemoryHeader?&; var _r0 : m3reg_t&; var _fp0 : f64&) : M3Result {
     var operand = u64(slot_u32(_pc, _sp))
     let offset = immediate_u32(_pc)
     operand += u64(offset)
@@ -3767,7 +3782,7 @@ def public op_i64_Load_u16_s(var _pc : pc_t; var _sp : m3stack_t; var _mem : M3M
     return newTrap(_pc, _mem, m3Err_trapOutOfBoundsMemoryAccess)
 }
 
-def public op_i64_Load_i32_r(var _pc : pc_t; var _sp : m3stack_t; var _mem : M3MemoryHeader?; var _r0 : m3reg_t; var _fp0 : f64) : M3Result {
+def public op_i64_Load_i32_r(var _pc : pc_t&; var _sp : m3stack_t&; var _mem : M3MemoryHeader?&; var _r0 : m3reg_t&; var _fp0 : f64&) : M3Result {
     let offset = immediate_u32(_pc)
     var operand = u64(u32(_r0))
     operand += u64(offset)
@@ -3780,7 +3795,7 @@ def public op_i64_Load_i32_r(var _pc : pc_t; var _sp : m3stack_t; var _mem : M3M
     return newTrap(_pc, _mem, m3Err_trapOutOfBoundsMemoryAccess)
 }
 
-def public op_i64_Load_i32_s(var _pc : pc_t; var _sp : m3stack_t; var _mem : M3MemoryHeader?; var _r0 : m3reg_t; var _fp0 : f64) : M3Result {
+def public op_i64_Load_i32_s(var _pc : pc_t&; var _sp : m3stack_t&; var _mem : M3MemoryHeader?&; var _r0 : m3reg_t&; var _fp0 : f64&) : M3Result {
     var operand = u64(slot_u32(_pc, _sp))
     let offset = immediate_u32(_pc)
     operand += u64(offset)
@@ -3793,7 +3808,7 @@ def public op_i64_Load_i32_s(var _pc : pc_t; var _sp : m3stack_t; var _mem : M3M
     return newTrap(_pc, _mem, m3Err_trapOutOfBoundsMemoryAccess)
 }
 
-def public op_i64_Load_u32_r(var _pc : pc_t; var _sp : m3stack_t; var _mem : M3MemoryHeader?; var _r0 : m3reg_t; var _fp0 : f64) : M3Result {
+def public op_i64_Load_u32_r(var _pc : pc_t&; var _sp : m3stack_t&; var _mem : M3MemoryHeader?&; var _r0 : m3reg_t&; var _fp0 : f64&) : M3Result {
     let offset = immediate_u32(_pc)
     var operand = u64(u32(_r0))
     operand += u64(offset)
@@ -3806,7 +3821,7 @@ def public op_i64_Load_u32_r(var _pc : pc_t; var _sp : m3stack_t; var _mem : M3M
     return newTrap(_pc, _mem, m3Err_trapOutOfBoundsMemoryAccess)
 }
 
-def public op_i64_Load_u32_s(var _pc : pc_t; var _sp : m3stack_t; var _mem : M3MemoryHeader?; var _r0 : m3reg_t; var _fp0 : f64) : M3Result {
+def public op_i64_Load_u32_s(var _pc : pc_t&; var _sp : m3stack_t&; var _mem : M3MemoryHeader?&; var _r0 : m3reg_t&; var _fp0 : f64&) : M3Result {
     var operand = u64(slot_u32(_pc, _sp))
     let offset = immediate_u32(_pc)
     operand += u64(offset)
@@ -3819,7 +3834,7 @@ def public op_i64_Load_u32_s(var _pc : pc_t; var _sp : m3stack_t; var _mem : M3M
     return newTrap(_pc, _mem, m3Err_trapOutOfBoundsMemoryAccess)
 }
 
-def public op_i64_Load_i64_r(var _pc : pc_t; var _sp : m3stack_t; var _mem : M3MemoryHeader?; var _r0 : m3reg_t; var _fp0 : f64) : M3Result {
+def public op_i64_Load_i64_r(var _pc : pc_t&; var _sp : m3stack_t&; var _mem : M3MemoryHeader?&; var _r0 : m3reg_t&; var _fp0 : f64&) : M3Result {
     let offset = immediate_u32(_pc)
     var operand = u64(u32(_r0))
     operand += u64(offset)
@@ -3832,7 +3847,7 @@ def public op_i64_Load_i64_r(var _pc : pc_t; var _sp : m3stack_t; var _mem : M3M
     return newTrap(_pc, _mem, m3Err_trapOutOfBoundsMemoryAccess)
 }
 
-def public op_i64_Load_i64_s(var _pc : pc_t; var _sp : m3stack_t; var _mem : M3MemoryHeader?; var _r0 : m3reg_t; var _fp0 : f64) : M3Result {
+def public op_i64_Load_i64_s(var _pc : pc_t&; var _sp : m3stack_t&; var _mem : M3MemoryHeader?&; var _r0 : m3reg_t&; var _fp0 : f64&) : M3Result {
     var operand = u64(slot_u32(_pc, _sp))
     let offset = immediate_u32(_pc)
     operand += u64(offset)
@@ -3845,7 +3860,7 @@ def public op_i64_Load_i64_s(var _pc : pc_t; var _sp : m3stack_t; var _mem : M3M
     return newTrap(_pc, _mem, m3Err_trapOutOfBoundsMemoryAccess)
 }
 
-def public op_f32_Store_f32_rs(var _pc : pc_t; var _sp : m3stack_t; var _mem : M3MemoryHeader?; var _r0 : m3reg_t; var _fp0 : f64) : M3Result {
+def public op_f32_Store_f32_rs(var _pc : pc_t&; var _sp : m3stack_t&; var _mem : M3MemoryHeader?&; var _r0 : m3reg_t&; var _fp0 : f64&) : M3Result {
     var operand = u64(slot_u32(_pc, _sp))
     let offset = immediate_u32(_pc)
     operand += u64(offset)
@@ -3857,7 +3872,7 @@ def public op_f32_Store_f32_rs(var _pc : pc_t; var _sp : m3stack_t; var _mem : M
     return newTrap(_pc, _mem, m3Err_trapOutOfBoundsMemoryAccess)
 }
 
-def public op_f32_Store_f32_sr(var _pc : pc_t; var _sp : m3stack_t; var _mem : M3MemoryHeader?; var _r0 : m3reg_t; var _fp0 : f64) : M3Result {
+def public op_f32_Store_f32_sr(var _pc : pc_t&; var _sp : m3stack_t&; var _mem : M3MemoryHeader?&; var _r0 : m3reg_t&; var _fp0 : f64&) : M3Result {
     let value = slot_f32(_pc, _sp)
     var operand = u64(u32(_r0))
     let offset = immediate_u32(_pc)
@@ -3870,7 +3885,7 @@ def public op_f32_Store_f32_sr(var _pc : pc_t; var _sp : m3stack_t; var _mem : M
     return newTrap(_pc, _mem, m3Err_trapOutOfBoundsMemoryAccess)
 }
 
-def public op_f32_Store_f32_ss(var _pc : pc_t; var _sp : m3stack_t; var _mem : M3MemoryHeader?; var _r0 : m3reg_t; var _fp0 : f64) : M3Result {
+def public op_f32_Store_f32_ss(var _pc : pc_t&; var _sp : m3stack_t&; var _mem : M3MemoryHeader?&; var _r0 : m3reg_t&; var _fp0 : f64&) : M3Result {
     let value = slot_f32(_pc, _sp)
     var operand = u64(slot_u32(_pc, _sp))
     let offset = immediate_u32(_pc)
@@ -3883,7 +3898,7 @@ def public op_f32_Store_f32_ss(var _pc : pc_t; var _sp : m3stack_t; var _mem : M
     return newTrap(_pc, _mem, m3Err_trapOutOfBoundsMemoryAccess)
 }
 
-def public op_f32_Store_f32_rr(var _pc : pc_t; var _sp : m3stack_t; var _mem : M3MemoryHeader?; var _r0 : m3reg_t; var _fp0 : f64) : M3Result {
+def public op_f32_Store_f32_rr(var _pc : pc_t&; var _sp : m3stack_t&; var _mem : M3MemoryHeader?&; var _r0 : m3reg_t&; var _fp0 : f64&) : M3Result {
     var operand = u64(u32(_r0))
     let offset = immediate_u32(_pc)
     operand += u64(offset)
@@ -3895,7 +3910,7 @@ def public op_f32_Store_f32_rr(var _pc : pc_t; var _sp : m3stack_t; var _mem : M
     return newTrap(_pc, _mem, m3Err_trapOutOfBoundsMemoryAccess)
 }
 
-def public op_f64_Store_f64_rs(var _pc : pc_t; var _sp : m3stack_t; var _mem : M3MemoryHeader?; var _r0 : m3reg_t; var _fp0 : f64) : M3Result {
+def public op_f64_Store_f64_rs(var _pc : pc_t&; var _sp : m3stack_t&; var _mem : M3MemoryHeader?&; var _r0 : m3reg_t&; var _fp0 : f64&) : M3Result {
     var operand = u64(slot_u32(_pc, _sp))
     let offset = immediate_u32(_pc)
     operand += u64(offset)
@@ -3907,7 +3922,7 @@ def public op_f64_Store_f64_rs(var _pc : pc_t; var _sp : m3stack_t; var _mem : M
     return newTrap(_pc, _mem, m3Err_trapOutOfBoundsMemoryAccess)
 }
 
-def public op_f64_Store_f64_sr(var _pc : pc_t; var _sp : m3stack_t; var _mem : M3MemoryHeader?; var _r0 : m3reg_t; var _fp0 : f64) : M3Result {
+def public op_f64_Store_f64_sr(var _pc : pc_t&; var _sp : m3stack_t&; var _mem : M3MemoryHeader?&; var _r0 : m3reg_t&; var _fp0 : f64&) : M3Result {
     let value = slot_f64(_pc, _sp)
     var operand = u64(u32(_r0))
     let offset = immediate_u32(_pc)
@@ -3920,7 +3935,7 @@ def public op_f64_Store_f64_sr(var _pc : pc_t; var _sp : m3stack_t; var _mem : M
     return newTrap(_pc, _mem, m3Err_trapOutOfBoundsMemoryAccess)
 }
 
-def public op_f64_Store_f64_ss(var _pc : pc_t; var _sp : m3stack_t; var _mem : M3MemoryHeader?; var _r0 : m3reg_t; var _fp0 : f64) : M3Result {
+def public op_f64_Store_f64_ss(var _pc : pc_t&; var _sp : m3stack_t&; var _mem : M3MemoryHeader?&; var _r0 : m3reg_t&; var _fp0 : f64&) : M3Result {
     let value = slot_f64(_pc, _sp)
     var operand = u64(slot_u32(_pc, _sp))
     let offset = immediate_u32(_pc)
@@ -3933,7 +3948,7 @@ def public op_f64_Store_f64_ss(var _pc : pc_t; var _sp : m3stack_t; var _mem : M
     return newTrap(_pc, _mem, m3Err_trapOutOfBoundsMemoryAccess)
 }
 
-def public op_f64_Store_f64_rr(var _pc : pc_t; var _sp : m3stack_t; var _mem : M3MemoryHeader?; var _r0 : m3reg_t; var _fp0 : f64) : M3Result {
+def public op_f64_Store_f64_rr(var _pc : pc_t&; var _sp : m3stack_t&; var _mem : M3MemoryHeader?&; var _r0 : m3reg_t&; var _fp0 : f64&) : M3Result {
     var operand = u64(u32(_r0))
     let offset = immediate_u32(_pc)
     operand += u64(offset)
@@ -3945,7 +3960,7 @@ def public op_f64_Store_f64_rr(var _pc : pc_t; var _sp : m3stack_t; var _mem : M
     return newTrap(_pc, _mem, m3Err_trapOutOfBoundsMemoryAccess)
 }
 
-def public op_i32_Store_u8_rs(var _pc : pc_t; var _sp : m3stack_t; var _mem : M3MemoryHeader?; var _r0 : m3reg_t; var _fp0 : f64) : M3Result {
+def public op_i32_Store_u8_rs(var _pc : pc_t&; var _sp : m3stack_t&; var _mem : M3MemoryHeader?&; var _r0 : m3reg_t&; var _fp0 : f64&) : M3Result {
     var operand = u64(slot_u32(_pc, _sp))
     let offset = immediate_u32(_pc)
     operand += u64(offset)
@@ -3957,7 +3972,7 @@ def public op_i32_Store_u8_rs(var _pc : pc_t; var _sp : m3stack_t; var _mem : M3
     return newTrap(_pc, _mem, m3Err_trapOutOfBoundsMemoryAccess)
 }
 
-def public op_i32_Store_u8_sr(var _pc : pc_t; var _sp : m3stack_t; var _mem : M3MemoryHeader?; var _r0 : m3reg_t; var _fp0 : f64) : M3Result {
+def public op_i32_Store_u8_sr(var _pc : pc_t&; var _sp : m3stack_t&; var _mem : M3MemoryHeader?&; var _r0 : m3reg_t&; var _fp0 : f64&) : M3Result {
     let value = slot_i32(_pc, _sp)
     var operand = u64(u32(_r0))
     let offset = immediate_u32(_pc)
@@ -3970,7 +3985,7 @@ def public op_i32_Store_u8_sr(var _pc : pc_t; var _sp : m3stack_t; var _mem : M3
     return newTrap(_pc, _mem, m3Err_trapOutOfBoundsMemoryAccess)
 }
 
-def public op_i32_Store_u8_ss(var _pc : pc_t; var _sp : m3stack_t; var _mem : M3MemoryHeader?; var _r0 : m3reg_t; var _fp0 : f64) : M3Result {
+def public op_i32_Store_u8_ss(var _pc : pc_t&; var _sp : m3stack_t&; var _mem : M3MemoryHeader?&; var _r0 : m3reg_t&; var _fp0 : f64&) : M3Result {
     let value = slot_i32(_pc, _sp)
     var operand = u64(slot_u32(_pc, _sp))
     let offset = immediate_u32(_pc)
@@ -3983,7 +3998,7 @@ def public op_i32_Store_u8_ss(var _pc : pc_t; var _sp : m3stack_t; var _mem : M3
     return newTrap(_pc, _mem, m3Err_trapOutOfBoundsMemoryAccess)
 }
 
-def public op_i32_Store_i16_rs(var _pc : pc_t; var _sp : m3stack_t; var _mem : M3MemoryHeader?; var _r0 : m3reg_t; var _fp0 : f64) : M3Result {
+def public op_i32_Store_i16_rs(var _pc : pc_t&; var _sp : m3stack_t&; var _mem : M3MemoryHeader?&; var _r0 : m3reg_t&; var _fp0 : f64&) : M3Result {
     var operand = u64(slot_u32(_pc, _sp))
     let offset = immediate_u32(_pc)
     operand += u64(offset)
@@ -3995,7 +4010,7 @@ def public op_i32_Store_i16_rs(var _pc : pc_t; var _sp : m3stack_t; var _mem : M
     return newTrap(_pc, _mem, m3Err_trapOutOfBoundsMemoryAccess)
 }
 
-def public op_i32_Store_i16_sr(var _pc : pc_t; var _sp : m3stack_t; var _mem : M3MemoryHeader?; var _r0 : m3reg_t; var _fp0 : f64) : M3Result {
+def public op_i32_Store_i16_sr(var _pc : pc_t&; var _sp : m3stack_t&; var _mem : M3MemoryHeader?&; var _r0 : m3reg_t&; var _fp0 : f64&) : M3Result {
     let value = slot_i32(_pc, _sp)
     var operand = u64(u32(_r0))
     let offset = immediate_u32(_pc)
@@ -4008,7 +4023,7 @@ def public op_i32_Store_i16_sr(var _pc : pc_t; var _sp : m3stack_t; var _mem : M
     return newTrap(_pc, _mem, m3Err_trapOutOfBoundsMemoryAccess)
 }
 
-def public op_i32_Store_i16_ss(var _pc : pc_t; var _sp : m3stack_t; var _mem : M3MemoryHeader?; var _r0 : m3reg_t; var _fp0 : f64) : M3Result {
+def public op_i32_Store_i16_ss(var _pc : pc_t&; var _sp : m3stack_t&; var _mem : M3MemoryHeader?&; var _r0 : m3reg_t&; var _fp0 : f64&) : M3Result {
     let value = slot_i32(_pc, _sp)
     var operand = u64(slot_u32(_pc, _sp))
     let offset = immediate_u32(_pc)
@@ -4021,7 +4036,7 @@ def public op_i32_Store_i16_ss(var _pc : pc_t; var _sp : m3stack_t; var _mem : M
     return newTrap(_pc, _mem, m3Err_trapOutOfBoundsMemoryAccess)
 }
 
-def public op_i32_Store_i32_rs(var _pc : pc_t; var _sp : m3stack_t; var _mem : M3MemoryHeader?; var _r0 : m3reg_t; var _fp0 : f64) : M3Result {
+def public op_i32_Store_i32_rs(var _pc : pc_t&; var _sp : m3stack_t&; var _mem : M3MemoryHeader?&; var _r0 : m3reg_t&; var _fp0 : f64&) : M3Result {
     var operand = u64(slot_u32(_pc, _sp))
     let offset = immediate_u32(_pc)
     operand += u64(offset)
@@ -4033,7 +4048,7 @@ def public op_i32_Store_i32_rs(var _pc : pc_t; var _sp : m3stack_t; var _mem : M
     return newTrap(_pc, _mem, m3Err_trapOutOfBoundsMemoryAccess)
 }
 
-def public op_i32_Store_i32_sr(var _pc : pc_t; var _sp : m3stack_t; var _mem : M3MemoryHeader?; var _r0 : m3reg_t; var _fp0 : f64) : M3Result {
+def public op_i32_Store_i32_sr(var _pc : pc_t&; var _sp : m3stack_t&; var _mem : M3MemoryHeader?&; var _r0 : m3reg_t&; var _fp0 : f64&) : M3Result {
     let value = slot_i32(_pc, _sp)
     var operand = u64(u32(_r0))
     let offset = immediate_u32(_pc)
@@ -4046,7 +4061,7 @@ def public op_i32_Store_i32_sr(var _pc : pc_t; var _sp : m3stack_t; var _mem : M
     return newTrap(_pc, _mem, m3Err_trapOutOfBoundsMemoryAccess)
 }
 
-def public op_i32_Store_i32_ss(var _pc : pc_t; var _sp : m3stack_t; var _mem : M3MemoryHeader?; var _r0 : m3reg_t; var _fp0 : f64) : M3Result {
+def public op_i32_Store_i32_ss(var _pc : pc_t&; var _sp : m3stack_t&; var _mem : M3MemoryHeader?&; var _r0 : m3reg_t&; var _fp0 : f64&) : M3Result {
     let value = slot_i32(_pc, _sp)
     var operand = u64(slot_u32(_pc, _sp))
     let offset = immediate_u32(_pc)
@@ -4059,7 +4074,7 @@ def public op_i32_Store_i32_ss(var _pc : pc_t; var _sp : m3stack_t; var _mem : M
     return newTrap(_pc, _mem, m3Err_trapOutOfBoundsMemoryAccess)
 }
 
-def public op_i64_Store_u8_rs(var _pc : pc_t; var _sp : m3stack_t; var _mem : M3MemoryHeader?; var _r0 : m3reg_t; var _fp0 : f64) : M3Result {
+def public op_i64_Store_u8_rs(var _pc : pc_t&; var _sp : m3stack_t&; var _mem : M3MemoryHeader?&; var _r0 : m3reg_t&; var _fp0 : f64&) : M3Result {
     var operand = u64(slot_u32(_pc, _sp))
     let offset = immediate_u32(_pc)
     operand += u64(offset)
@@ -4071,7 +4086,7 @@ def public op_i64_Store_u8_rs(var _pc : pc_t; var _sp : m3stack_t; var _mem : M3
     return newTrap(_pc, _mem, m3Err_trapOutOfBoundsMemoryAccess)
 }
 
-def public op_i64_Store_u8_sr(var _pc : pc_t; var _sp : m3stack_t; var _mem : M3MemoryHeader?; var _r0 : m3reg_t; var _fp0 : f64) : M3Result {
+def public op_i64_Store_u8_sr(var _pc : pc_t&; var _sp : m3stack_t&; var _mem : M3MemoryHeader?&; var _r0 : m3reg_t&; var _fp0 : f64&) : M3Result {
     let value = slot_i64(_pc, _sp)
     var operand = u64(u32(_r0))
     let offset = immediate_u32(_pc)
@@ -4084,7 +4099,7 @@ def public op_i64_Store_u8_sr(var _pc : pc_t; var _sp : m3stack_t; var _mem : M3
     return newTrap(_pc, _mem, m3Err_trapOutOfBoundsMemoryAccess)
 }
 
-def public op_i64_Store_u8_ss(var _pc : pc_t; var _sp : m3stack_t; var _mem : M3MemoryHeader?; var _r0 : m3reg_t; var _fp0 : f64) : M3Result {
+def public op_i64_Store_u8_ss(var _pc : pc_t&; var _sp : m3stack_t&; var _mem : M3MemoryHeader?&; var _r0 : m3reg_t&; var _fp0 : f64&) : M3Result {
     let value = slot_i64(_pc, _sp)
     var operand = u64(slot_u32(_pc, _sp))
     let offset = immediate_u32(_pc)
@@ -4097,7 +4112,7 @@ def public op_i64_Store_u8_ss(var _pc : pc_t; var _sp : m3stack_t; var _mem : M3
     return newTrap(_pc, _mem, m3Err_trapOutOfBoundsMemoryAccess)
 }
 
-def public op_i64_Store_i16_rs(var _pc : pc_t; var _sp : m3stack_t; var _mem : M3MemoryHeader?; var _r0 : m3reg_t; var _fp0 : f64) : M3Result {
+def public op_i64_Store_i16_rs(var _pc : pc_t&; var _sp : m3stack_t&; var _mem : M3MemoryHeader?&; var _r0 : m3reg_t&; var _fp0 : f64&) : M3Result {
     var operand = u64(slot_u32(_pc, _sp))
     let offset = immediate_u32(_pc)
     operand += u64(offset)
@@ -4109,7 +4124,7 @@ def public op_i64_Store_i16_rs(var _pc : pc_t; var _sp : m3stack_t; var _mem : M
     return newTrap(_pc, _mem, m3Err_trapOutOfBoundsMemoryAccess)
 }
 
-def public op_i64_Store_i16_sr(var _pc : pc_t; var _sp : m3stack_t; var _mem : M3MemoryHeader?; var _r0 : m3reg_t; var _fp0 : f64) : M3Result {
+def public op_i64_Store_i16_sr(var _pc : pc_t&; var _sp : m3stack_t&; var _mem : M3MemoryHeader?&; var _r0 : m3reg_t&; var _fp0 : f64&) : M3Result {
     let value = slot_i64(_pc, _sp)
     var operand = u64(u32(_r0))
     let offset = immediate_u32(_pc)
@@ -4122,7 +4137,7 @@ def public op_i64_Store_i16_sr(var _pc : pc_t; var _sp : m3stack_t; var _mem : M
     return newTrap(_pc, _mem, m3Err_trapOutOfBoundsMemoryAccess)
 }
 
-def public op_i64_Store_i16_ss(var _pc : pc_t; var _sp : m3stack_t; var _mem : M3MemoryHeader?; var _r0 : m3reg_t; var _fp0 : f64) : M3Result {
+def public op_i64_Store_i16_ss(var _pc : pc_t&; var _sp : m3stack_t&; var _mem : M3MemoryHeader?&; var _r0 : m3reg_t&; var _fp0 : f64&) : M3Result {
     let value = slot_i64(_pc, _sp)
     var operand = u64(slot_u32(_pc, _sp))
     let offset = immediate_u32(_pc)
@@ -4135,7 +4150,7 @@ def public op_i64_Store_i16_ss(var _pc : pc_t; var _sp : m3stack_t; var _mem : M
     return newTrap(_pc, _mem, m3Err_trapOutOfBoundsMemoryAccess)
 }
 
-def public op_i64_Store_i32_rs(var _pc : pc_t; var _sp : m3stack_t; var _mem : M3MemoryHeader?; var _r0 : m3reg_t; var _fp0 : f64) : M3Result {
+def public op_i64_Store_i32_rs(var _pc : pc_t&; var _sp : m3stack_t&; var _mem : M3MemoryHeader?&; var _r0 : m3reg_t&; var _fp0 : f64&) : M3Result {
     var operand = u64(slot_u32(_pc, _sp))
     let offset = immediate_u32(_pc)
     operand += u64(offset)
@@ -4147,7 +4162,7 @@ def public op_i64_Store_i32_rs(var _pc : pc_t; var _sp : m3stack_t; var _mem : M
     return newTrap(_pc, _mem, m3Err_trapOutOfBoundsMemoryAccess)
 }
 
-def public op_i64_Store_i32_sr(var _pc : pc_t; var _sp : m3stack_t; var _mem : M3MemoryHeader?; var _r0 : m3reg_t; var _fp0 : f64) : M3Result {
+def public op_i64_Store_i32_sr(var _pc : pc_t&; var _sp : m3stack_t&; var _mem : M3MemoryHeader?&; var _r0 : m3reg_t&; var _fp0 : f64&) : M3Result {
     let value = slot_i64(_pc, _sp)
     var operand = u64(u32(_r0))
     let offset = immediate_u32(_pc)
@@ -4160,7 +4175,7 @@ def public op_i64_Store_i32_sr(var _pc : pc_t; var _sp : m3stack_t; var _mem : M
     return newTrap(_pc, _mem, m3Err_trapOutOfBoundsMemoryAccess)
 }
 
-def public op_i64_Store_i32_ss(var _pc : pc_t; var _sp : m3stack_t; var _mem : M3MemoryHeader?; var _r0 : m3reg_t; var _fp0 : f64) : M3Result {
+def public op_i64_Store_i32_ss(var _pc : pc_t&; var _sp : m3stack_t&; var _mem : M3MemoryHeader?&; var _r0 : m3reg_t&; var _fp0 : f64&) : M3Result {
     let value = slot_i64(_pc, _sp)
     var operand = u64(slot_u32(_pc, _sp))
     let offset = immediate_u32(_pc)
@@ -4173,7 +4188,7 @@ def public op_i64_Store_i32_ss(var _pc : pc_t; var _sp : m3stack_t; var _mem : M
     return newTrap(_pc, _mem, m3Err_trapOutOfBoundsMemoryAccess)
 }
 
-def public op_i64_Store_i64_rs(var _pc : pc_t; var _sp : m3stack_t; var _mem : M3MemoryHeader?; var _r0 : m3reg_t; var _fp0 : f64) : M3Result {
+def public op_i64_Store_i64_rs(var _pc : pc_t&; var _sp : m3stack_t&; var _mem : M3MemoryHeader?&; var _r0 : m3reg_t&; var _fp0 : f64&) : M3Result {
     var operand = u64(slot_u32(_pc, _sp))
     let offset = immediate_u32(_pc)
     operand += u64(offset)
@@ -4185,7 +4200,7 @@ def public op_i64_Store_i64_rs(var _pc : pc_t; var _sp : m3stack_t; var _mem : M
     return newTrap(_pc, _mem, m3Err_trapOutOfBoundsMemoryAccess)
 }
 
-def public op_i64_Store_i64_sr(var _pc : pc_t; var _sp : m3stack_t; var _mem : M3MemoryHeader?; var _r0 : m3reg_t; var _fp0 : f64) : M3Result {
+def public op_i64_Store_i64_sr(var _pc : pc_t&; var _sp : m3stack_t&; var _mem : M3MemoryHeader?&; var _r0 : m3reg_t&; var _fp0 : f64&) : M3Result {
     let value = slot_i64(_pc, _sp)
     var operand = u64(u32(_r0))
     let offset = immediate_u32(_pc)
@@ -4198,7 +4213,7 @@ def public op_i64_Store_i64_sr(var _pc : pc_t; var _sp : m3stack_t; var _mem : M
     return newTrap(_pc, _mem, m3Err_trapOutOfBoundsMemoryAccess)
 }
 
-def public op_i64_Store_i64_ss(var _pc : pc_t; var _sp : m3stack_t; var _mem : M3MemoryHeader?; var _r0 : m3reg_t; var _fp0 : f64) : M3Result {
+def public op_i64_Store_i64_ss(var _pc : pc_t&; var _sp : m3stack_t&; var _mem : M3MemoryHeader?&; var _r0 : m3reg_t&; var _fp0 : f64&) : M3Result {
     let value = slot_i64(_pc, _sp)
     var operand = u64(slot_u32(_pc, _sp))
     let offset = immediate_u32(_pc)

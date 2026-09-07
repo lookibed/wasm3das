@@ -1,7 +1,9 @@
 options gen2
 options indenting = 4
-// The executor nests one Daslang frame per executed op (no M3_MUSTTAIL);
-// options stack counts only in the program root, which under dastest is this file.
+// The executor has no M3_MUSTTAIL: RunLoop (m3_exec_defs.das) dispatches the
+// operations, so a wasm call nests a bounded number of Daslang frames per wasm
+// frame instead of one per executed operation. options stack counts only in the
+// program root, which under dastest is this file.
 options stack = 4_194_304
 
 // No `module` declaration, like tests/test_m3_env.das: a named test module

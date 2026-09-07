@@ -1,17 +1,18 @@
 options gen2
 options indenting = 4
-// The port has no equivalent of C M3_MUSTTAIL: every op_* calls the next
-// operation instead of tail-jumping, so one wasm frame costs several Daslang
-// frames. `options stack` counts only in the program root, which for the
-// command line tool is this file.
+// C M3_MUSTTAIL is replaced by the RunLoop dispatcher of m3_exec_defs.das
+// (notes/exec_trampoline_design.md): ops return to the loop, and only a
+// wasm call nests Daslang frames, a bounded number per wasm frame.
+// `options stack` counts only in the program root, which for the command
+// line tool is this file.
 //
 // The size is chosen so that the wasm stack limit checked by op_Entry
 // (m3_exec.das, C m3_exec.h `_sp + maxStackSlots < _mem->maxStack`) is
 // reached before the Daslang context stack: an unbounded wasm recursion must
 // end as `[trap] stack overflow`, which is what the spec suite's
 // assert_exhaustion cases expect, not as a Daslang "stack overflow"
-// exception that kills the process. 64 MiB is enough for the default 64 KiB
-// wasm stack; a much larger `--stack-size` can still exhaust it first.
+// exception that kills the process. The default 64 KiB wasm stack needs
+// about 6 MiB; 64 MiB leaves room for a much larger `--stack-size`.
 options stack = 67_108_864
 
 // Conservative Gen2 port of wasm3c/platforms/app/main.c.
@@ -483,11 +484,11 @@ def repl_invoke(name : string; argc : int; argv : array<string>) : M3Result {
     var valbuff : array<u64>
     valbuff |> resize(128)
 
-    var argptrs : array<void const?>
+    var argptrs : array<void?>          // C: const void *; see m3_Call's deviation note
     argptrs |> reserve(argc)
     unsafe {
         for (i in 0 .. argc) {
-            argptrs |> push(addr<void const?>(valbuff[i]))
+            argptrs |> push(addr<void?>(valbuff[i]))
             let _type = m3_GetArgType(func, u32(i))
             if (_type == M3ValueType.c_m3Type_i32 || _type == M3ValueType.c_m3Type_f32) {
                 // C: *(u32*)(s) = strtoul(argv[i], NULL, 10)

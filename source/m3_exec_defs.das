@@ -27,10 +27,25 @@ require ./m3_types.das
     every C return shape in the interpreter core (m3Err_xxx or nextOp
     passthrough).
 
-    C nextOpImpl()/jumpOpImpl() expand through ((IM3Operation)(*_pc))(_pc + 1, ...)
-    and become the plain calls below; C nextOpDirect()/jumpOpDirect() add the
-    M3_MUSTTAIL marker, which has no Daslang equivalent and is documented at
-    the call sites instead.
+    Trampoline deviation (notes/exec_trampoline_design.md). Daslang has no
+    M3_MUSTTAIL, so the C shape "every op tail-jumps to the next op" would nest
+    one Daslang frame per executed operation. Instead the operation returns to
+    a dispatch loop:
+
+        C d_m3OpSig       ->  the same five inputs, taken BY REFERENCE, so the
+                              operation updates the dispatcher's state in place
+                              exactly where C would have passed the updated
+                              values on to the next operation
+        C nextOpImpl()    ->  RunLoop: run the code at _pc to completion and
+        C jumpOpImpl(PC)      return its result, which is what the C macro means
+                              once every operation below it tail-jumps
+        C nextOpDirect()  ->  return m3Ret_nextOp, the sentinel that tells the
+        C jumpOpDirect(PC)    dispatching RunLoop to execute the word at _pc
+
+    The three places where C makes a real (non-tail) call - Call() from op_Call
+    and op_CallIndirect, op_Entry and op_Loop - keep calling nextOpImpl, so a
+    nested wasm call still nests a bounded number of Daslang frames per wasm
+    frame instead of per executed operation.
 */
 
 
@@ -65,33 +80,63 @@ def public m3MemInfo(var _mem : M3MemoryHeader?) : IM3Memory {
 
 
 /* C: typedef m3ret_t (vectorcall * IM3Operation) (d_m3OpSig); */
-typedef public IM3Operation = function<(var _pc : pc_t; var _sp : m3stack_t; var _mem : M3MemoryHeader?; var _r0 : m3reg_t; var _fp0 : f64) : M3Result>
+typedef public IM3Operation = function<(var _pc : pc_t&; var _sp : m3stack_t&; var _mem : M3MemoryHeader?&; var _r0 : m3reg_t&; var _fp0 : f64&) : M3Result>
 
+
+/*
+    The dispatcher sentinel. An operation returns it instead of tail-jumping;
+    RunLoop recognises it by pointer, never by content, exactly like the loop
+    ids op_ContinueLoop returns. It can not collide with m3Err_none, with a
+    trap string or with a code page address.
+
+    `var`, not `let`: a `let` string global is constant-folded, and a backend
+    that materialises its own copy of the literal (the daslang JIT does) then
+    fails the pointer-identity test. A `var` keeps one address everywhere.
+*/
+var public m3Ret_nextOp : M3Result = "m3: dispatch the operation at _pc"
+
+
+// The trampoline that stands in for C's M3_MUSTTAIL threading: it owns the five
+// interpreter registers and every operation updates them in place.
+def public RunLoop(var _pc : pc_t; var _sp : m3stack_t; var _mem : M3MemoryHeader?; var _r0 : m3reg_t; var _fp0 : f64) : M3Result {
+    var r : M3Result = m3Err_none
+    unsafe {
+        let nextOpId = reinterpret<void?>(m3Ret_nextOp)
+        while (true) {
+            let operation = reinterpret<IM3Operation>(_pc[0])
+            _pc = _pc + 1
+            r = operation(_pc, _sp, _mem, _r0, _fp0)
+            if (reinterpret<void?>(r) != nextOpId) { break }
+        }
+    }
+    return r
+}
 
 // C: #define nextOpImpl() ((IM3Operation)(* _pc))(_pc + 1, d_m3OpArgs)
 def public nextOpImpl(var _pc : pc_t; var _sp : m3stack_t; var _mem : M3MemoryHeader?; var _r0 : m3reg_t; var _fp0 : f64) : M3Result {
-    unsafe {
-        let operation = reinterpret<IM3Operation>(_pc[0])
-        return operation(_pc + 1, _sp, _mem, _r0, _fp0)
-    }
+    return RunLoop(_pc, _sp, _mem, _r0, _fp0)
 }
 
 // C: #define jumpOpImpl(PC) ((IM3Operation)(* PC))( PC + 1, d_m3OpArgs)
 def public jumpOpImpl(var pc : pc_t; var _sp : m3stack_t; var _mem : M3MemoryHeader?; var _r0 : m3reg_t; var _fp0 : f64) : M3Result {
-    unsafe {
-        let operation = reinterpret<IM3Operation>(pc[0])
-        return operation(pc + 1, _sp, _mem, _r0, _fp0)
-    }
+    return RunLoop(pc, _sp, _mem, _r0, _fp0)
 }
 
 // C: #define nextOpDirect() M3_MUSTTAIL return nextOpImpl()
-def public nextOpDirect(var _pc : pc_t; var _sp : m3stack_t; var _mem : M3MemoryHeader?; var _r0 : m3reg_t; var _fp0 : f64) : M3Result {
-    return nextOpImpl(_pc, _sp, _mem, _r0, _fp0)
+// The operation has already written _pc/_sp/_mem/_r0/_fp0 back through its
+// reference parameters, so the tail jump is a return to the dispatching loop.
+[inline, unused_argument(_pc, _sp, _mem, _r0, _fp0)]
+def public nextOpDirect(var _pc : pc_t&; var _sp : m3stack_t&; var _mem : M3MemoryHeader?&; var _r0 : m3reg_t&; var _fp0 : f64&) : M3Result {
+    return m3Ret_nextOp
 }
 
 // C: #define jumpOpDirect(PC) M3_MUSTTAIL return jumpOpImpl((pc_t)(PC))
-def public jumpOpDirect(var pc : pc_t; var _sp : m3stack_t; var _mem : M3MemoryHeader?; var _r0 : m3reg_t; var _fp0 : f64) : M3Result {
-    return jumpOpImpl(pc, _sp, _mem, _r0, _fp0)
+// _sp/_mem/_r0/_fp0 are already the dispatcher's own state, so only the branch
+// target has to be handed over.
+[inline]
+def public jumpOpDirect(var _pc : pc_t&; var PC : pc_t) : M3Result {
+    _pc = PC
+    return m3Ret_nextOp
 }
 
 
@@ -102,5 +147,5 @@ def public jumpOpDirect(var pc : pc_t; var _sp : m3stack_t; var _mem : M3MemoryH
 
 // C: d_m3RetSig RunCode (d_m3OpSig) { nextOpDirect(); }
 def public RunCode(var _pc : pc_t; var _sp : m3stack_t; var _mem : M3MemoryHeader?; var _r0 : m3reg_t; var _fp0 : f64) : M3Result {
-    return nextOpDirect(_pc, _sp, _mem, _r0, _fp0)
+    return RunLoop(_pc, _sp, _mem, _r0, _fp0)
 }

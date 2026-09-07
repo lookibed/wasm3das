@@ -262,6 +262,15 @@ struct M3TaggedValue {
 typedef public IM3TaggedValue = M3TaggedValue?
 
 
+// C: a zero-initialised M3TaggedValue is `{ c_m3Type_none, 0 }`. This is also
+// what makes the daslang AOT emitter declare M3ValueType in this unit: it
+// declares an enum of another module only when the unit's own code uses one
+// of its values, and without it the generated M3TaggedValue does not compile.
+def m3_TaggedValueNone() : M3TaggedValue {
+    return M3TaggedValue(_type = M3ValueType.c_m3Type_none, valueBits = 0ul)
+}
+
+
 /* C: typedef M3Result (* M3SectionHandler) (IM3Module i_module, const char* name, const uint8_t * start, const uint8_t * end); */
 typedef public M3SectionHandler = function<(i_module : IM3Module; i_name : cstr_t; i_start : cbytes_t; i_end : cbytes_t) : M3Result>
 

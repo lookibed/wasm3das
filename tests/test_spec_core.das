@@ -322,10 +322,10 @@ def private spec_invoke(var s : SpecSession; field : string; action : JsonValue?
         }
     }
     // argBits is complete before any address is taken: a later push would move it.
-    var argPtrs : array<void const?>
+    var argPtrs : array<void?>
     argPtrs |> reserve(length(argBits))
     for (a in argBits) {
-        argPtrs |> push(unsafe(addr<void const?>(a)))
+        argPtrs |> push(unsafe(addr<void?>(a)))
     }
 
     result = m3_Call(_function, u32(length(argBits)), argPtrs)

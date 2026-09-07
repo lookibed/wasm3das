@@ -311,8 +311,8 @@ def test_env_call_argument_and_result_protocol(t : T?) {
 
     // C m3_Call: argc is checked before the compiled check; m3_Call takes raw pointers.
     var n = 12
-    var argptrs : array<void const?>
-    argptrs |> push(unsafe(addr<void const?>(n)))
+    var argptrs : array<void?>
+    argptrs |> push(unsafe(addr<void?>(n)))
     t |> equal(m3_Call(fx.fib, 1u, argptrs), m3Err_none, "m3_Call fib(12)")
     var out = 0
     var retptrs : array<void?>

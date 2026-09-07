@@ -35,8 +35,12 @@ like Wasm3 and is verified with Wasm3's own test suite.
   `poll_oneoff`, sockets or `environ` contents. File access goes through the
   preopened directory `.` (the working directory), as in Wasm3.
 - No imported memories, imported tables or host globals, the same as Wasm3.
-- Speed: this is an interpreter running inside the Daslang interpreter,
-  roughly two orders of magnitude slower than the C build.
+- Speed: run through `scripts/wasm3` the port is interpreted by Daslang and
+  is tens of times slower than the C build; the native AOT build
+  (`scripts/build_native.sh`, below) closes most of that gap. Numbers for
+  every engine are in `notes/benchmark_2026-09-07.md`.
+- Every run compiles the Daslang sources first (about 2 s), in both the
+  interpreted and the native build.
 - Deep recursion needs a large stack. The wrapper raises the thread stack
   limit and the app reserves a 64 MiB Daslang stack so a runaway recursion
   reports `[trap] stack overflow` instead of crashing.
@@ -143,6 +147,23 @@ Python 3 for the spec-test driver.
    scripts/wasm3 wasm3c/test/lang/fib32.wasm --func fib 25
    ```
 
-The port is plain Daslang source; there is nothing to build in this
-repository. Development rules, the verification gate and the review process
-are in `docs/development-pipeline.md` and `AGENTS.md`.
+The port is plain Daslang source; nothing needs building for the interpreted
+run above.
+
+### Native build
+
+`scripts/build_native.sh` compiles the port ahead of time: daslang's AOT
+turns every module into C++, which is linked with the static `libDaScript`
+of the toolchain and the host in `native/` into `tmp/native/bin/wasm3das`.
+It needs the toolchain's `daslang_static` target built
+(`cmake --build tmp/daslang-toolchain/build --target daslang_static`) and
+clang++ or g++. `scripts/wasm3-native` is the drop-in counterpart of
+`scripts/wasm3`:
+
+```sh
+scripts/build_native.sh
+scripts/wasm3-native wasm3c/test/lang/fib32.wasm --func fib 35
+```
+
+Development rules, the verification gate and the review process are in
+`docs/development-pipeline.md` and `AGENTS.md`.

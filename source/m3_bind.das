@@ -215,7 +215,17 @@ def public FindAndLinkFunction(
                     result = ValidateSignature(f, i_signature)
                     if (result != m3Err_none) { return result }
                 }
-                result = CompileRawFunction(io_module, f, unsafe(reinterpret<void const?>(i_function)), i_userdata)
+                // C: CompileRawFunction (io_module, f, i_function, i_userdata),
+                // where i_function is already a function pointer. The extra u64
+                // hop is the same one EmitWord needs: the daslang AOT backend
+                // lowers `reinterpret<void const?>(f)` of a function value to
+                // the *address of* f (das_cast<TT*>::cast(const QQ&)), so the
+                // code page would keep a pointer into this frame and
+                // op_CallRawFunction would jump through it after the frame
+                // died. Through u64 both backends store the function's bits.
+                unsafe {
+                    result = CompileRawFunction(io_module, f, reinterpret<void const?>(reinterpret<u64>(i_function)), i_userdata)
+                }
                 if (result != m3Err_none) { return result }
             }
         }

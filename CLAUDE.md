@@ -50,6 +50,7 @@ passes its whole default list (`notes/spec_test_status.md`) and
 | `source/` | Daslang port |
 | `tests/` | Component tests (dastest) |
 | `app/` | Port of `platforms/app/main.c` (REPL and `--func` runner), run through `scripts/wasm3` |
+| `native/` | C++ host for the AOT build (`scripts/build_native.sh`, `scripts/wasm3-native`); the port itself stays Daslang |
 | `wasm3c/` | Reference Wasm3 C sources |
 | `docs/` | Design decisions that outlive a single session |
 | `notes/` | Dated working notes and handoffs |
