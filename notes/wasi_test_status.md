@@ -157,28 +157,35 @@ from `github.com/wasm3/wasm3` (`alice29_small.txt` 12126 bytes, `alice29.txt`
 `-text` so no line-ending conversion can touch fixtures again. With the
 tracked tree the `--fast` list passes 7/7 without any overlay.
 
-## Result: full list (no `--fast`) — partial, then stopped
+## Result: full list (no `--fast`) — 12 of 12
 
 The full list runs the same benchmarks at production sizes and adds
-`mandel_dd`, STREAM, CoreMark and the self-hosting `wasm3-fib.wasm`. It was
-started with `--timeout 36000` and stopped after 45 minutes on a change of
-priorities; what it reached:
+`mandel_dd`, STREAM, CoreMark and the self-hosting `wasm3-fib.wasm`. Run on
+the tracked tree (restored Brotli fixtures) with `--timeout 36000`, about
+80 minutes of wall time in total:
 
-| # | test | status |
-|---|---|---|
-| 1-2 | Simple WASI test, and the `wasm-opt -O3` build of it | both ran to `=== done ===` |
-| 3 | mandelbrot `128 4e5` | finished, 280 s |
-| 4 | mandelbrot doubledouble `128 4e5` | finished, 1426 s (23.8 min) |
-| 5 | C-Ray `-s 128x128` | finished, 15.6 s |
-| 6 | smallpt `16 64` | in progress when stopped |
-| 7-12 | smallpt multi-value, mal 16, STREAM, self-hosting, Brotli, CoreMark | not reached |
+```
+{'crashed': 0, 'failed': 0, 'timeout': 0, 'total_run': 12}
+ All 12 tests OK
+```
 
-Because the driver buffers its verdicts, the four finished benchmarks have no
-recorded pass/fail; only their own elapsed times were captured. `mandel_dd`
-alone is 24 minutes, and the self-hosting case (wasm3 interpreting wasm
-*inside* this interpreter) is the slowest entry by a wide margin, so the whole
-list is a multi-hour run. Its Brotli entry carries the same CRLF fixture
-problem as the `--fast` one.
+| # | test | verdict | self-reported time |
+|---|---|---|---|
+| 1-2 | Simple WASI test, and the `wasm-opt -O3` build of it | pass (pattern) | — |
+| 3 | mandelbrot `128 4e5` | pass (sha1) | 174 s |
+| 4 | mandelbrot doubledouble `128 4e5` | pass (sha1) | 952 s |
+| 5 | C-Ray `-s 128x128` | pass (sha1) | 17 s |
+| 6 | smallpt `16 64` | pass (sha1) | 403 s |
+| 7 | smallpt multi-value `16 64` | pass (sha1) | 892 s |
+| 8 | mal `test-fib.mal 16` | pass (pattern `987`) | — |
+| 9 | STREAM | pass (pattern, "Solution Validates") | — |
+| 10 | Self-hosting `wasm3-fib.wasm` (wasm3 interpreting wasm inside this interpreter) | pass (pattern, `Result: 832040`) | — |
+| 11 | Brotli `-c -f` < `alice29.txt` | pass (sha1 `8eacda4b…`) | — |
+| 12 | CoreMark | pass (pattern, "Correct operation validated") | — |
+
+An earlier attempt on a machine also running two daslang builds took 280 s
+and 1426 s for the two mandelbrot variants; the driver's verdicts are only
+printed at exit unless Python runs with `-u`.
 
 ## Reproducing a single test
 

@@ -39,7 +39,7 @@ WASI) and the app are in revision (reviewed against C, awaiting code-owner
 sign-off). End-to-end execution works: `scripts/wasm3` runs every
 `wasm3c/test/lang` fixture, the original `wasm3c/test/run-spec-test.py`
 passes its whole default list (`notes/spec_test_status.md`) and
-`wasm3c/test/run-wasi-test.py --fast` passes 7/7 (`notes/wasi_test_status.md`).
+`wasm3c/test/run-wasi-test.py` passes 12/12 (`notes/wasi_test_status.md`).
 `m3_info`, the tracer and the full public `wasm3.h` API are not started.
 `wasm3c/` is the reference C source tree.
 

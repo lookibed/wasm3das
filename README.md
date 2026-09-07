@@ -20,9 +20,10 @@ like Wasm3 and is verified with Wasm3's own test suite.
   crashes. Per-file numbers are in `notes/spec_test_status.md`.
 - Runs every module in `wasm3c/test/lang`.
 - Runs WASI programs (`wasi_snapshot_preview1` and `wasi_unstable`, the
-  same function set as Wasm3): Wasm3's own `run-wasi-test.py --fast` passes
-  all 7 programs (a C test suite, mandelbrot, C-Ray, two smallpt builds, the
-  mal Lisp interpreter, Brotli) with byte-exact output.
+  same function set as Wasm3): Wasm3's own `run-wasi-test.py` passes its
+  whole list, 12 of 12 (a C test suite, mandelbrot, C-Ray, two smallpt
+  builds, the mal Lisp interpreter, STREAM, Brotli, CoreMark and the
+  self-hosted `wasm3-fib.wasm`) with byte-exact output.
 - Links host functions into a module (`m3_LinkRawFunction`) and provides the
   `spectest` and libc (`env.*`) host modules.
 - Command line front end with the same commands and output as the C `wasm3`
