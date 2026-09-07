@@ -28,7 +28,7 @@ fail() {
 # 1. Formatter verify. dasfmt must be given directories: a single-file path
 #    aborts with "FATAL: g_envTotal=1 at exit" on the pinned toolchain.
 echo "invariants: formatter verify"
-for dir in source tests/integration app host_test; do
+for dir in source tests/integration app tests/host_test; do
     if ! "$DASLANG" "$DASLANG_ROOT/utils/das-fmt/dasfmt.das" -- --path "$dir" --verify; then
         fail "unformatted files under $dir/ (run mcp__daslang__format_file on them)"
     fi
@@ -69,7 +69,7 @@ done
 # 4. File header. AGENTS.md code conventions: every .das starts with
 #    `options gen2` and `options indenting = 4`.
 echo "invariants: file headers"
-for file in source/*.das tests/integration/*.das app/*.das host_test/*.das; do
+for file in source/*.das tests/integration/*.das app/*.das tests/host_test/*.das; do
     if [[ "$(sed -n '1p' "$file")" != "options gen2" ]]; then
         fail "$file: line 1 must be 'options gen2'"
     fi
