@@ -1,0 +1,47 @@
+#!/usr/bin/env bash
+# wasm3 command line front end for the AOT-compiled Daslang port: the same
+# drop-in replacement for the C `wasm3` binary that scripts/wasm3 provides,
+# but backed by the native binary built by scripts/build_native.sh instead of
+# by the daslang interpreter.
+#
+# Usage is identical to scripts/wasm3, so the two can be swapped in a runner
+# invocation:
+#   wasm3c/test/run-spec-test.py --exec "<repo>/scripts/wasm3-native --repl"
+#   wasm3c/test/run-wasi-test.py --exec "<repo>/scripts/wasm3-native"
+#
+# Environment:
+#   WASM3DAS_NATIVE   the native binary (default: tmp/native/bin/wasm3das)
+#   WASM3DAS_ROOT     bundle root passed as -dasroot; only needed when the
+#                     binary is not in <root>/bin next to <root>/app and
+#                     <root>/daslib, which is the layout build_native.sh makes
+set -euo pipefail
+
+repo_root="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")/.." && pwd)"
+
+NATIVE="${WASM3DAS_NATIVE:-$repo_root/tmp/native/bin/wasm3das}"
+
+if [[ ! -x "$NATIVE" ]]; then
+    echo "wasm3-native: missing native binary at $NATIVE (run scripts/build_native.sh)" >&2
+    exit 1
+fi
+
+# Ops return to the RunLoop dispatcher (m3_exec_defs.das), so only a wasm call
+# nests native frames, but the daslang context stack of app/wasm3.das
+# (`options stack`) still needs a native stack a few times larger: with the
+# default 8 MiB thread stack an unbounded wasm recursion kills the process
+# with SIGSEGV before op_Entry can report `[trap] stack overflow`, which the
+# spec suite's assert_exhaustion cases expect. Raise the limit when the shell
+# is allowed to.
+ulimit -s 262144 2>/dev/null || true
+
+# Unlike scripts/wasm3 there is no daslang CLI in front of the app, so nothing
+# steals --help/-h before app/wasm3.das sees them and no --wasm3-help alias is
+# needed; the app accepts all three spellings. Every argument is forwarded
+# unchanged, and the host puts them after the `--` separator its own options
+# (-dasroot, -no-aot, -aot-strict) are read from.
+root_opts=()
+if [[ -n "${WASM3DAS_ROOT:-}" ]]; then
+    root_opts+=(-dasroot "$WASM3DAS_ROOT")
+fi
+
+exec "$NATIVE" ${root_opts[@]+"${root_opts[@]}"} "$@"

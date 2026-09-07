@@ -1,12 +1,12 @@
 options gen2
 options indenting = 4
 
-// No `module` declaration, like tests/test_m3_api_libc.das: under dastest a
+// No `module` declaration, like tests/integration/test_m3_api_libc.das: under dastest a
 // test file that names its module does not run the [init] functions of
 // required shared modules.
 
 require dastest/testing_boost
-require ../source/wasi_core.das
+require ../../source/wasi_core.das
 
 
 /*

@@ -5,13 +5,13 @@ options indenting = 4
 // the program root, which under dastest is this file.
 options stack = 4_194_304
 
-// No `module` declaration, like tests/test_fib32_regression.das: a named
+// No `module` declaration, like tests/integration/test_fib32_regression.das: a named
 // test module does not get the [init] of required shared modules under dastest.
 
 require dastest/testing_boost
 require daslib/fio
-require ../source/m3_parse.das
-require ../source/m3_exec.das
+require ../../source/m3_parse.das
+require ../../source/m3_exec.das
 
 
 /*
@@ -311,8 +311,8 @@ def test_env_call_argument_and_result_protocol(t : T?) {
 
     // C m3_Call: argc is checked before the compiled check; m3_Call takes raw pointers.
     var n = 12
-    var argptrs : array<void const?>
-    argptrs |> push(unsafe(addr<void const?>(n)))
+    var argptrs : array<void?>
+    argptrs |> push(unsafe(addr<void?>(n)))
     t |> equal(m3_Call(fx.fib, 1u, argptrs), m3Err_none, "m3_Call fib(12)")
     var out = 0
     var retptrs : array<void?>

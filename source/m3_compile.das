@@ -109,7 +109,7 @@ let c_ioSlotCount : int = int((d_m3Use32BitSlots ? 1u : 0u) + 1u)
    non-nullable, so absent slots hold these explicit no-op sentinels instead;
    the C `op == null` checks become IsNoOp(op)/IsNoCompiler(fn). The sentinels
    are never meant to execute — they trap loudly if reached. */
-def public op_NoOp(var _pc : pc_t; var _sp : m3stack_t; var _mem : M3MemoryHeader?; var _r0 : m3reg_t; var _fp0 : f64) : M3Result {
+def public op_NoOp(var _pc : pc_t&; var _sp : m3stack_t&; var _mem : M3MemoryHeader?&; var _r0 : m3reg_t&; var _fp0 : f64&) : M3Result {
     return m3Err_noCompiler
 }
 

@@ -935,7 +935,10 @@ def ReportNativeStackUsage() {
 }
 
 
-def m3_Call(var i_function : IM3Function; i_argc : u32; i_argptrs : array<void const?>) : M3Result {
+// Deviation: C takes `const void * i_argptrs[]`; the port takes `array<void?>`
+// because the daslang AOT emitter instantiates the array builtins for
+// `TArray<void *>` and cannot bind a `TArray<void const *>` to them.
+def m3_Call(var i_function : IM3Function; i_argc : u32; i_argptrs : array<void?>) : M3Result {
     var runtime = i_function._module.runtime
     var ftype = i_function.funcType
 

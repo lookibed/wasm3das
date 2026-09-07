@@ -12,12 +12,14 @@ Read the rule references in full before acting on a finding:
 - LINT (paranoid) rules are documented inline next to their checks in
   `tmp/daslang-toolchain/daslib/lint.das` (search for the rule id, e.g. `LINT003`).
 
-wasm3das gate: all three profiles must report zero findings on `source` and `tests`:
+wasm3das gate: all three profiles must report zero findings on `source`,
+`tests/integration`, `app` and `tests/host_test` (`tests/manual` holds fixtures only
+and is never linted):
 
 ```sh
 export DAS_LINT_CONFIG_PATH="$PWD/.lint_config"
 for p in paranoid-only perf-only style-only; do
-  tmp/daslang-toolchain/bin/daslang tmp/daslang-toolchain/utils/lint/main.das -- --$p source tests
+  tmp/daslang-toolchain/bin/daslang tmp/daslang-toolchain/utils/lint/main.das -- --$p source tests/integration app tests/host_test
 done
 ```
 

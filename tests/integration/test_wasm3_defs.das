@@ -2,7 +2,7 @@ options gen2
 options indenting = 4
 
 require dastest/testing_boost
-require ../source/wasm3_defs.das
+require ../../source/wasm3_defs.das
 
 
 // ============================================================================

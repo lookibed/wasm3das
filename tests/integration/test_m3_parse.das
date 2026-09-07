@@ -4,7 +4,7 @@ options indenting = 4
 module test_m3_parse
 
 require dastest/testing_boost
-require ../source/m3_parse.das
+require ../../source/m3_parse.das
 
 
 def private fail(message : string) {

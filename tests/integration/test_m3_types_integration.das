@@ -4,9 +4,9 @@ options indenting = 4
 module test_m3_types_integration
 
 require dastest/testing_boost
-require ../source/m3_function.das
-require ../source/m3_bind.das
-require ../source/m3_module.das
+require ../../source/m3_function.das
+require ../../source/m3_bind.das
+require ../../source/m3_module.das
 
 
 def private check(condition : bool; message : string) {

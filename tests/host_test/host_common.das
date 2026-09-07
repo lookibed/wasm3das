@@ -4,7 +4,7 @@ options indenting = 4
 module host_common shared public
 
 require daslib/fio
-require ../source/m3_parse.das public
+require ../../source/m3_parse.das public
 
 
 /*

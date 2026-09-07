@@ -11,7 +11,7 @@ which order they apply and what "done" means at each stage.
 
 | Type | Branch prefix | Manifest effect | Extra mandatory checks |
 |---|---|---|---|
-| port (new C layer) | `port/<layer>` | new row → Draft | `tests/test_<layer>.das` |
+| port (new C layer) | `port/<layer>` | new row → Draft | `tests/integration/test_<layer>.das` |
 | promote (review of a Draft or Revision) | `review/<layer>` | Draft → Revision; owner may set Accepted | C checklist table in the PR |
 | runtime-fix (one invariant) | `fix/<invariant>` | none | fib32 regression through teardown; DAP evidence in the PR |
 | policy / docs | `docs/<topic>` | none | gate only |
@@ -62,12 +62,14 @@ so the order stays visible in `main` after squash merges.
 
 ### 3. Verify
 
-- `tests/test_<layer>.das`: `[test]` functions, `require dastest/testing_boost`,
+- `tests/integration/test_<layer>.das`: `[test]` functions, `require dastest/testing_boost`,
   C file and line cited wherever an expected value is not obvious. A test
   file without `[test]` is not a test (dastest never runs it).
 - Fixtures come only from `wasm3c/test/` (for example
   `wasm3c/test/lang/fib32.wasm`), read relative to the repository root, which
-  is dastest's working directory locally and in CI. No copies under `tests/`.
+  is dastest's working directory locally and in CI. No copies under
+  `tests/integration/`. The fixture sets under `tests/manual/` are a separate,
+  manually run benchmark corpus and are never read by the gate.
 - Runtime and lifecycle changes additionally pass the fib32 regression
   through result retrieval and teardown without a crash. If it crashes, use
   the DAP loop from `AGENTS.md`: observation → one invariant → DAP plus the C
@@ -127,11 +129,11 @@ Done: the checklist is in the PR and the manifest row matches the code.
 
 | Check | Where | Enforced by |
 |---|---|---|
-| compile-only of every `source/` and `tests/` file | gate | CI, pre-push |
+| compile-only of every `source/` and `tests/integration/` file | gate | CI, pre-push |
 | paranoid / perf / style lint, zero findings under `.lint_config` | gate | CI, pre-push |
 | dastest suite | gate | CI, pre-push |
 | formatter verify, test discovery, manifest consistency, file header | gate (repository invariants) | CI, pre-push |
-| fib32 regression through teardown | `tests/` once it exists | CI, pre-push |
+| fib32 regression through teardown | `tests/integration/` | CI, pre-push |
 | DAP evidence, line-by-line C review, allocator provenance | PR body | reviewer |
 | manifest status Accepted | PR | code owner |
 
@@ -141,7 +143,7 @@ for reading and editing `.das`) is unchanged for agents.
 
 ## Mapping the current work onto the pipeline
 
-- fib32 regression test: type `port` for `tests/` only, no `source/` change;
+- fib32 regression test: type `port` for `tests/integration/` only, no `source/` change;
   unblocks every runtime-fix.
 - memory-ownership migration: a `fix/` series of six PRs following
   `docs/memory-ownership.md`, each verified by the fib32 regression.

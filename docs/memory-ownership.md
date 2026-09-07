@@ -1,7 +1,7 @@
 # Memory ownership in the Daslang port
 
 Status: **decided 2026-09-05, implemented 2026-09-06.** The fib32 regression
-(`tests/test_fib32_regression.das`) passes through teardown; the table below
+(`tests/integration/test_fib32_regression.das`) passes through teardown; the table below
 describes the state before the migration and is kept as the record of why.
 
 ## The problem (before the migration)
@@ -26,7 +26,8 @@ per pointer, which regime created it; `m3_FreeModule` deletes the module but
 `m3_Free_Impl`s its arrays. Both historical crashes came from crossing the
 boundary: `m3_Free_Impl` on a `new M3Module()` (glibc `free(): invalid
 pointer`) and `delete` on an `M3FuncType` from `m3_Malloc_Impl`. Tests inherit
-the same burden: `tests/test_m3_code.das` and `tests/test_m3_module.das`
+the same burden: `tests/integration/test_m3_code.das` and
+`tests/integration/test_m3_module.das`
 construct runtimes with `new` and must delete them themselves.
 
 The teardown `SIGSEGV` itself was located with the DAP bridge on 2026-09-06:
@@ -82,7 +83,7 @@ the adapted sites:
 
 ## Migration (done)
 
-1. `tests/test_fib32_regression.das` (PR #10): parse, load, `fib(25)`,
+1. `tests/integration/test_fib32_regression.das` (PR #10): parse, load, `fib(25)`,
    teardown; the teardown half was skipped until step 4.
 2. `m3_NewEnvironment` / `m3_FreeEnvironment`: `m3_Malloc_Impl` /
    `m3_Free_Impl`; the detach-before-delete block in `Environment_Release`
@@ -92,7 +93,8 @@ the adapted sites:
    borrowed links because nothing walks them any more.
 4. `m3_ParseModule` / `m3_FreeModule`; the detach block and the ownership
    comment that explained the `new` exception are gone.
-5. `tests/test_m3_code.das`, `tests/test_m3_module.das`, `tests/test_m3_env.das`
+5. `tests/integration/test_m3_code.das`, `tests/integration/test_m3_module.das`,
+   `tests/integration/test_m3_env.das`
    allocate hand-built runtimes and modules with `m3_Malloc_Impl` and release
    them with `m3_Free_Impl`.
 6. `AGENTS.md`, "Allocation and pointer semantics", states the single regime

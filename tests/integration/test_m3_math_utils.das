@@ -2,7 +2,7 @@ options gen2
 options indenting = 4
 
 require dastest/testing_boost
-require ../source/m3_math_utils.das
+require ../../source/m3_math_utils.das
 
 
 /*

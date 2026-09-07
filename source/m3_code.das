@@ -137,8 +137,14 @@ def public NumFreeLines(var i_page : IM3CodePage) : u32 {
 
 
 /* C m3_code.h: #define EmitWord(page, val) EmitWord_impl((page), (const void *)(val)) */
+// The word goes through u64 on purpose: the daslang AOT backend lowers
+// `reinterpret<void?>(x)` of a non-pointer value (a function, IM3Operation)
+// to the address of x, while the interpreter yields x's own bits; through
+// u64 both backends store the function's bits, which is what C's cast does.
 def public EmitWord(var i_page : IM3CodePage; i_word : auto) {
-    EmitWord_impl(i_page, unsafe(reinterpret<void?>(i_word)))
+    unsafe {
+        EmitWord_impl(i_page, reinterpret<void?>(reinterpret<u64>(i_word)))
+    }
 }
 
 
