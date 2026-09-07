@@ -49,7 +49,7 @@ passes its whole default list (`notes/spec_test_status.md`) and
 |---|---|
 | `source/` | Daslang port |
 | `tests/integration/` | Component tests (dastest); the suite `scripts/gate.sh` and CI run |
-| `tests/manual/` | Manual fixture sets and the `run_fixtures.py` benchmark harness with its `fixture_report.txt`; never run by the gate |
+| `tests/manual/` | Manual fixture sets and the `run_fixtures.py` benchmark harness with its `fixture_report.md`; never run by the gate |
 | `app/` | Port of `platforms/app/main.c` (REPL and `--func` runner), run through `scripts/wasm3` |
 | `native/` | C++ host for the AOT build (`scripts/build_native.sh`, `scripts/wasm3-native`); the port itself stays Daslang |
 | `wasm3c/` | Reference Wasm3 C sources |

@@ -15,10 +15,11 @@ Columns per runtime: returned value, full time, match against the
 wasmtime baseline recorded in the fixture READMEs (true/false, n/a when
 no baseline exists).  Values are compared as signed i32.
 
-The fixture directories, this script and the report it writes
-(tests/manual/fixture_report.txt) live under tests/manual/; the automated
+The fixture directories, this script and the Markdown report it writes
+(tests/manual/fixture_report.md) live under tests/manual/; the automated
 dastest suite the quality gate runs is tests/integration/ and is untouched
-by this harness.
+by this harness.  The console keeps the fixed-width text layout; only the
+saved report is Markdown.
 
 Usage, from the repository root:
   python3 tests/manual/run_fixtures.py [--filter substr]
@@ -27,7 +28,9 @@ Usage, from the repository root:
 Paths can be overridden via env: WASMTIME, WASM3C, WASM3DAS.
 """
 import argparse
+import datetime
 import os
+import platform
 import subprocess
 import sys
 import time
@@ -38,7 +41,7 @@ MANUAL = os.path.dirname(os.path.abspath(__file__))
 # Windows bundle layout the same two levels reach the bundle root).
 BUNDLE_ROOT = os.path.dirname(os.path.dirname(MANUAL))
 REPO_ROOT = BUNDLE_ROOT
-REPORT_PATH = os.path.join(MANUAL, "fixture_report.txt")
+REPORT_PATH = os.path.join(MANUAL, "fixture_report.md")
 
 if os.name == "nt":
     WASMTIME = os.environ.get("WASMTIME", r"D:\Backups\wasmtime\wasmtime-v24.0.1\wasmtime.exe")
@@ -229,12 +232,69 @@ RUNTIMES = {
     "das": ("wasm3das", cmd_das, 2400),
 }
 
+# Executable behind each runtime; used only to print the paths and to ask
+# each engine for its version in the report header.
+RUNTIME_BIN = {"wasmtime": WASMTIME, "wasm3": WASM3C, "das": WASM3DAS}
+VERSION_TIMEOUT = 30
+
+
+def runtime_version(exe: str) -> str:
+    """`<exe> --version` on one line, empty when it fails or says nothing."""
+    try:
+        p = subprocess.run([exe, "--version"], capture_output=True, text=True,
+                           encoding="utf-8", errors="replace",
+                           timeout=VERSION_TIMEOUT)
+    except (OSError, subprocess.SubprocessError):
+        return ""
+    text = (p.stdout or "") + (p.stderr or "")
+    return " / ".join(ln.strip() for ln in text.splitlines() if ln.strip())
+
+
+def machine_name() -> str:
+    """CPU model plus the logical CPU count."""
+    model = ""
+    if sys.platform.startswith("linux"):
+        try:
+            with open("/proc/cpuinfo", "r", encoding="utf-8", errors="replace") as f:
+                for line in f:
+                    if line.startswith("model name"):
+                        model = line.split(":", 1)[1].strip()
+                        break
+        except OSError:
+            model = ""
+    if not model:
+        model = platform.processor() or platform.machine() or "unknown"
+    cpus = os.cpu_count()
+    return f"{model} ({cpus} logical CPUs)" if cpus else model
+
+
+def md(text) -> str:
+    """A value safe inside a Markdown table cell."""
+    return str(text).replace("|", "\\|")
+
+
+def md_result(val, match) -> str:
+    """Result cell: plain on a match, bold + cross on a mismatch."""
+    if isinstance(val, str):        # ERR / TIMEOUT
+        return f"**{md(val)}**"
+    if match is None:               # no documented baseline
+        return f"*{md(val)}*"
+    if match:
+        return md(val)
+    return f"**{md(val)} ✗**"
+
+
+def fmt_ratio(x: float) -> str:
+    return f"{x:.0f}x" if x >= 10 else f"{x:.1f}x"
+
 
 def main() -> int:
     ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     ap.add_argument("--filter", default="", help="run only tests containing this substring")
     ap.add_argument("--runtimes", default="wasmtime,wasm3,das")
-    ap.add_argument("--slow", action="store_true", help="also list skipped entries in the report")
+    ap.add_argument("--slow", action="store_true",
+                    help="also list the skipped entries on the console "
+                         "(the report always lists them)")
     ns = ap.parse_args()
 
     wanted = [r.strip() for r in ns.runtimes.split(",") if r.strip()]
@@ -246,11 +306,10 @@ def main() -> int:
     if not tests:
         sys.exit("no tests match the filter")
 
-    lines = []
-
+    # The console keeps the fixed-width layout; the saved report is Markdown
+    # and is assembled separately in `doc`.
     def out(s=""):
         print(s)
-        lines.append(s)
 
     out("=" * 148)
     out(f"Spider manual fixtures: {len(tests)} checks x {len(wanted)} runtimes")
@@ -325,9 +384,74 @@ def main() -> int:
         for n, why in SKIPPED:
             out(f"  - {n:60s} {why}")
 
+    # ---- the Markdown report ----
+    doc = []
+    now = datetime.datetime.now(datetime.timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
+    doc.append("# Spider manual fixtures: parity and timing")
+    doc.append("")
+    doc.append(f"- Date (UTC): {now}")
+    doc.append(f"- Machine: {md(machine_name())}")
+    doc.append(f"- Platform: {md(platform.platform())}")
+    doc.append(f"- Checks: {len(tests)} x {len(wanted)} runtimes")
+    doc.append(f"- Invocation: `{' '.join(sys.argv)}`")
+    doc.append("")
+    doc.append("Runtimes:")
+    doc.append("")
+    for r in wanted:
+        ver = runtime_version(RUNTIME_BIN[r])
+        doc.append(f"- {md(RUNTIMES[r][0])}: `{RUNTIME_BIN[r]}`"
+                   + (f" — {md(ver)}" if ver else ""))
+
+    doc.append("")
+    doc.append("## Results")
+    doc.append("")
+    doc.append("A result is plain when it matches the documented wasmtime baseline,"
+               " **bold with ✗** when it does not, and *italic* when the fixture has"
+               " no documented baseline.")
+    doc.append("")
+    head = "| test | baseline |"
+    sep = "| --- | ---: |"
+    for r in wanted:
+        head += f" {md(RUNTIMES[r][0])} result | {md(RUNTIMES[r][0])} time |"
+        sep += " ---: | ---: |"
+    doc.append(head)
+    doc.append(sep)
+    for row in rows:
+        b = row["baseline"]
+        line = f"| {md(row['name'])} | {md(b) if b is not None else 'n/a'} |"
+        for r in wanted:
+            val, dt, match = row[r]
+            line += f" {md_result(val, match)} | {fmt_time(dt)} |"
+        doc.append(line)
+
+    doc.append("")
+    doc.append("## Totals")
+    doc.append("")
+    with_ratio = "wasm3" in wanted and totals.get("wasm3", 0.0) > 0
+    head = "| runtime | total time | baseline matches | no baseline |"
+    sep = "| --- | ---: | ---: | ---: |"
+    if with_ratio:
+        head += " time vs wasm3 (C) |"
+        sep += " ---: |"
+    doc.append(head)
+    doc.append(sep)
+    for r in wanted:
+        na = sum(1 for row in rows if row[r][2] is None)
+        line = (f"| {md(RUNTIMES[r][0])} | {fmt_time(totals[r])} |"
+                f" {ok_counts[r]}/{base_counts[r]} | {na} |")
+        if with_ratio:
+            line += f" {fmt_ratio(totals[r] / totals['wasm3'])} |"
+        doc.append(line)
+
+    doc.append("")
+    doc.append("## Skipped entries")
+    doc.append("")
+    for n, why in SKIPPED:
+        doc.append(f"- `{md(n)}` — {md(why)}")
+
     os.makedirs(os.path.dirname(REPORT_PATH), exist_ok=True)
     with open(REPORT_PATH, "w", encoding="utf-8") as f:
-        f.write("\n".join(lines) + "\n")
+        f.write("\n".join(doc) + "\n")
     print(f"\nreport saved to {REPORT_PATH}", file=sys.stderr)
     return 0
 
