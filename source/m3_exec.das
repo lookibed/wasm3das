@@ -122,14 +122,8 @@ def c_memmove(dst : u8?; src : u8?; size : u32) {
     }
 }
 
-// C: memset (stack, 0x0, function->numLocalBytes) in op_Entry, memset in
-// op_MemFill. memset8 is the daslang builtin block fill; the element loop it
-// replaces cost one interpreter node per byte.
-def c_memset(dst : u8?; value : u8; size : u32) {
-    unsafe {
-        memset8(dst, value, int(size))
-    }
-}
+// C's `memset` needs no replacement: `memset8` is the daslang builtin block
+// fill, and op_Entry and op_MemFill call it directly the way C calls memset.
 
 // ============================================================================
 // libm replacements (C copysignf/copysign)
@@ -3181,7 +3175,7 @@ def public op_MemFill(var _pc : pc_t&; var _sp : m3stack_t&; var _mem : M3Memory
     let byte = slot_u32(_pc, _sp)
     let destination = u64(slot_u32(_pc, _sp))
     if (destination + u64(size) <= _mem.length) {
-        unsafe { c_memset(m3MemData(_mem) + int64(destination), u8(byte), size) }
+        unsafe { memset8(m3MemData(_mem) + int64(destination), u8(byte), int(size)) }
         return nextOpDirect(_pc, _sp, _mem, _r0, _fp0)
     }
     return newTrap(_pc, _mem, m3Err_trapOutOfBoundsMemoryAccess)
@@ -3214,7 +3208,8 @@ def public op_Entry(var _pc : pc_t&; var _sp : m3stack_t&; var _mem : M3MemoryHe
 if (d_m3SkipStackCheck || intptr(stackEnd) < intptr(_mem.maxStack)) {
         // DEBUG-only hit counter omitted when DEBUG is not part of the Das module configuration.
         var stack = unsafe(reinterpret<u8?>(unsafe(_sp + int(_function.numRetAndArgSlots))))
-        c_memset(stack, 0u8, u32(_function.numLocalBytes))
+        // C: memset (stack, 0x0, function->numLocalBytes)
+        unsafe { memset8(stack, 0u8, int(_function.numLocalBytes)) }
         unsafe { stack = stack + int(_function.numLocalBytes) }
         if (_function.constants != null) { unsafe { memcpy(stack, _function.constants, int(_function.numConstantBytes)) } }
         let r = nextOpImpl(_pc, _sp, _mem, _r0, _fp0)
