@@ -1,5 +1,44 @@
 # daslang defects prepared for upstream, as reusable test cases
 
+## Upstream status (checked 2026-09-08)
+
+Filed on 2026-09-08 from the owner's account. The maintainer (aleksisch)
+answered #3968, #3969 and #3970 the same day ("I filed a bug fix") with one
+pull request; #3967 has no answer yet but its fix is already on master.
+
+| Filed | Fix | State | What to watch |
+|---|---|---|---|
+| [#3967](https://github.com/GaijinEntertainment/daScript/issues/3967) `-ctx` | master `8f4d87cac02c` (PR #3838, 2026-08-24) | merged, unreleased | the next release tag after v0.6.4-RC2 |
+| [#3968](https://github.com/GaijinEntertainment/daScript/issues/3968) qualified `math::` intrinsic | [PR #3974](https://github.com/GaijinEntertainment/daScript/pull/3974) `aleksisch/fix-reported-bugs` | open | merge, then the next release |
+| [#3969](https://github.com/GaijinEntertainment/daScript/issues/3969) function ↔ int cast in JIT | PR #3974 | open | same |
+| [#3970](https://github.com/GaijinEntertainment/daScript/issues/3970) interpreter yields 0 | PR #3974 | open | same |
+| item 5 below, wrong results at `--jit-opt-level >= 1` | none | not filed | reduce to a standalone program on the release that carries PR #3974 |
+
+PR #3974 (12 files, +371/−74) goes further than the reports: every intrinsic
+emitter keys on the declared name (ten sites, which also fixes `math::min`
+answering max under `-jit` and the aarch64 `cos`/`cosh`/`tanh` arm mix-up), an
+intrinsic name LLVM does not have panics with its name instead of a SIGSEGV,
+`visitExprCast` gains function ↔ pointer / int64 arms, the two
+function-address SimNodes of the interpreter implement their pointer and
+64-bit slots, and AOT's `das_cast<TT*>` reads a `Func`'s target instead of
+the temporary's address. That last item is the AOT defect the port works
+around with the three `u64` hops in `EmitWord`, `FindAndLinkFunction` and
+`op_Compile` (`notes/native_aot_status.md`); once a release carries it the
+hops become unnecessary and the store-context hazard of `op_Compile`
+(`notes/upstream_cases/RESULTS.md`, "Impact on wasm3das") disappears. The PR
+takes `tests/math/test_qualified_math_calls.das` from this note, extended to
+ten tests, and reproduces the context matrix of #3970 inside
+`tests/language/func_addr.das`. Its validation is the maintainer's own lanes
+plus negative controls per key; nothing of it has been run here, because half
+of the fix is C++ and this project does not build daslang.
+
+Checklist when the next release appears: re-pin `scripts/daslang_release.env`
+(tag and four sha256), run `scripts/gate.sh`, the spec and WASI drivers
+through `scripts/wasm3` and `scripts/wasm3-native`, then
+`tests/manual/run_fixtures.py --runtimes das,jit`, and, if `-ctx` works,
+`utils/aot/main.das -- -ctx app/wasm3.das` for the zero-startup native
+binary.
+
 Date: 2026-09-07. Each defect below is carried by a test case in the format
 of the upstream daScript test suite, written without any reference to
 wasm3das, that fails on the official release bundle `v0.6.4-RC2` and passes
