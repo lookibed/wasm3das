@@ -54,7 +54,13 @@ require ./m3_types.das
 // ============================================================================
 
 
+// These three are preprocessor macros in C, so they cost nothing at the use
+// site. [inline] is their equivalent for the daslang interpreter, which would
+// otherwise evaluate a call node per memory access; every load and store
+// operation reaches memory through m3MemData.
+
 /* C: #define m3MemData(mem) (u8*)(((M3MemoryHeader*)(mem))+1) */
+[inline]
 def public m3MemData(var _mem : M3MemoryHeader?) : u8? {
     unsafe {
         return reinterpret<u8?>(_mem + 1)
@@ -62,11 +68,13 @@ def public m3MemData(var _mem : M3MemoryHeader?) : u8? {
 }
 
 /* C: #define m3MemRuntime(mem) (((M3MemoryHeader*)(mem))->runtime) */
+[inline]
 def public m3MemRuntime(var _mem : M3MemoryHeader?) : IM3Runtime {
     return _mem.runtime
 }
 
 /* C: #define m3MemInfo(mem) (&(((M3MemoryHeader*)(mem))->runtime->memory)) */
+[inline]
 def public m3MemInfo(var _mem : M3MemoryHeader?) : IM3Memory {
     unsafe {
         return addr(_mem.runtime.memory)
