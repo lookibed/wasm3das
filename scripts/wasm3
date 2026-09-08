@@ -56,6 +56,15 @@ if [[ "${WASM3DAS_JIT:-}" == "1" ]]; then
         # shellcheck disable=SC2206
         das_opts+=(${WASM3DAS_JIT_ARGS})
     fi
+else
+    # The interpreter requires no dynamic module: app/wasm3.das and source/
+    # pull in builtin, math, strings, daslib/fio, daslib/strings and
+    # daslib/random only. Without this switch daslang still dlopens and
+    # registers all 24 dasXxx modules of the release bundle (dasLLVM, dasImgui,
+    # dasGlfw, ...) before it starts compiling, which costs ~0.13 s of the
+    # ~2 s startup on every single run. The JIT branch above must not set it:
+    # -jit needs dasLLVM.
+    das_opts+=("-no-dynamic-modules")
 fi
 
 app="${WASM3DAS_APP:-$repo_root/app/wasm3.das}"
