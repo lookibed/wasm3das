@@ -8,6 +8,10 @@ require ./m3_core.das
 require ./m3_types.das public
 require ./m3_math_utils.das public
 require ./m3_exec_defs.das public
+// Compile-time only, and deliberately not re-exported: the pass that expands the
+// operand readers below at their use sites, the way the C preprocessor expands
+// immediate()/slot()/slot_ptr(). See m3_exec_expand.das.
+require ./m3_exec_expand.das
 
 // Conservative Gen2 port of m3_exec.h.
 // The threaded-interpreter ABI, op_* names, register/slot forms, trap propagation,
