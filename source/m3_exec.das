@@ -108,7 +108,12 @@ def c_memmove(dst : u8?; src : u8?; size : u32) {
         if (size == 0u) { return }
         let d = reinterpret<i64>(dptr)
         let s = reinterpret<i64>(sptr)
-        if (d < s) {
+        // Disjoint ranges are the common case and C's memmove hands them to the
+        // same block copy memcpy uses; only a true overlap needs the direction
+        // dependent element loop.
+        if (d + int64(size) <= s || s + int64(size) <= d) {
+            memcpy(dptr, sptr, size)
+        } elif (d < s) {
             for (i in 0..int(size)) { dptr[i] = sptr[i] }
         } else {
             var i = int(size) - 1
@@ -117,10 +122,12 @@ def c_memmove(dst : u8?; src : u8?; size : u32) {
     }
 }
 
+// C: memset (stack, 0x0, function->numLocalBytes) in op_Entry, memset in
+// op_MemFill. memset8 is the daslang builtin block fill; the element loop it
+// replaces cost one interpreter node per byte.
 def c_memset(dst : u8?; value : u8; size : u32) {
     unsafe {
-        var dptr = reinterpret<u8?>(dst)
-        for (i in 0..int(size)) { dptr[i] = value }
+        memset8(dst, value, int(size))
     }
 }
 
@@ -442,6 +449,9 @@ def slot_f64(var _pc : pc_t&; _sp : m3stack_t&) : f64 {
 // and cleared registers. C ends it with nextOpDirect(), a MUSTTAIL return of
 // nextOpImpl(): Call's result is the completed result of the callee's operation
 // chain, so the trampoline form is nextOpImpl, one nested RunLoop per wasm call.
+// Deliberately not [inline]: its five parameters are by value, so an inline
+// splice turns one call node into five argument-copy nodes plus the result
+// temporary. Measured on fib 28 that is a loss (4.04 s against 3.91 s).
 def Call(var _pc : pc_t; var _sp : m3stack_t; var _mem : M3MemoryHeader?; var _r0 : m3reg_t; var _fp0 : f64) : M3Result {
     let possible_trap = m3_Yield()
     if (possible_trap != m3Err_none) { return possible_trap }

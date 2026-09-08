@@ -450,6 +450,10 @@ enum public M3ValueType {
 
 
 // M3_WEAK is a linker attribute in C and has no pure Daslang equivalent.
+// [inline] because the body is `return m3Err_none` (d_m3Yield is not defined)
+// and Call() runs it once per wasm call: a C compiler inlines it, the daslang
+// interpreter would evaluate a call node per wasm call instead.
+[inline]
 def public m3_Yield() : M3Result {
     return m3Err_none
 }
