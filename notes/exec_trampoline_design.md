@@ -150,6 +150,19 @@ So the dispatch restructuring is worth 1.25x on its own and 2.3x once the
 noise) and *not* kept: it buys nothing and the annotations would be noise in a
 file whose value is its fidelity to C.
 
+**2026-09-08 correction.** The last sentence was right about the annotation on
+its own and wrong about the conclusion. `[inline]` splices the body but keeps
+every statement of it as its own node, so annotating the *nested* chain
+(`slot_i32` -> `slot_ptr_i32` -> `immediate_i32`) only trades three call nodes
+for three spliced bodies: 272 ns/op against 274 for the plain calls, which is
+the noise that was measured. Flattening each helper into the single C macro
+expansion *and* taking `_sp` by reference is what pays — 190 ns/op — because
+the daslang interpreter charges roughly 8 ns per evaluated node and an
+[inline] argument passed by value is copied into a temporary of its own. See
+`notes/interp_node_cost_2026-09-08.md` for the measurements and for the two
+places where the same annotation is a *loss* (`Call`, `nextOpImpl`: five
+by-value parameters turn one call node into six).
+
 Stack, probed with `call.0.wasm`'s `runaway` (the spec suite's deepest
 `assert_exhaustion`) and the default 64 KiB wasm stack: `options stack` of
 6 MiB reaches `[trap] stack overflow` from `op_Entry`; 4 MiB dies as a Daslang
