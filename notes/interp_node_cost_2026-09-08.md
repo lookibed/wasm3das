@@ -145,12 +145,14 @@ interleaved A/B pairs with the startup subtracted: fib 28 1.99 -> 1.62 s,
 `chipmunk_hash_scene 600` 7.52 -> 5.85 s, `lodepng_roundtrip_hash 0`
 1.49 -> 1.22 s.
 
-**What the pass costs at startup.** `-log-compile-time`, same machine, total
-compile of `app/wasm3.das`: 1.495 s -> 1.554 s (+3.9%), and the process to
-`Result:` on a trivial call 1.581 s -> 1.649 s (+4.3%). The pass itself is
-67 ms of that, against which the optimizer saves 44 ms on the smaller `m3_exec`
-tree (`m3_exec` alone: 0.531 s -> 0.534 s). The rest is the macro module
-itself: 65 ms to compile plus 7 ms to simulate, and 15 ms for `daslib/ast`.
+**What the pass costs at startup.** `-log-compile-time`, five interleaved A/B
+pairs, `total compile` plus `simulate` of `app/wasm3.das`: 1.490 -> 1.558 s at
+the minimum (+4.6%) and 1.498 -> 1.596 s at the median (+6.5%); the process to
+`Result:` on a trivial call, 1.58 -> 1.65 s. Simulation itself gets *faster*
+(0.082 -> 0.072 s: fewer nodes to build), and inside `m3_exec` the pass costs
+67 ms against which the optimizer saves 44 ms on the smaller tree, so that
+module is 0.531 -> 0.534 s. What is left is the macro module itself: 65 ms to
+compile plus 7 ms to simulate, and 15 ms for `daslib/ast`.
 That last number is why the pass requires `daslib/ast` alone and registers
 through `add_new_pre_infer_macro` instead of the `[pre_infer_macro]`
 annotation: `daslib/ast_boost` costs another 170 ms and

@@ -175,7 +175,7 @@ unchanged (the pass clones its expansion out of them, so the two cannot
 drift). The 509 bodies are untouched; the only edit to `m3_exec.das` is the
 `require`. `op_i32_Add_ss` goes from 206 to 128 ns/op and from 64 to 44 AST
 nodes; the whole port gains roughly 1.2-1.3x on the fixtures. The trade is
-+3.9% of compile time. Design, guarantees and numbers are in
+5-7% of startup, about 70-100 ms. Design, guarantees and numbers are in
 `notes/interp_node_cost_2026-09-08.md` and at the top of
 `source/m3_exec_expand.das`.
 
