@@ -65,16 +65,20 @@ that the daslang maintainers ship and test.
   `-jit-no-cache`, `-jit-stack`, `-exe`, `-dry-run`) dies with SIGSEGV
   during LLVM code generation, before the `LLVM JIT: N functions` line, as
   soon as `source/m3_compile.das` is in the program; `m3_core`, `m3_types`
-  and `m3_exec` alone pass. The 2026-08-10 build with the local patch
-  `notes/daslang_jit_fixes_2026-09-07.patch` generated code but computed
-  wrong results. The likely cause is the unpatched qualified-intrinsic-name
-  bug of dasLLVM (`math::sqrt` → `llvm.math::sqrt.f32`, intrinsic id 0,
-  null dereference), which the port reaches through `math::sqrt`,
-  `math::ceil`, `math::floor` and `math::trunc` in the `op_*` bodies; not
-  confirmed by a debugger run. The JIT rows of `scripts/bench.sh` and the
-  jit column of `tests/manual/run_fixtures.py` therefore fail on this
-  release. This is a daslang bug to report upstream with `tmp/jitprobe`-style
-  reproducers, not something to work around in the port.
+  and `m3_exec` alone pass. Proven causes, each reduced to a standalone
+  program (`notes/upstream_daslang_issues_2026-09-07.md`, items 2 and 3):
+  a module-qualified `math::` float intrinsic with a non-constant argument
+  crashes codegen (`math::sqrt(g_x)` with `var g_x`), and
+  `reinterpret<uint64>(@@fn)` written inline emits an invalid aggregate
+  bitcast. Both are the bugs of `notes/daslang_jit_fixes_2026-09-07.patch`,
+  which RC2 does not contain; with that patch applied to a scratch copy of
+  the JIT daslib the port compiles (906 functions) and `fib` is correct, but
+  `tinyexpr_error_code` and `miniz_probe_crc32` are still wrong at
+  `--jit-opt-level >= 1` and correct at level 0, localized to
+  `m3_env::EvaluateExpression` (item 5, not yet minimal). The JIT rows of
+  `scripts/bench.sh` and the jit column of `tests/manual/run_fixtures.py`
+  therefore fail on this release. These are daslang bugs to report upstream,
+  not something to work around in the port.
 - **DAP debuggee.** `test_mcp_bridge.py::test_waiting_worker_shutdown`
   fails with the release binary (SIGSEGV when a waiting debugger worker is
   cancelled); PR #3937 fixed it upstream after the release. Documented in

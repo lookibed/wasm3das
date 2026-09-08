@@ -457,11 +457,15 @@ and raw model logs never go into the tree; dated working notes go into
 | `docs/memory-ownership.md` | allocation-regime decision and migration order |
 | `.github/pull_request_template.md` | PR skeleton: scope, C references, verification, manifest transition, C checklist |
 | `.githooks/pre-push` | local form of the CI quality gate |
-| `scripts/gate.sh`, `scripts/check_repo_invariants.sh` | the gate shared by CI and the pre-push hook |
 | `scripts/daslang_release.env`, `scripts/install_daslang.sh` | the pinned daslang release (tag and checksums) and its installer into `tmp/daslang` |
-| `notes/handoff_claude_code_2026-09-05.md` | latest session handoff |
+| `notes/handoff_claude_code_2026-09-07.md` | latest session handoff (state of `main` and the open PR, pipeline order, pitfalls); older handoffs are dated the same way |
 | `notes/runtime_recovery_context_2026-09.md` | provenance of `source/`, checkpoint commits, teardown state |
 | `notes/dap_tooling_update_2026-09-04.md` | current DAP lifecycle, fixes, and failure triage |
 | `wasm3c/source/` | read-only C semantic reference |
 | `source/`, `tests/integration/` | the Daslang port and the component tests the gate runs |
 | `tests/manual/` | manual fixture sets and `run_fixtures.py`; outside the gate |
+| `tests/host_test/` | Daslang counterparts of `wasm3c/host_test` (embedding through the public API); compiled and linted by the gate |
+| `app/`, `scripts/wasm3` | the command line front end (port of `platforms/app/main.c`) and its interpreted launcher |
+| `native/`, `scripts/build_native.sh`, `scripts/wasm3-native` | AOT build: C++ host, build script and native launcher (`notes/native_aot_status.md`) |
+| `scripts/bench.sh`, `notes/benchmark_2026-09-07.md` | cross-engine fib32 benchmark and its results |
+| `scripts/gate.sh`, `scripts/check_repo_invariants.sh` | the gate shared by CI and the pre-push hook |
