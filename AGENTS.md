@@ -428,7 +428,17 @@ and raw model logs never go into the tree; dated working notes go into
 
 - Work on feature branches and open PRs into `main`; do not push directly to
   `main`. Enable the local gate once per clone:
-  `git config core.hooksPath .githooks`.
+  `git config core.hooksPath .githooks`. The hook runs the gate only when
+  the pushed commits touch its inputs (the CI path filter) and never for a
+  branch deletion.
+- Open every PR as a draft (`gh pr create --draft`) and mark it ready
+  (`gh pr ready`) only after the last push is confirmed on the remote; the
+  owner merges ready PRs only. Never push to the branch of a merged PR (the
+  push recreates the deleted branch); commits that missed a merge go on a
+  fresh branch from `main` in a new PR.
+- Confirm a push from git, not from a wrapper's exit code: `git status -sb`
+  shows no `[ahead N]` and `gh pr view <N> --json commits` lists the commit.
+  `origin` is HTTPS with the `gh` credential helper (`gh auth setup-git`).
 - Make every proven runtime fix a separate commit. Keep separate commits for
   mechanical restoration, the pointer-value fix, allocator-pair fix, teardown
   root cause, and regression test when those are distinct changes.
@@ -440,7 +450,9 @@ and raw model logs never go into the tree; dated working notes go into
 - One bounded port layer or focused fix per PR. State what was changed and
   intentionally deferred.
 - CI passing does not promote a manifest entry to Accepted; code-owner review
-  is required.
+  is required. `main` requires the `Daslang quality gate` check through
+  branch protection; review stays the owner's discipline because owner and
+  agents share one GitHub account.
 - Do not commit anything from `tmp/` or `tools/`, and do not create new
   `*:Zone.Identifier` artifacts.
 
