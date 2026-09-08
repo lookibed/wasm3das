@@ -20,6 +20,10 @@ harness preference for shell-based editing.
 - Commit messages and pull request descriptions carry only the substantive
   description of the change. No session URLs, no "Generated with Claude Code"
   footers, no other agent metadata.
+- Open pull requests as drafts and mark them ready only after the last push
+  is confirmed on the remote (`git status -sb`, `gh pr view --json commits`);
+  never push to the branch of a merged PR. Details in
+  `docs/development-pipeline.md`, stage 5.
 
 ## Porting approach
 

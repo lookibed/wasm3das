@@ -109,12 +109,31 @@ Done: the checklist is in the PR and the manifest row matches the code.
 - One unit per PR. The description states what changed, what was deferred and
   how it was verified (the gate summary line; the fib32 result when relevant).
   No session URLs, no agent footers (`CLAUDE.md`).
+- **Open the PR as a draft** (`gh pr create --draft`) and keep pushing to it
+  while the unit is being finished; mark it ready (`gh pr ready <N>`) only
+  after the last push has been confirmed on the remote. The owner merges
+  ready PRs only. A draft is the signal that the branch is still moving;
+  three times in two days a PR was merged while its last commits were still
+  local, and those commits had to be re-homed on a new branch.
+- **A push is confirmed by git, not by a wrapper's exit code**: after
+  `git push`, `git status -sb` shows no `[ahead N]`, and `gh pr view <N>
+  --json commits` lists the new commit. `origin` is HTTPS with the `gh`
+  credential helper (`gh auth setup-git`); GitHub's SSH endpoint has refused
+  connections from developer machines and a failed push then looks like a
+  successful one in a log.
+- Never push to the branch of a merged PR: GitHub deletes the head branch on
+  merge, and a later push recreates it on top of the merged commit. Commits
+  that missed a merge go on a fresh branch from `main` in a new PR.
 - Because `main` receives one squash commit per PR, **the PR title and body
   become the commit message**. The title states the proven invariant or the C
   comparison; the body carries the verification. Individual branch commits
   stay focused but are not required to repeat this.
-- CI green and code-owner review are both required. Merge is squash; GitHub
-  deletes the head branch.
+- CI green is enforced: `main` requires the `Daslang quality gate` status
+  check (branch protection, together with linear history, no force pushes,
+  no deletions and resolved conversations). Code-owner review is the owner's
+  discipline, not a GitHub requirement, because the owner and the agents
+  share one account and GitHub does not count self-approval. Merge is squash;
+  GitHub deletes the head branch.
 
 ### 6. Post-merge
 
@@ -137,10 +156,17 @@ Done: the checklist is in the PR and the manifest row matches the code.
 | fib32 regression through teardown | `tests/integration/` | CI, pre-push |
 | DAP evidence, line-by-line C review, allocator provenance | PR body | reviewer |
 | manifest status Accepted | PR | code owner |
+| `Daslang quality gate` green before merge | `main` branch protection | GitHub |
 
-The invariant checks read `.das` files with shell tools. That is a CI and
-hook mechanism only; the tooling policy in `AGENTS.md` (Daslang-aware tools
-for reading and editing `.das`) is unchanged for agents.
+The gate runs when a change touches its inputs (`source/`,
+`tests/integration/`, `tests/host_test/`, `app/`, `scripts/`, `.githooks/`,
+`.github/workflows/`, `.lint_config`, `PORTING_MANIFEST.md`). CI decides
+that from the diff against the PR base; the pre-push hook applies the same
+filter to the commits being pushed and runs nothing for a branch deletion,
+so a docs-only push is not held locally for a gate CI would skip. The
+invariant checks read `.das` files with shell tools. That is a CI and hook
+mechanism only; the tooling policy in `AGENTS.md` (Daslang-aware tools for
+reading and editing `.das`) is unchanged for agents.
 
 ## Mapping the current work onto the pipeline
 
