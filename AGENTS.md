@@ -439,6 +439,11 @@ and raw model logs never go into the tree; dated working notes go into
 - Confirm a push from git, not from a wrapper's exit code: `git status -sb`
   shows no `[ahead N]` and `gh pr view <N> --json commits` lists the commit.
   `origin` is HTTPS with the `gh` credential helper (`gh auth setup-git`).
+- After a merge, and at the end of every session, run
+  `scripts/prune_merged_branches.sh` (then `--delete`): it removes local
+  branches whose content is already in `main`, including the
+  `worktree-agent-*` branches left by agents once their commits were taken.
+  Leave no untracked files behind: commit, ignore with a reason, or delete.
 - Make every proven runtime fix a separate commit. Keep separate commits for
   mechanical restoration, the pointer-value fix, allocator-pair fix, teardown
   root cause, and regression test when those are distinct changes.
