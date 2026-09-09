@@ -75,22 +75,20 @@ jobs:
         uses: actions/cache@v4
         with:
           path: daslang-src
-          key: daslang-master-${{ steps.pin.outputs.commit }}-${{ runner.os }}-${{ runner.arch }}-gcc
+          # The script's flag set is part of the key: a cached tree built with
+          # an older set (no dasHV, no install) must not satisfy a newer one.
+          key: daslang-master-${{ steps.pin.outputs.commit }}-${{ hashFiles('scripts/build-daslang.sh') }}-${{ runner.os }}-${{ runner.arch }}-gcc
 
+      # One definition of the build: scripts/build-daslang.sh, the script a
+      # developer machine runs (README, Install and run). The flag set and the
+      # target list live there only; CI never spells them out again.
       - name: Build the pinned daslang from upstream source
         if: steps.changes.outputs.run_gate == 'true' && steps.cache-daslang.outputs.cache-hit != 'true'
         run: |
           set -euo pipefail
           git clone https://github.com/GaijinEntertainment/daScript.git daslang-src
           git -C daslang-src checkout "${{ steps.pin.outputs.commit }}"
-          cmake -S daslang-src -B daslang-src/build -DCMAKE_BUILD_TYPE=Release \
-                -DDAS_LLVM_DISABLED=ON -DDAS_GLFW_DISABLED=ON -DDAS_IMGUI_DISABLED=ON \
-                -DDAS_VULKAN_DISABLED=ON -DDAS_AUDIO_DISABLED=ON -DDAS_HV_DISABLED=ON \
-                -DDAS_STDDLG_DISABLED=ON -DDAS_STBIMAGE_DISABLED=ON \
-                -DDAS_AOT_EXAMPLES_DISABLED=ON -DDAS_TUTORIAL_DISABLED=ON \
-                -DDAS_TESTS_DISABLED=ON -DDAS_TREE_SITTER_DISABLED=ON
-          cmake --build daslang-src/build -j 8 --target \
-                daslang libDaScript libDaScript_runtime libUriParser
+          JOBS=8 scripts/build-daslang.sh daslang-src
 
       - name: Verify pinned compiler
         if: steps.changes.outputs.run_gate == 'true'
