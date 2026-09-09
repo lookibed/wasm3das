@@ -139,6 +139,17 @@ Done: the checklist is in the PR and the manifest row matches the code.
 
 - Locally: `git checkout main && git pull`, then `git branch -D <branch>`
   (squashed commits are not reachable from `main`, so `-d` refuses).
+  `scripts/prune_merged_branches.sh` lists every local branch whose content
+  is already in `main` (by content, not by hash) and deletes them with
+  `--delete`; run it at the end of every session. A branch it marks `KEEP`
+  holds lines `main` does not have and is a decision, not a leftover.
+- An agent that worked in its own worktree leaves a `worktree-agent-*`
+  branch; once its commits are taken (cherry-pick or fast-forward), that
+  branch is pruned the same way. Never push to the branch of a merged PR.
+- `git status` must be clean of untracked files before the session ends:
+  either commit them in a PR, ignore them in `.gitignore` with a reason, or
+  delete them. An untracked file that survives a session is what the handoff
+  has to explain.
 - When a session ends, update `notes/handoff_*.md` with the gate state, what
   is uncommitted and why, and the next unit.
 - Durable decisions go to `docs/` and change only by a PR that states what

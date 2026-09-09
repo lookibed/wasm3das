@@ -22,6 +22,10 @@ Thumbs.db
 # Diagnostic and benchmark scratch data
 /logs/
 /benchmarks/tmp/
+__pycache__/
+
+# Agent worktrees (Claude Code `isolation: worktree`) live inside the checkout
+/.claude/worktrees/
 
 # Legacy Daslang demo project retained locally, unrelated to the Wasm3 port
 /demo_*.das
