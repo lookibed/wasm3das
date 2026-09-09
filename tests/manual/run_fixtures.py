@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """Spider manual-fixture parity + timing harness.
 
-Runs every scalar (non host-adapter) fixture export through four runtimes:
+Runs every scalar (non host-adapter) fixture export through these runtimes:
   wasmtime   (Windows default: D:/Backups/wasmtime/wasmtime-v24.0.1/wasmtime.exe;
               elsewhere: <repo>/tools/bin/wasmtime)
   wasm3      (original C; Windows: wasm3-original-win-x64.exe in the bundle;

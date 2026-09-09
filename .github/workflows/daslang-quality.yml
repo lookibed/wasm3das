@@ -67,6 +67,10 @@ jobs:
         run: |
           set -euo pipefail
           pin="$(sed -n 's/^\([0-9a-f]\{40\}\)$/\1/p' scripts/daslang_pin | head -n 1)"
+          if [[ -z "$pin" ]]; then
+            echo "scripts/daslang_pin carries no 40-hex commit" >&2
+            exit 1
+          fi
           echo "commit=$pin" >> "$GITHUB_OUTPUT"
 
       - name: Cache the built daslang checkout

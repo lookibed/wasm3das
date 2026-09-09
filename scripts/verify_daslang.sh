@@ -8,17 +8,19 @@
 # (scripts/gate.sh, key build scripts) verifies before it runs.
 #
 # Checks:
-#   1. DASLANG_ROOT is set and resolves to a git checkout of daScript (a
-#      clone or a worktree) whose HEAD is the pinned commit, or to a
-#      build-daslang.sh install carrying the .daslang-commit marker (unless
-#      DASLANG_ALLOW_UNPINNED=1, for local experiments only — never a green
-#      gate).
-#   2. The build is complete enough for this repository's use:
-#      bin/daslang, lib/liblibDaScript.a, lib/liblibDaScript_runtime.a,
-#      lib/liblibUriParser.a, include/daScript/builtin/ast_gen.inc,
-#      daslib/, utils/aot/main.das, and the dasHV dynamic module
-#      (modules/dasHV/dasModuleHV.shared_module) the MCP server requires.
-#   3. bin/daslang runs (--version).
+#   1. DASLANG_ROOT is set and is itself the top of a git checkout of
+#      daScript (a clone or a worktree) whose HEAD is the pinned commit, or
+#      a tree built by build-daslang.sh that carries the .daslang-commit
+#      marker. DASLANG_ALLOW_UNPINNED=1 skips the commit comparison (and
+#      accepts a tree with neither git nor marker): local experiments only,
+#      never a green gate.
+#   2. The build outputs are present: bin/daslang, lib/liblibDaScript.a,
+#      lib/liblibDaScript_runtime.a, lib/liblibUriParser.a and the dasHV
+#      dynamic module (modules/dasHV/dasModuleHV.shared_module) the MCP
+#      server requires; daslib/, utils/aot/main.das and the tracked
+#      generated header include/daScript/builtin/ast_gen.inc identify the
+#      tree as daScript.
+#   3. bin/daslang runs (--version); its output is shown when it does not.
 #
 # Usage: scripts/verify_daslang.sh
 # Environment: DASLANG_ROOT (required), DASLANG_ALLOW_UNPINNED (optional).
@@ -37,10 +39,11 @@ if [[ -z "${DASLANG_ROOT:-}" ]]; then
     echo "  wasm3das runs daslang as an external project. Clone it at the pinned" >&2
     echo "  commit, build in place and point DASLANG_ROOT at the checkout:" >&2
     echo "" >&2
-    echo "    git clone https://github.com/GaijinEntertainment/daScript.git ../daScript   # beside, never inside, this repository" >&2
-    echo "    git -C ../daScript checkout $pin" >&2
-    echo "    scripts/build-daslang.sh ../daScript   # the fixed flag set; README, Install and run" >&2
-    echo "    export DASLANG_ROOT=\"\$(cd .. && pwd)/daScript\"" >&2
+    beside="$(cd -- "$repo_root/.." && pwd)/daScript"
+    echo "    git clone https://github.com/GaijinEntertainment/daScript.git $beside   # beside, never inside, this repository" >&2
+    echo "    git -C $beside checkout $pin" >&2
+    echo "    $repo_root/scripts/build-daslang.sh $beside   # the fixed flag set; README, Install and run" >&2
+    echo "    export DASLANG_ROOT=$beside" >&2
     exit 2
 fi
 root="$(cd -- "$DASLANG_ROOT" 2>/dev/null && pwd || true)"
@@ -49,14 +52,19 @@ if [[ -z "$root" ]]; then
     exit 2
 fi
 
-# A clone has a .git directory, a worktree a .git file; git resolves both.
-# An install made by build-daslang.sh outside a checkout carries the marker.
+# The root must itself be the top of a git checkout (a clone with a .git
+# directory or a worktree with a .git file; --show-toplevel names the
+# worktree itself). Asking merely whether git resolves a git-dir would accept
+# any directory that happens to sit inside someone else's repository and
+# report that repository's HEAD. A tree built by build-daslang.sh and copied
+# elsewhere carries the .daslang-commit marker instead.
 head=""
-if git -C "$root" rev-parse --git-dir >/dev/null 2>&1; then
+top="$(git -C "$root" rev-parse --show-toplevel 2>/dev/null || true)"
+if [[ -n "$top" && "$top" -ef "$root" ]]; then
     head="$(git -C "$root" rev-parse HEAD 2>/dev/null || true)"
 elif [[ -f "$root/.daslang-commit" ]]; then
     head="$(head -c 40 "$root/.daslang-commit" 2>/dev/null || true)"
-else
+elif [[ "${DASLANG_ALLOW_UNPINNED:-0}" != "1" ]]; then
     echo "verify_daslang: $root is neither a git checkout of daScript nor a build-daslang.sh install of one" >&2
     exit 2
 fi
@@ -69,10 +77,13 @@ elif [[ "$head" != "$pin" ]]; then
     exit 2
 fi
 
+# What the build produces (bin/, lib/, the dasHV module) plus two tracked
+# paths that tell a daScript tree from any other directory; the generated
+# headers such as include/daScript/builtin/ast_gen.inc are tracked upstream.
 missing=()
 for f in bin/daslang lib/liblibDaScript.a lib/liblibDaScript_runtime.a \
-         lib/liblibUriParser.a include/daScript/builtin/ast_gen.inc \
-         utils/aot/main.das modules/dasHV/dasModuleHV.shared_module; do
+         lib/liblibUriParser.a modules/dasHV/dasModuleHV.shared_module \
+         utils/aot/main.das include/daScript/builtin/ast_gen.inc; do
     if [[ ! -e "$root/$f" ]]; then
         missing+=("$root/$f")
     fi
@@ -88,8 +99,9 @@ if (( ${#missing[@]} > 0 )); then
     echo "  build it: scripts/build-daslang.sh $root" >&2
     exit 2
 fi
-if ! "$root/bin/daslang" --version >/dev/null 2>&1; then
-    echo "verify_daslang: $root/bin/daslang does not run" >&2
+if ! version="$("$root/bin/daslang" --version 2>&1)"; then
+    echo "verify_daslang: $root/bin/daslang does not run:" >&2
+    echo "  $version" >&2
     exit 2
 fi
-echo "verify_daslang: $root at ${head:0:9}, version $("$root/bin/daslang" --version)"
+echo "verify_daslang: $root at ${head:0:9}, version $version"

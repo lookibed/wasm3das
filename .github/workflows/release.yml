@@ -68,7 +68,9 @@ jobs:
           pin="$(sed -n 's/^\([0-9a-f]\{40\}\)$/\1/p' scripts/daslang_pin | head -n 1)"
           git clone https://github.com/GaijinEntertainment/daScript.git daslang-src
           git -C daslang-src checkout "$pin"
-          scripts/build-daslang.sh daslang-src
+          # The bundle ships no modules; dasHV is the MCP server's need, not
+          # the interpreter's, and on MSVC it builds OpenSSL from source.
+          DASLANG_HV_DISABLED=ON scripts/build-daslang.sh daslang-src
 
       - name: Locate the daslang binary
         id: bin

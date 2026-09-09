@@ -68,7 +68,8 @@ Embed the interpreter in your own Daslang program: `tests/host_test/` holds
 the Daslang counterparts of the C host programs in `wasm3c/host_test`
 (`smoke`, `min`, `min2`, `main`), which drive a module through the public
 API (`m3_ParseModule`, `m3_LoadModule`, `m3_FindFunction`, `m3_CallV`,
-`m3_GetResultsV`, `m3_GetMemory`):
+`m3_GetResultsV`, `m3_GetMemory`); `DASLANG_ROOT` is the daslang checkout
+set up under "Install and run" below:
 
 ```sh
 $ $DASLANG_ROOT/bin/daslang tests/host_test/smoke.das
@@ -103,8 +104,8 @@ $ python3 run-spec-test.py --exec "$PWD/../../../scripts/wasm3 --repl"
 
 Each [release](https://github.com/lookibed/wasm3das/releases) ships a
 self-contained bundle for Linux x86_64, Linux arm64 and Windows x64: the
-Daslang interpreter of the pinned daslang release, the port and the example
-modules. Unpack it and run:
+Daslang interpreter built from the pinned daslang commit, the port and the
+example modules. Unpack it and run:
 
 ```sh
 tar -xzf wasm3das-v0.1.0-linux-x86_64.tar.gz
@@ -117,9 +118,10 @@ wasm3das\wasm3.cmd wasm3das\examples\fib32.wasm --func fib 25
 
 ### From the repository
 
-Requirements: a C++17 toolchain (gcc or clang), `cmake`, `git` and Python 3
-for the spec-test driver. daslang is an external project: this repository
-neither downloads nor ships a compiler.
+Requirements: a C++17 toolchain (gcc or clang), `cmake`, `git`, the OpenSSL
+development headers (`libssl-dev` on Debian, for the dasHV module the
+editor tooling needs) and Python 3 for the spec-test driver. daslang is an
+external project: this repository neither downloads nor ships a compiler.
 
 1. Clone the repository:
 

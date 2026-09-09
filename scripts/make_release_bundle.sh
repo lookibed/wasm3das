@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
-# Assemble a self-contained wasm3das bundle: the daslang interpreter of the
-# pinned release bundle, its daslib, the port sources and the launchers.
+# Assemble a self-contained wasm3das bundle: the daslang interpreter built
+# from the pinned commit, its daslib, the port sources and the launchers.
 #
 # Usage: scripts/make_release_bundle.sh <daslang-root> <daslang-binary> <out-dir>
 #   daslang-root    a built daslang checkout (its own daslang version) at the

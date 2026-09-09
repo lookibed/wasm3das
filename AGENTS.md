@@ -136,7 +136,7 @@ Three servers are required, whichever client is used:
 | `daslang-dap` | stateful DAP client |
 
 - **Claude Code** reads `.mcp.json` (servers `daslang` and `daslang-dap`,
-  relative paths, `DAS_LINT_CONFIG_PATH=.lint_config`) and the skills under
+  paths through `${DASLANG_ROOT}`, `DAS_LINT_CONFIG_PATH=.lint_config`) and the skills under
   `.claude/skills/`; the LSP plugin lives in `.claude/skills/daslang-lsp/`.
   Start the client from the repository root and restart it after any change
   to `.mcp.json` or the plugin manifest; skills reload on the fly. Setup and
