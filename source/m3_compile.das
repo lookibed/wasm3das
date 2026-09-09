@@ -1831,11 +1831,11 @@ var c_operationsFC : M3OpInfo[12]
 var c_operationsInitialized : bool = false
 
 // C: `const M3OpInfo c_operations []` is a static initialiser (m3_compile.c).
-// Daslang fills the table at context start through [init]. A host that does
-// not run [init] for required shared modules (dastest with a test file that
-// declares a module) reaches it through m3_NewEnvironment instead, so the
-// fill is guarded and idempotent.
-[init]
+// Daslang fills the table through m3_NewEnvironment (m3_env.das), an explicit
+// guarded cross-module call; `[init]` was the other spelling, removed so a
+// standalone (`-ctx`) context can emit the program — it cannot run [init]
+// functions of required modules, and this fill is idempotent and owned by the
+// environment builder either way.
 def init_compile_operation_tables() {
     if (c_operationsInitialized) return
     c_operationsInitialized = true

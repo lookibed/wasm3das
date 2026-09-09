@@ -412,15 +412,20 @@ class private ExpandReaders : AstVisitor {
 //! Expands the m3_exec operand readers at their use sites, the way the C
 //! preprocessor expands immediate()/slot()/slot_ptr().
 class M3ExecExpandPass : AstPassMacro {
-    // Once per inference run, before the first typing pass: the preprocessor
-    // runs before the compiler, and one visit is all the rewrite needs.
-    def override canVisitPass(prog : ProgramPtr; mod : Module?; index : int) : bool {
-        return index == 0
-    }
+    // The preprocessor runs before the compiler, and one visit is all the
+    // rewrite needs. was `canVisitPass (prog, mod, index)` + `add_new_
+    // pre_infer_macro`, the pre-infer stage gate of daslang 0.6.4-RC2; upstream
+    // removed the stage between the releases and the pin bumped past it, so the
+    // run-once semantics live in this flag and the registration is an infer
+    // macro now. The pin that removed the stage is in scripts/daslang_pin.
+    expanded : bool = false
 
     def override apply(prog : ProgramPtr; mod : Module?) : bool {
-        // the readers live in m3_exec; every other module compiles untouched
-        if (mod.name != "m3_exec") return false
+        // the readers live in m3_exec; every other module compiles untouched,
+        // and the already-run rewrite stays out (run-once semantics, previously
+        // gated by canVisitPass at index 0)
+        if (mod.name != "m3_exec" || expanded) return false
+        expanded = true
         var expander = new ExpandReaders()
         expander.prog := prog
         var ok = true
@@ -475,11 +480,14 @@ class M3ExecExpandPass : AstPassMacro {
     }
 }
 
-// What `[pre_infer_macro]` (daslib/ast_boost) would generate; written out so the
-// module needs daslib/ast alone. See the require comment at the top.
+// An `[infer_macro]` registration, spelled out so the module needs daslib/ast
+// alone. Was `add_new_pre_infer_macro`: the pre-infer stage came out upstream
+// (see the class comment above), and an infer-macro pass that keeps its own
+// once-flag replaces the old gated pre-infer registration. See the require
+// comment at the top.
 [_macro]
 def private setup() {
     if (is_compiling_macros_in_module("m3_exec_expand")) {
-        add_new_pre_infer_macro("m3_exec_expand", new M3ExecExpandPass())
+        add_new_infer_macro("m3_exec_expand", new M3ExecExpandPass())
     }
 }

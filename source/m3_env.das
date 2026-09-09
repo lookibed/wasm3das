@@ -138,8 +138,10 @@ def m3_NewEnvironment() : IM3Environment {
     CompileFunctionHook = @@CompileFunction
     ResizeMemoryHook = @@ResizeMemory
     // C: `const M3OpInfo c_operations []` (m3_compile.c) is a static
-    // initialiser. The Daslang table is filled by [init], which some hosts
-    // skip for required modules; the call is idempotent.
+    // initialiser. In the port this is the single explicit fill point (the
+    // [init] spelling was removed when the standalone `-ctx` emission arrived,
+    // which cannot run [init] functions of required modules); the call is
+    // idempotent.
     init_compile_operation_tables()
 
     // C: m3_AllocStruct (M3Environment) - zeroed host allocation; released
