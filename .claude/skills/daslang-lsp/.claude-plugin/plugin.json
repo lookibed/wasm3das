@@ -5,7 +5,7 @@
     "daslang": {
       "command": "python3",
       "args": [
-        "${env:DASLANG_ROOT}/utils/lsp/lsp_supervisor.py"
+        "${DASLANG_ROOT}/utils/lsp/lsp_supervisor.py"
       ],
       "env": {
         "DAS_LINT_CONFIG_PATH": "${CLAUDE_PLUGIN_ROOT}/../../../.lint_config"
@@ -14,7 +14,7 @@
         ".das": "daslang"
       },
       "initializationOptions": {
-        "compiler": "${env:DASLANG_ROOT}/bin/daslang",
+        "compiler": "${DASLANG_ROOT}/bin/daslang",
         "project_root": "."
       }
     }
