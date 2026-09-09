@@ -1,11 +1,11 @@
 {
   "name": "daslang-lsp",
-  "description": "daslang language server (the daslang release bundle pinned in scripts/daslang_release.env) - compiler diagnostics after every edit, plus definition/hover/references/symbols",
+  "description": "daslang language server (the daslang checkout pointed to by the DASLANG_ROOT environment variable, at the commit pinned in scripts/daslang_pin) - compiler diagnostics after every edit, plus definition/hover/references/symbols",
   "lspServers": {
     "daslang": {
       "command": "python3",
       "args": [
-        "${CLAUDE_PLUGIN_ROOT}/../../../tmp/daslang/utils/lsp/lsp_supervisor.py"
+        "${env:DASLANG_ROOT}/utils/lsp/lsp_supervisor.py"
       ],
       "env": {
         "DAS_LINT_CONFIG_PATH": "${CLAUDE_PLUGIN_ROOT}/../../../.lint_config"
@@ -14,7 +14,7 @@
         ".das": "daslang"
       },
       "initializationOptions": {
-        "compiler": "tmp/daslang/bin/daslang",
+        "compiler": "${env:DASLANG_ROOT}/bin/daslang",
         "project_root": "."
       }
     }

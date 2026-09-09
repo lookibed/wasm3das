@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # wasm3 command line front end for the AOT-compiled Daslang port: the same
 # drop-in replacement for the C `wasm3` binary that scripts/wasm3 provides,
-# but backed by the native binary built by scripts/build_native.sh instead of
+# but backed by the native binary built by scripts/build_port.sh instead of
 # by the daslang interpreter.
 #
 # Usage is identical to scripts/wasm3, so the two can be swapped in a runner
@@ -13,7 +13,7 @@
 #   WASM3DAS_NATIVE   the native binary (default: tmp/native/bin/wasm3das)
 #   WASM3DAS_ROOT     bundle root passed as -dasroot; only needed when the
 #                     binary is not in <root>/bin next to <root>/app and
-#                     <root>/daslib, which is the layout build_native.sh makes
+#                     <root>/daslib, which is the layout build_port.sh makes
 set -euo pipefail
 
 repo_root="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")/.." && pwd)"
@@ -21,7 +21,7 @@ repo_root="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")/.." && pwd)"
 NATIVE="${WASM3DAS_NATIVE:-$repo_root/tmp/native/bin/wasm3das}"
 
 if [[ ! -x "$NATIVE" ]]; then
-    echo "wasm3-native: missing native binary at $NATIVE (run scripts/build_native.sh)" >&2
+    echo "wasm3-native: missing native binary at $NATIVE (run scripts/build_port.sh)" >&2
     exit 1
 fi
 

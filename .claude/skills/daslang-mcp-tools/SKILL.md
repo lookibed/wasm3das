@@ -6,12 +6,12 @@ description: Reference for the daslang MCP server tools (compile_check, lint, gr
 # daslang MCP tools (wasm3das)
 
 Read the full tool table and notes first:
-`tmp/daslang/skills/mcp_tools.md`.
+`$DASLANG_ROOT/skills/mcp_tools.md`.
 
 How the server is wired in this project (`.mcp.json`): the `daslang` server is the release
 bundle's `utils/mcp/mcp_supervisor.py` with `--repo-root .`, so the daslang child runs
-with cwd = wasm3das root and the pinned release binary `tmp/daslang/bin/daslang`
-(`scripts/install_daslang.sh`).
+with cwd = wasm3das root and the pinned release binary `$DASLANG_ROOT/bin/daslang`
+(`scripts/build-daslang.sh (upstream source, README "Install and run")`).
 
 Path conventions that follow from that:
 

@@ -7,17 +7,17 @@ description: Stateful step debugging of .das programs through the daslang-dap MC
 
 Read first:
 
-- `tmp/daslang-dap/utils/dap/README.md` (bridge contract, launch and attach workflows)
-- `tmp/daslang-dap/doc/source/reference/utils/dap.rst` (tool-by-tool reference)
+- `$DASLANG_ROOT/utils/dap/README.md` (bridge contract, launch and attach workflows)
+- `$DASLANG_ROOT/doc/source/reference/utils/dap.rst` (tool-by-tool reference)
 - AGENTS.md sections "Runtime-debugging policy" and "DAP session contract"
 
 The `daslang-dap` server in `.mcp.json` runs the bridge `utils/dap/mcp_bridge.py` from
-daScript PR #3937 (`tmp/daslang-dap`, a worktree of an upstream daScript clone; the
-release bundle has no `utils/dap` yet) with the release bundle's `tmp/daslang/bin/daslang`
-as the debuggee executable. Compile, lint and test gates use the same `tmp/daslang`
-(`scripts/install_daslang.sh`). Known limitation of the v0.6.4-RC2 debuggee: cancelling a
-debugger worker that is still waiting for its client crashes it (AGENTS.md, "Agent client
-configuration").
+the `$DASLANG_ROOT` checkout — the DAP bridge and `utils/dap` are merged upstream
+(daScript PR #3937; the pin carries them) — with `$DASLANG_ROOT/bin/daslang`
+as the debuggee executable. Compile, lint and test gates use the same
+`$DASLANG_ROOT` (`scripts/build-daslang.sh`, README "Install and run"). The
+stepping-race fix and the waiting-worker-shutdown fix are in upstream, carried
+by the pin (AGENTS.md, "Agent client configuration").
 
 Canonical launch lifecycle:
 
@@ -35,4 +35,4 @@ finish:      debug_terminate or debug_disconnect (idempotent; already_disconnect
 Rules: never pick ports by hand, never `pkill daslang` broadly, always `debug_disconnect`
 before a new `debug_launch`, and record `session` fields (`return_code`, `close_reason`,
 `last_dap_termination`, `process_output_tail`) when a session dies unexpectedly. Use
-`tmp/daslang-dap/utils/dap/_fixture.das` for connection smoke tests, not the wasm3 runtime.
+`$DASLANG_ROOT/utils/dap/_fixture.das` for connection smoke tests, not the wasm3 runtime.

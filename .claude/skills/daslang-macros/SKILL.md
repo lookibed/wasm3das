@@ -5,7 +5,7 @@ description: Compile-time macros and AST programming in daslang (quote/qmacro, [
 
 # daslang macros (wasm3das)
 
-Read `tmp/daslang/skills/das_macros.md` in full first; the concise reference is
+Read `$DASLANG_ROOT/skills/das_macros.md` in full first; the concise reference is
 `.claude/skills/daslang/references/macros.md`.
 
 In wasm3das macros are used sparingly. Prefer a literal port of the C construct; reach for a

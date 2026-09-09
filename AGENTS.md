@@ -143,26 +143,20 @@ Three servers are required, whichever client is used:
   smoke checklist: `notes/claude_code_tooling_setup_2026-09-04.md`.
 - **Codex** uses a project-local `.codex/config.toml` that is not tracked
   here; `notes/codex_tooling_smoke_test.md` describes its smoke test.
-- All three servers use the pinned daslang release bundle installed at
-  `tmp/daslang` by `scripts/install_daslang.sh` (`.mcp.json` runs
-  `tmp/daslang/utils/mcp/mcp_supervisor.py` with
-  `DASLANG_MCP_BIN=tmp/daslang/bin/daslang`; the LSP plugin runs
-  `tmp/daslang/utils/lsp/lsp_supervisor.py`).
-- The `daslang-dap` server runs the bridge `utils/dap/mcp_bridge.py` from
-  `tmp/daslang-dap/`, a worktree of the upstream daScript pull request #3937
-  (`git fetch origin pull/3937/head:pr-3937`; merged upstream on 2026-09-05,
-  after the pinned release was cut, so the release bundle has no `utils/dap`
-  yet), with `tmp/daslang/bin/daslang` as the debuggee executable. Once a
-  release ships the bridge, point `.mcp.json` at `tmp/daslang/utils/dap`.
-  Known limitation of the v0.6.4-RC2 debuggee: cancelling a debugger worker
-  that is still waiting for its client crashes the process with SIGSEGV
-  (`utils/dap/test_mcp_bridge.py::test_waiting_worker_shutdown` fails; fixed
-  upstream by PR #3937 after the release), so a launch that never reaches
-  `debug_configuration_done` may end in a crash report rather than a clean
-  `debug_disconnect`. That is a daslang bug, not a bridge or port bug.
-- daslang itself is never built or patched for this project: a compiler bug
-  is reported upstream with a reproducer, and the port is kept correct on the
-  pinned release.
+- All three servers use the daslang checkout pointed to by the `DASLANG_ROOT`
+  environment variable, at the commit pinned in `scripts/daslang_pin` and
+  built in place (README "Install and run"). `.mcp.json` runs
+  `$DASLANG_ROOT/utils/mcp/mcp_supervisor.py` with
+  `DASLANG_MCP_BIN=$DASLANG_ROOT/bin/daslang`; the LSP plugin runs
+  `$DASLANG_ROOT/utils/lsp/lsp_supervisor.py`; restart the client after
+  changing `DASLANG_ROOT`.
+- The `daslang-dap` server runs the bridge `utils/dap/mcp_bridge.py` from the
+  same `$DASLANG_ROOT` checkout — the DAP bridge and `utils/dap` are merged
+  upstream (PR #3937) and the pin commit carries them.
+- daslang is built from the pinned upstream source and never hand-patched
+  for this project: a compiler bug is reported upstream with a reproducer,
+  and the pin moves only through a deliberate bump recorded in
+  `scripts/daslang_pin`.
 - Before writing any new daslang tool (bridge, wrapper, script), check the open
   pull requests of `GaijinEntertainment/daScript`: the owner maintains the
   tooling there.
@@ -178,7 +172,7 @@ harnesses (`tools/dapdrive.py`, `tools/dasdap_mcp.py`, `logs/probe*.py` and
 similar historical scripts).
 
 Do not use the wasm3 runtime itself as the smoke-test debuggee. Use
-`tmp/daslang-dap/utils/dap/_fixture.das` for connection smoke tests and the
+$DASLANG_ROOT/utils/dap/_fixture.das for connection smoke tests and the
 real wasm runner only for scoped runtime investigation.
 
 ### DAP session contract
@@ -219,7 +213,7 @@ Resume with `debug_continue`, `debug_step_in`, `debug_step_over`, or
 `debug_step_out`, then consume `continued`, `stopped`, or `terminated` through
 `debug_wait_event`. Use default instrumentation mode for ordinary breakpoint
 investigation. Pass `stepping_debugger=true` when statement-level stepping is
-required; `tmp/daslang-dap/bin/daslang` contains the stepping-race fix.
+required; the stepping-race fix is in upstream, carried by the pin.
 
 Omit `port` on `debug_launch`; the bridge allocates an available local port.
 Specify a port only when an external process must know it in advance. Never
@@ -366,15 +360,17 @@ The tree is lint-clean under `.lint_config`; keep it that way. Do not mix
 lint/style changes with runtime fixes in one commit, and do not silence a
 fixable finding by adding a rule to `.lint_config`.
 
-All authoritative verification uses the official prebuilt daslang release
-bundle pinned in `scripts/daslang_release.env` (tag `v0.6.4-RC2`, one sha256
-per platform asset), installed by `scripts/install_daslang.sh` into
-`tmp/daslang`. `scripts/gate.sh` checks the install stamp
-`tmp/daslang/.wasm3das-release` against that tag and refuses anything else.
-Never build daslang from source and never silently substitute another
-compiler; a local experiment with a different build must set
-`DASLANG_ALLOW_UNPINNED=1` and cannot claim a green gate. If the bundle is
-missing, run the install script or report the blocker.
+All authoritative verification uses one daslang: the upstream source commit
+pinned in `scripts/daslang_pin`, checked out from
+GaijinEntertainment/daScript and built locally by whoever uses this
+repository (see README "Install and run" and `scripts/build-daslang.sh`).
+The checkout path goes into `DASLANG_ROOT`; `scripts/verify_daslang.sh`
+compares the checkout HEAD (or its `.daslang-commit` marker) against the pin
+and refuses anything else. Never hand-patch daslang: a compiler bug is
+reported upstream with a reproducer, and the pin moves only through a
+deliberate bump (build the new commit, full gate, land the port
+adaptations, commit the new sha). A local experiment with a different
+checkout must set `DASLANG_ALLOW_UNPINNED=1` and cannot claim a green gate.
 
 Run:
 
@@ -474,7 +470,8 @@ and raw model logs never go into the tree; dated working notes go into
 | `docs/memory-ownership.md` | allocation-regime decision and migration order |
 | `.github/pull_request_template.md` | PR skeleton: scope, C references, verification, manifest transition, C checklist |
 | `.githooks/pre-push` | local form of the CI quality gate |
-| `scripts/daslang_release.env`, `scripts/install_daslang.sh` | the pinned daslang release (tag and checksums) and its installer into `tmp/daslang` |
+| `scripts/daslang_pin`, `scripts/verify_daslang.sh` | the pinned daslang source commit and the checkout/build verifier |
+| `docs/upstream-status.md` | daslang issues/PRs the pin carries, verified per issue |
 | `notes/handoff_claude_code_2026-09-07.md` | latest session handoff (state of `main` and the open PR, pipeline order, pitfalls); older handoffs are dated the same way |
 | `notes/runtime_recovery_context_2026-09.md` | provenance of `source/`, checkpoint commits, teardown state |
 | `notes/dap_tooling_update_2026-09-04.md` | current DAP lifecycle, fixes, and failure triage |
@@ -483,6 +480,6 @@ and raw model logs never go into the tree; dated working notes go into
 | `tests/manual/` | manual fixture sets and `run_fixtures.py`; outside the gate |
 | `tests/host_test/` | Daslang counterparts of `wasm3c/host_test` (embedding through the public API); compiled and linted by the gate |
 | `app/`, `scripts/wasm3` | the command line front end (port of `platforms/app/main.c`) and its interpreted launcher |
-| `native/`, `scripts/build_native.sh`, `scripts/wasm3-native` | AOT build: C++ host, build script and native launcher (`notes/native_aot_status.md`) |
+| `native/`, `scripts/build_port.sh`, `scripts/wasm3-native` | AOT build: C++ host, build script and native launcher (`notes/native_aot_status.md`) |
 | `scripts/bench.sh`, `notes/benchmark_2026-09-07.md` | cross-engine fib32 benchmark and its results |
 | `scripts/gate.sh`, `scripts/check_repo_invariants.sh` | the gate shared by CI and the pre-push hook |

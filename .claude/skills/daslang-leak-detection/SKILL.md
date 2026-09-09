@@ -5,8 +5,8 @@ description: Diagnosing daslang memory leaks and teardown crashes (--das-profile
 
 # daslang leak detection (wasm3das)
 
-Read `tmp/daslang/skills/memory_leak_detection.md` in full first, then
-`tmp/daslang/skills/jobque_debugging.md` if channels or job status are involved.
+Read `$DASLANG_ROOT/skills/memory_leak_detection.md` in full first, then
+`$DASLANG_ROOT/skills/jobque_debugging.md` if channels or job status are involved.
 
 wasm3das context: every `M3*` object is a host allocation (`m3_Malloc_Impl` /
 `m3_Free_Impl`), never `new`/`delete` (AGENTS.md, "Allocation and pointer semantics",
