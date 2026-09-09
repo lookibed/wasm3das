@@ -1,9 +1,17 @@
 #!/usr/bin/env bash
 # Build the daslang checkout at $1 (already cloned and checked out at the
-# commit pinned in scripts/daslang_pin) and install it in place:
+# commit pinned in scripts/daslang_pin) in place. daScript's CMake writes its
+# outputs into the source tree itself, so the checkout is the install:
 #
 #   <root>/bin/daslang, <root>/lib/liblibDaScript*.a, <root>/include/,
-#   <root>/daslib/, <root>/utils/, <root>/dastest ...
+#   <root>/daslib/, <root>/utils/, <root>/dastest,
+#   <root>/modules/dasHV/dasModuleHV.shared_module ...
+#
+# There is deliberately no `cmake --install`: it copies the tree onto itself
+# and, because it installs every module the configure step enabled, fails on
+# a library this script never builds (liblibDasModuleClipboard.a on a runner
+# with X11 headers). Generated headers stay under <root>/build/include, which
+# scripts/build_port.sh already adds to its include path.
 #
 # The same fixed flag set as README "Install and run": Release, the headless
 # module set (no LLVM/GUI/media) plus the dasHV dynamic module, which is
@@ -67,8 +75,7 @@ echo "build-daslang: compile ($JOBS jobs)"
 cmake --build "$root/build" -j "$JOBS" --config Release --target \
       daslang libDaScript libDaScript_runtime libUriParser dasModuleHV
 
-echo "build-daslang: install"
-cmake --install "$root/build" --config Release --prefix "$root"
-
+# The marker verify_daslang.sh reads when the root is not a git checkout
+# (a copied or unpacked tree); a checkout answers through git itself.
 printf '%s\n' "$head" > "$root/.daslang-commit"
 echo "build-daslang: $root ready ($("$root/bin/daslang" --version 2>/dev/null || true))"
