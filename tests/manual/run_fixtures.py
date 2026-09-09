@@ -466,6 +466,9 @@ def main() -> int:
     ok_counts = {r: 0 for r in wanted}
     base_counts = {r: 0 for r in wanted}
     err_counts = {r: 0 for r in wanted}
+    # Rows that contributed to totals[r], so a start-up estimate can be
+    # subtracted once per counted row (see the "без старта" column).
+    timed_counts = {r: 0 for r in wanted}
 
     for name, wasm, func, args, baseline, timeout in tests:
         # The table above spells the module names with a Windows separator;
@@ -492,6 +495,7 @@ def main() -> int:
                     row[r] = ("ERR", dt, False)
                 else:
                     totals[r] += dt
+                    timed_counts[r] += 1
                     if baseline is None:
                         row[r] = (val, dt, None)
                     else:
@@ -527,8 +531,27 @@ def main() -> int:
             line += f" {vs[:14]:>14s} {fmt_time(dt):>9s} {ms:>5s} |"
         out(line)
     out("-" * w)
+    # Start-up estimate per runtime: the wall time of the T0 smoke row
+    # (`fixtures/add`, one add of two constants, so its execution is nothing
+    # and the whole cell is process start plus, for wasm3das, the compile of
+    # app/wasm3.das). "exec only" is the total minus that once per counted
+    # row: an estimate, printed beside the honest full wall clock, never
+    # instead of it.
+    startup = {}
     for r in wanted:
+        add_rows = [row for row in rows if row["name"] == "fixtures/add"
+                    and row[r][2] is not False and not isinstance(row[r][0], str)]
+        startup[r] = add_rows[0][r][1] if add_rows else None
+
+    def exec_only(r):
+        if startup[r] is None:
+            return None
+        return max(0.0, totals[r] - startup[r] * timed_counts[r])
+
+    for r in wanted:
+        eo = exec_only(r)
         out(f"{RUNTIMES[r][0][:18]:<20s} total time: {fmt_time(totals[r]):>10s}   "
+            f"exec only: {fmt_time(eo) if eo is not None else 'n/a':>10s}   "
             f"baseline match: {ok_counts[r]}/{base_counts[r]}   "
             f"(n/a without baseline: {sum(1 for row in rows if row[r][2] is None)})")
     out("=" * w)
@@ -601,15 +624,25 @@ def main() -> int:
     doc.append("## Итого")
     doc.append("")
     with_ratio = "wasm3" in wanted and totals.get("wasm3", 0.0) > 0
-    doc.append("| runtime | суммарное время | × к wasm3 C |")
-    doc.append("| --- | ---: | ---: |")
+    doc.append("| runtime | суммарное время | × к wasm3 C | старт (`fixtures/add`) | без старта (оценка) | × к wasm3 C без старта |")
+    doc.append("| --- | ---: | ---: | ---: | ---: | ---: |")
+    ref_exec = exec_only("wasm3") if "wasm3" in wanted else None
     for r in wanted:
         # The total covers the rows that produced a result; a run that
         # errored or timed out timed nothing, so it is only counted.
         ratio = fmt_ratio(totals[r] / totals["wasm3"]) if with_ratio else MISSING
         errs = f" ({err_counts[r]} ERR)" if err_counts[r] else ""
+        eo = exec_only(r)
+        st = fmt_time(startup[r]) if startup[r] is not None else MISSING
+        eo_cell = fmt_time(eo) if eo is not None else MISSING
+        eo_ratio = (fmt_ratio(eo / ref_exec)
+                    if eo is not None and ref_exec else MISSING)
         doc.append(f"| {md(RUNTIME_SHORT[r])} | {fmt_time(totals[r])}{errs}"
-                   f" | {ratio} |")
+                   f" | {ratio} | {st} | {eo_cell} | {eo_ratio} |")
+    doc.append("")
+    doc.append("Старт это полное время строки `fixtures/add` (исполнения там нет), "
+               "«без старта» это сумма минус старт на каждую засчитанную строку: "
+               "оценка рядом с честным полным временем, не вместо него.")
 
     doc.append("")
     doc.append("## Прогон")

@@ -54,20 +54,32 @@ require ./m3_types.das
 // ============================================================================
 
 
+// These three are preprocessor macros in C, so they cost nothing at the use
+// site. [inline] is their equivalent for the daslang interpreter, which would
+// otherwise evaluate a call node per memory access; every load and store
+// operation reaches memory through m3MemData.
+
+// `_mem` is taken by reference: an [inline] argument passed by value is copied
+// into a temporary of its own, and every load and store operation expands
+// m3MemData.
+
 /* C: #define m3MemData(mem) (u8*)(((M3MemoryHeader*)(mem))+1) */
-def public m3MemData(var _mem : M3MemoryHeader?) : u8? {
+[inline]
+def public m3MemData(_mem : M3MemoryHeader?&) : u8? {
     unsafe {
         return reinterpret<u8?>(_mem + 1)
     }
 }
 
 /* C: #define m3MemRuntime(mem) (((M3MemoryHeader*)(mem))->runtime) */
-def public m3MemRuntime(var _mem : M3MemoryHeader?) : IM3Runtime {
+[inline]
+def public m3MemRuntime(var _mem : M3MemoryHeader?&) : IM3Runtime {
     return _mem.runtime
 }
 
 /* C: #define m3MemInfo(mem) (&(((M3MemoryHeader*)(mem))->runtime->memory)) */
-def public m3MemInfo(var _mem : M3MemoryHeader?) : IM3Memory {
+[inline]
+def public m3MemInfo(var _mem : M3MemoryHeader?&) : IM3Memory {
     unsafe {
         return addr(_mem.runtime.memory)
     }
@@ -98,21 +110,28 @@ var public m3Ret_nextOp : M3Result = "m3: dispatch the operation at _pc"
 
 // The trampoline that stands in for C's M3_MUSTTAIL threading: it owns the five
 // interpreter registers and every operation updates them in place.
+// The sentinel test is the loop condition rather than an `if`/`break` pair in
+// the body: one operation costs one iteration, so two fewer nodes per executed
+// wasm operation. `r` starts at the sentinel, which is the state "the word at
+// _pc still has to be dispatched"; C's threaded form has the same shape,
+// because there the first operation is entered unconditionally.
 def public RunLoop(var _pc : pc_t; var _sp : m3stack_t; var _mem : M3MemoryHeader?; var _r0 : m3reg_t; var _fp0 : f64) : M3Result {
-    var r : M3Result = m3Err_none
+    var r : M3Result = m3Ret_nextOp
     unsafe {
         let nextOpId = reinterpret<void?>(m3Ret_nextOp)
-        while (true) {
+        while (reinterpret<void?>(r) == nextOpId) {
             let operation = reinterpret<IM3Operation>(_pc[0])
             _pc = _pc + 1
             r = operation(_pc, _sp, _mem, _r0, _fp0)
-            if (reinterpret<void?>(r) != nextOpId) { break }
         }
     }
     return r
 }
 
 // C: #define nextOpImpl() ((IM3Operation)(* _pc))(_pc + 1, d_m3OpArgs)
+// Deliberately not [inline], unlike the operand readers: the five parameters
+// are by value, so an inline splice replaces one call node by five
+// argument-copy nodes plus the result temporary, which measures slower.
 def public nextOpImpl(var _pc : pc_t; var _sp : m3stack_t; var _mem : M3MemoryHeader?; var _r0 : m3reg_t; var _fp0 : f64) : M3Result {
     return RunLoop(_pc, _sp, _mem, _r0, _fp0)
 }

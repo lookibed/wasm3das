@@ -8,6 +8,10 @@ require ./m3_core.das
 require ./m3_types.das public
 require ./m3_math_utils.das public
 require ./m3_exec_defs.das public
+// Compile-time only, and deliberately not re-exported: the pass that expands the
+// operand readers below at their use sites, the way the C preprocessor expands
+// immediate()/slot()/slot_ptr(). See m3_exec_expand.das.
+require ./m3_exec_expand.das
 
 // Conservative Gen2 port of m3_exec.h.
 // The threaded-interpreter ABI, op_* names, register/slot forms, trap propagation,
@@ -32,16 +36,22 @@ let INT64_MIN : i64 = -9223372036854775807l - 1l
 
 
 
+// C spells the three as macros (d_m3RecordBacktraces == false makes them
+// empty / a plain passthrough); [inline] keeps them free at the use site, as
+// in C, instead of one call node per trap check.
+[inline]
 def pushBacktraceFrame(_pc : pc_t; _mem : M3MemoryHeader?) {
     // d_m3RecordBacktraces == false: the C body calls PushBacktraceFrame and
     // is compiled out. The backtrace layer is not ported yet.
 }
 
+[inline]
 def newTrap(_pc : pc_t; _mem : M3MemoryHeader?; err : M3Result) : M3Result {
     pushBacktraceFrame(_pc, _mem)
     return err
 }
 
+[inline]
 def forwardTrap(err : M3Result) : M3Result {
     return err
 }
@@ -102,7 +112,12 @@ def c_memmove(dst : u8?; src : u8?; size : u32) {
         if (size == 0u) { return }
         let d = reinterpret<i64>(dptr)
         let s = reinterpret<i64>(sptr)
-        if (d < s) {
+        // Disjoint ranges are the common case and C's memmove hands them to the
+        // same block copy memcpy uses; only a true overlap needs the direction
+        // dependent element loop.
+        if (d + int64(size) <= s || s + int64(size) <= d) {
+            memcpy(dptr, sptr, size)
+        } elif (d < s) {
             for (i in 0..int(size)) { dptr[i] = sptr[i] }
         } else {
             var i = int(size) - 1
@@ -111,12 +126,8 @@ def c_memmove(dst : u8?; src : u8?; size : u32) {
     }
 }
 
-def c_memset(dst : u8?; value : u8; size : u32) {
-    unsafe {
-        var dptr = reinterpret<u8?>(dst)
-        for (i in 0..int(size)) { dptr[i] = value }
-    }
-}
+// C's `memset` needs no replacement: `memset8` is the daslang builtin block
+// fill, and op_Entry and op_MemFill call it directly the way C calls memset.
 
 // ============================================================================
 // libm replacements (C copysignf/copysign)
@@ -143,29 +154,61 @@ def copysign_f64(a : f64; b : f64) : f64 {
     }
 }
 
+/*
+    Operand readers. C spells them as preprocessor macros in m3_exec_defs.h, so
+    an operation body carries their expansion, not a call:
+
+        #define immediate(TYPE)     * ((TYPE *) _pc++)
+        #define slot_ptr(TYPE)      (TYPE *)   (_sp + immediate (i32))
+        #define slot(TYPE)          * (TYPE *) (_sp + immediate (i32))
+
+    The port keeps them as functions so the 509 operation bodies keep the C
+    spelling, but each one is [inline] and *flat*: slot_T does not call
+    slot_ptr_T, which does not call immediate_i32. Each is the C macro written
+    out once, exactly as the C preprocessor writes it out at the use site.
+
+    Why flat and why by reference: the daslang interpreter evaluates one node
+    per statement, per call and per inline splice, and an [inline] argument
+    passed by value is copied into a temporary of its own. Measured on a
+    synthetic code page run through RunLoop (op_i32_Add_ss, min of five runs,
+    tmp/opbench.das):
+
+        nested, plain calls (the previous spelling)   274 ns/op
+        nested, [inline]                              272 ns/op
+        flat [inline], _sp by value                   219 ns/op
+        flat [inline], _sp by reference               190 ns/op
+        the same expansion written out by hand        144 ns/op
+
+    so the nesting, not the call, was the cost. The remaining 46 ns is the
+    result temporary daslang gives every inline splice; removing it would mean
+    writing the expansion into all 509 bodies, which is not worth the fidelity.
+*/
+
+[inline]
 def bool_reg(value : bool) : m3reg_t {
-    if (value) { return 1l }
-    return 0l
+    // C: _r0 = (operand1 == operand2) - the bool-to-m3reg_t conversion.
+    return value ? 1l : 0l
 }
 
+[inline]
 def immediate_i32(var _pc : pc_t&) : i32 {
     unsafe {
-        let p = reinterpret<i32 const?>(_pc)
-        let value = p[0]
+        let value = reinterpret<i32 const?>(_pc)[0]
         _pc++
         return value
     }
 }
 
+[inline]
 def immediate_u32(var _pc : pc_t&) : u32 {
     unsafe {
-        let p = reinterpret<u32 const?>(_pc)
-        let value = p[0]
+        let value = reinterpret<u32 const?>(_pc)[0]
         _pc++
         return value
     }
 }
 
+[inline]
 def immediate_pc(var _pc : pc_t&) : pc_t {
     unsafe {
         var value = reinterpret<pc_t>(_pc[0])
@@ -174,6 +217,7 @@ def immediate_pc(var _pc : pc_t&) : pc_t {
     }
 }
 
+[inline]
 def immediate_code(var _pc : pc_t&) : code_t {
     unsafe {
         let value = _pc[0]
@@ -182,149 +226,219 @@ def immediate_code(var _pc : pc_t&) : code_t {
     }
 }
 
+[inline]
 def immediate_function(var _pc : pc_t&) : IM3Function {
-    return unsafe(reinterpret<IM3Function>(immediate_code(_pc)))
+    unsafe {
+        var value = reinterpret<IM3Function>(_pc[0])
+        _pc++
+        return value
+    }
 }
 
+[inline]
 def immediate_module(var _pc : pc_t&) : IM3Module {
-    return unsafe(reinterpret<IM3Module>(immediate_code(_pc)))
+    unsafe {
+        var value = reinterpret<IM3Module>(_pc[0])
+        _pc++
+        return value
+    }
 }
 
+[inline]
 def immediate_functype(var _pc : pc_t&) : IM3FuncType {
-    return unsafe(reinterpret<IM3FuncType>(immediate_code(_pc)))
+    unsafe {
+        var value = reinterpret<IM3FuncType>(_pc[0])
+        _pc++
+        return value
+    }
 }
 
+[inline]
 def immediate_rawcall(var _pc : pc_t&) : M3RawCall {
-    return unsafe(reinterpret<M3RawCall>(immediate_code(_pc)))
-}
-
-def slot_ptr_i8(var _pc : pc_t&; _sp : m3stack_t) : i8? {
-    let offset = immediate_i32(_pc)
     unsafe {
-        return reinterpret<i8?>(_sp + offset)
+        let value = reinterpret<M3RawCall>(_pc[0])
+        _pc++
+        return value
     }
 }
 
-def slot_i8(var _pc : pc_t&; _sp : m3stack_t) : i8 {
+[inline]
+def slot_ptr_i8(var _pc : pc_t&; _sp : m3stack_t&) : i8? {
     unsafe {
-        return slot_ptr_i8(_pc, _sp)[0]
+        var ptr = reinterpret<i8?>(_sp + reinterpret<i32 const?>(_pc)[0])
+        _pc++
+        return ptr
     }
 }
 
-def slot_ptr_u8(var _pc : pc_t&; _sp : m3stack_t) : u8? {
-    let offset = immediate_i32(_pc)
+[inline]
+def slot_i8(var _pc : pc_t&; _sp : m3stack_t&) : i8 {
     unsafe {
-        return reinterpret<u8?>(_sp + offset)
+        let value = reinterpret<i8?>(_sp + reinterpret<i32 const?>(_pc)[0])[0]
+        _pc++
+        return value
     }
 }
 
-def slot_u8(var _pc : pc_t&; _sp : m3stack_t) : u8 {
+[inline]
+def slot_ptr_u8(var _pc : pc_t&; _sp : m3stack_t&) : u8? {
     unsafe {
-        return slot_ptr_u8(_pc, _sp)[0]
+        var ptr = reinterpret<u8?>(_sp + reinterpret<i32 const?>(_pc)[0])
+        _pc++
+        return ptr
     }
 }
 
-def slot_ptr_i16(var _pc : pc_t&; _sp : m3stack_t) : i16? {
-    let offset = immediate_i32(_pc)
+[inline]
+def slot_u8(var _pc : pc_t&; _sp : m3stack_t&) : u8 {
     unsafe {
-        return reinterpret<i16?>(_sp + offset)
+        let value = reinterpret<u8?>(_sp + reinterpret<i32 const?>(_pc)[0])[0]
+        _pc++
+        return value
     }
 }
 
-def slot_i16(var _pc : pc_t&; _sp : m3stack_t) : i16 {
+[inline]
+def slot_ptr_i16(var _pc : pc_t&; _sp : m3stack_t&) : i16? {
     unsafe {
-        return slot_ptr_i16(_pc, _sp)[0]
+        var ptr = reinterpret<i16?>(_sp + reinterpret<i32 const?>(_pc)[0])
+        _pc++
+        return ptr
     }
 }
 
-def slot_ptr_u16(var _pc : pc_t&; _sp : m3stack_t) : u16? {
-    let offset = immediate_i32(_pc)
+[inline]
+def slot_i16(var _pc : pc_t&; _sp : m3stack_t&) : i16 {
     unsafe {
-        return reinterpret<u16?>(_sp + offset)
+        let value = reinterpret<i16?>(_sp + reinterpret<i32 const?>(_pc)[0])[0]
+        _pc++
+        return value
     }
 }
 
-def slot_u16(var _pc : pc_t&; _sp : m3stack_t) : u16 {
+[inline]
+def slot_ptr_u16(var _pc : pc_t&; _sp : m3stack_t&) : u16? {
     unsafe {
-        return slot_ptr_u16(_pc, _sp)[0]
+        var ptr = reinterpret<u16?>(_sp + reinterpret<i32 const?>(_pc)[0])
+        _pc++
+        return ptr
     }
 }
 
-def slot_ptr_i32(var _pc : pc_t&; _sp : m3stack_t) : i32? {
-    let offset = immediate_i32(_pc)
+[inline]
+def slot_u16(var _pc : pc_t&; _sp : m3stack_t&) : u16 {
     unsafe {
-        return reinterpret<i32?>(_sp + offset)
+        let value = reinterpret<u16?>(_sp + reinterpret<i32 const?>(_pc)[0])[0]
+        _pc++
+        return value
     }
 }
 
-def slot_i32(var _pc : pc_t&; _sp : m3stack_t) : i32 {
+[inline]
+def slot_ptr_i32(var _pc : pc_t&; _sp : m3stack_t&) : i32? {
     unsafe {
-        return slot_ptr_i32(_pc, _sp)[0]
+        var ptr = reinterpret<i32?>(_sp + reinterpret<i32 const?>(_pc)[0])
+        _pc++
+        return ptr
     }
 }
 
-def slot_ptr_u32(var _pc : pc_t&; _sp : m3stack_t) : u32? {
-    let offset = immediate_i32(_pc)
+[inline]
+def slot_i32(var _pc : pc_t&; _sp : m3stack_t&) : i32 {
     unsafe {
-        return reinterpret<u32?>(_sp + offset)
+        let value = reinterpret<i32?>(_sp + reinterpret<i32 const?>(_pc)[0])[0]
+        _pc++
+        return value
     }
 }
 
-def slot_u32(var _pc : pc_t&; _sp : m3stack_t) : u32 {
+[inline]
+def slot_ptr_u32(var _pc : pc_t&; _sp : m3stack_t&) : u32? {
     unsafe {
-        return slot_ptr_u32(_pc, _sp)[0]
+        var ptr = reinterpret<u32?>(_sp + reinterpret<i32 const?>(_pc)[0])
+        _pc++
+        return ptr
     }
 }
 
-def slot_ptr_i64(var _pc : pc_t&; _sp : m3stack_t) : i64? {
-    let offset = immediate_i32(_pc)
+[inline]
+def slot_u32(var _pc : pc_t&; _sp : m3stack_t&) : u32 {
     unsafe {
-        return reinterpret<i64?>(_sp + offset)
+        let value = reinterpret<u32?>(_sp + reinterpret<i32 const?>(_pc)[0])[0]
+        _pc++
+        return value
     }
 }
 
-def slot_i64(var _pc : pc_t&; _sp : m3stack_t) : i64 {
+[inline]
+def slot_ptr_i64(var _pc : pc_t&; _sp : m3stack_t&) : i64? {
     unsafe {
-        return slot_ptr_i64(_pc, _sp)[0]
+        var ptr = reinterpret<i64?>(_sp + reinterpret<i32 const?>(_pc)[0])
+        _pc++
+        return ptr
     }
 }
 
-def slot_ptr_u64(var _pc : pc_t&; _sp : m3stack_t) : u64? {
-    let offset = immediate_i32(_pc)
+[inline]
+def slot_i64(var _pc : pc_t&; _sp : m3stack_t&) : i64 {
     unsafe {
-        return reinterpret<u64?>(_sp + offset)
+        let value = reinterpret<i64?>(_sp + reinterpret<i32 const?>(_pc)[0])[0]
+        _pc++
+        return value
     }
 }
 
-def slot_u64(var _pc : pc_t&; _sp : m3stack_t) : u64 {
+[inline]
+def slot_ptr_u64(var _pc : pc_t&; _sp : m3stack_t&) : u64? {
     unsafe {
-        return slot_ptr_u64(_pc, _sp)[0]
+        var ptr = reinterpret<u64?>(_sp + reinterpret<i32 const?>(_pc)[0])
+        _pc++
+        return ptr
     }
 }
 
-def slot_ptr_f32(var _pc : pc_t&; _sp : m3stack_t) : f32? {
-    let offset = immediate_i32(_pc)
+[inline]
+def slot_u64(var _pc : pc_t&; _sp : m3stack_t&) : u64 {
     unsafe {
-        return reinterpret<f32?>(_sp + offset)
+        let value = reinterpret<u64?>(_sp + reinterpret<i32 const?>(_pc)[0])[0]
+        _pc++
+        return value
     }
 }
 
-def slot_f32(var _pc : pc_t&; _sp : m3stack_t) : f32 {
+[inline]
+def slot_ptr_f32(var _pc : pc_t&; _sp : m3stack_t&) : f32? {
     unsafe {
-        return slot_ptr_f32(_pc, _sp)[0]
+        var ptr = reinterpret<f32?>(_sp + reinterpret<i32 const?>(_pc)[0])
+        _pc++
+        return ptr
     }
 }
 
-def slot_ptr_f64(var _pc : pc_t&; _sp : m3stack_t) : f64? {
-    let offset = immediate_i32(_pc)
+[inline]
+def slot_f32(var _pc : pc_t&; _sp : m3stack_t&) : f32 {
     unsafe {
-        return reinterpret<f64?>(_sp + offset)
+        let value = reinterpret<f32?>(_sp + reinterpret<i32 const?>(_pc)[0])[0]
+        _pc++
+        return value
     }
 }
 
-def slot_f64(var _pc : pc_t&; _sp : m3stack_t) : f64 {
+[inline]
+def slot_ptr_f64(var _pc : pc_t&; _sp : m3stack_t&) : f64? {
     unsafe {
-        return slot_ptr_f64(_pc, _sp)[0]
+        var ptr = reinterpret<f64?>(_sp + reinterpret<i32 const?>(_pc)[0])
+        _pc++
+        return ptr
+    }
+}
+
+[inline]
+def slot_f64(var _pc : pc_t&; _sp : m3stack_t&) : f64 {
+    unsafe {
+        let value = reinterpret<f64?>(_sp + reinterpret<i32 const?>(_pc)[0])[0]
+        _pc++
+        return value
     }
 }
 
@@ -333,6 +447,9 @@ def slot_f64(var _pc : pc_t&; _sp : m3stack_t) : f64 {
 // and cleared registers. C ends it with nextOpDirect(), a MUSTTAIL return of
 // nextOpImpl(): Call's result is the completed result of the callee's operation
 // chain, so the trampoline form is nextOpImpl, one nested RunLoop per wasm call.
+// Deliberately not [inline]: its five parameters are by value, so an inline
+// splice turns one call node into five argument-copy nodes plus the result
+// temporary. Measured on fib 28 that is a loss (4.04 s against 3.91 s).
 def Call(var _pc : pc_t; var _sp : m3stack_t; var _mem : M3MemoryHeader?; var _r0 : m3reg_t; var _fp0 : f64) : M3Result {
     let possible_trap = m3_Yield()
     if (possible_trap != m3Err_none) { return possible_trap }
@@ -899,24 +1016,41 @@ def public op_f64_GreaterThanOrEqual_ss(var _pc : pc_t&; var _sp : m3stack_t&; v
     return nextOpDirect(_pc, _sp, _mem, _r0, _fp0)
 }
 
+// C m3_math_utils.h spells these as preprocessor macros, so they cost nothing
+// at the use site; [inline] is the same thing for the daslang interpreter,
+// which would otherwise evaluate a call node per arithmetic operation.
+[inline]
 def OP_ADD_32(a, b : i32) : i32 { unsafe { return reinterpret<i32>(reinterpret<u32>(a) + reinterpret<u32>(b)) } }
+[inline]
 def OP_ADD_64(a, b : i64) : i64 { unsafe { return reinterpret<i64>(reinterpret<u64>(a) + reinterpret<u64>(b)) } }
+[inline]
 def OP_SUB_32(a, b : i32) : i32 { unsafe { return reinterpret<i32>(reinterpret<u32>(a) - reinterpret<u32>(b)) } }
+[inline]
 def OP_SUB_64(a, b : i64) : i64 { unsafe { return reinterpret<i64>(reinterpret<u64>(a) - reinterpret<u64>(b)) } }
+[inline]
 def OP_MUL_32(a, b : i32) : i32 { unsafe { return reinterpret<i32>(reinterpret<u32>(a) * reinterpret<u32>(b)) } }
+[inline]
 def OP_MUL_64(a, b : i64) : i64 { unsafe { return reinterpret<i64>(reinterpret<u64>(a) * reinterpret<u64>(b)) } }
 
+[inline]
 def OP_SHL_32(x, n : u32) : u32 { return x << (n % 32u) }
+[inline]
 def OP_SHL_64(x, n : u64) : u64 { return x << (n % 64ul) }
+[inline]
 def OP_SHR_32(x, n : u32) : u32 { return x >> (n % 32u) }
+[inline]
 def OP_SHR_64(x, n : u64) : u64 { return x >> (n % 64ul) }
 
 // C: "clz(0), ctz(0) results are undefined for rest platforms, fix it" - the
 // portable branch of the OP_CLZ_*/OP_CTZ_* macros. The Daslang builtins share
 // the hardware quirk (clz(0u) is 31 here), so the guard is mandatory.
+[inline]
 def OP_CLZ_32(x : u32) : u32 { return x == 0u ? 32u : clz(x) }
+[inline]
 def OP_CTZ_32(x : u32) : u32 { return x == 0u ? 32u : ctz(x) }
+[inline]
 def OP_CLZ_64(x : u64) : u64 { return x == 0ul ? 64ul : clz(x) }
+[inline]
 def OP_CTZ_64(x : u64) : u64 { return x == 0ul ? 64ul : ctz(x) }
 
 def public op_i32_Add_rs(var _pc : pc_t&; var _sp : m3stack_t&; var _mem : M3MemoryHeader?&; var _r0 : m3reg_t&; var _fp0 : f64&) : M3Result {
@@ -3045,7 +3179,7 @@ def public op_MemFill(var _pc : pc_t&; var _sp : m3stack_t&; var _mem : M3Memory
     let byte = slot_u32(_pc, _sp)
     let destination = u64(slot_u32(_pc, _sp))
     if (destination + u64(size) <= _mem.length) {
-        unsafe { c_memset(m3MemData(_mem) + int64(destination), u8(byte), size) }
+        unsafe { memset8(m3MemData(_mem) + int64(destination), u8(byte), int(size)) }
         return nextOpDirect(_pc, _sp, _mem, _r0, _fp0)
     }
     return newTrap(_pc, _mem, m3Err_trapOutOfBoundsMemoryAccess)
@@ -3078,7 +3212,8 @@ def public op_Entry(var _pc : pc_t&; var _sp : m3stack_t&; var _mem : M3MemoryHe
 if (d_m3SkipStackCheck || intptr(stackEnd) < intptr(_mem.maxStack)) {
         // DEBUG-only hit counter omitted when DEBUG is not part of the Das module configuration.
         var stack = unsafe(reinterpret<u8?>(unsafe(_sp + int(_function.numRetAndArgSlots))))
-        c_memset(stack, 0u8, u32(_function.numLocalBytes))
+        // C: memset (stack, 0x0, function->numLocalBytes)
+        unsafe { memset8(stack, 0u8, int(_function.numLocalBytes)) }
         unsafe { stack = stack + int(_function.numLocalBytes) }
         if (_function.constants != null) { unsafe { memcpy(stack, _function.constants, int(_function.numConstantBytes)) } }
         let r = nextOpImpl(_pc, _sp, _mem, _r0, _fp0)

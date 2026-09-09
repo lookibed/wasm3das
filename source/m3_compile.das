@@ -1,5 +1,9 @@
 options gen2
 options indenting = 4
+// The compiler runs once per wasm function, never on the execution path, so
+// daslang's automatic inlining buys nothing here and costs startup: this
+// module alone was 0.56 s of the 1.85 s compile at every launch.
+options never_inline = true
 
 module m3_compile shared public
 

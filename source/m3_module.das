@@ -1,5 +1,8 @@
 options gen2
 options indenting = 4
+// Module accessors and release run outside the execution path: automatic
+// inlining costs startup only.
+options never_inline = true
 
 module m3_module shared public
 

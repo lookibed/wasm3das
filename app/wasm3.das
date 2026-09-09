@@ -1,5 +1,7 @@
 options gen2
 options indenting = 4
+// The front end runs once per process: automatic inlining costs startup only.
+options never_inline = true
 // C M3_MUSTTAIL is replaced by the RunLoop dispatcher of m3_exec_defs.das
 // (notes/exec_trampoline_design.md): ops return to the loop, and only a
 // wasm call nests Daslang frames, a bounded number per wasm frame.

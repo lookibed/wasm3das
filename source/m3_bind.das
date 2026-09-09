@@ -1,5 +1,7 @@
 options gen2
 options indenting = 4
+// Linking runs once per import: automatic inlining costs startup only.
+options never_inline = true
 
 module m3_bind shared public
 
