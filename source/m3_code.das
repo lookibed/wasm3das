@@ -1,5 +1,8 @@
 options gen2
 options indenting = 4
+// Code pages are written by the compiler, once per wasm function: automatic
+// inlining costs startup only.
+options never_inline = true
 
 module m3_code shared public
 

@@ -1,5 +1,8 @@
 options gen2
 options indenting = 4
+// Host functions run once per import call, not per wasm operation:
+// automatic inlining costs startup only.
+options never_inline = true
 
 module m3_api_libc shared public
 

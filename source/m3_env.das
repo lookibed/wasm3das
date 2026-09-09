@@ -1,5 +1,8 @@
 options gen2
 options indenting = 4
+// Environment, runtime and module setup run once per module or per call from
+// the host, never per wasm operation: automatic inlining costs startup only.
+options never_inline = true
 
 module m3_env shared public
 
