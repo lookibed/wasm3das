@@ -5,8 +5,10 @@
 # Filesystem metadata copied from Windows downloads
 *Zone.Identifier
 
-# Daslang generated artifacts
-/.jitted_scripts/
+# Daslang generated artifacts: the JIT writes its cache into the working
+# directory of whatever run used it (the repository root, wasm3c/test for the
+# WASI driver, tmp/spec/run for the spec driver), so the pattern is unanchored
+.jitted_scripts/
 *.aot.cpp
 *.aot.h
 
