@@ -100,6 +100,30 @@ compiles cleanly. This is what stops a call macro from emitting C's operand
 reader as one side-effecting expression, so every helper here has to spell the
 advance as a separate `_pc++` statement. Worth a reduced upstream reproducer.
 
+## Results on the manual fixtures (2026-09-09)
+
+`tests/manual/run_fixtures.py --runtimes wasmtime,wasm3,das`, 98 checks, the
+same quiet machine, baseline = `main` at `9cdd03d` run through its own
+`scripts/wasm3`, candidate = this branch (flat readers, the expansion pass,
+`memset8`, the dispatch loop, `-no-dynamic-modules`, `never_inline` in the
+cold modules). All 86 documented results match in both runs.
+
+| | baseline | branch | ratio |
+|---|---|---|---|
+| sum over 98 checks, interpreter | 452.8 s | 274.8 s | 1.65x |
+| per-row ratio | | | min 1.51x, median 1.65x, max 2.05x; 98 of 98 rows at or above 1.5x |
+| start-up (`fixtures/add` row) | 2.45 s | 1.53 s | 1.6x |
+| binjgb 16 frames (three rows) | 35.2–35.9 s | 22.4–23.2 s | 1.52–1.58x |
+| chipmunk 600 steps (five rows) | 11.6–14.1 s | 7.0–8.9 s | 1.53–1.74x |
+| wasm3 C, sum (control) | 2.06 s | 2.01 s | |
+
+Where it came from, in the order it was found: the flat `[inline]` readers
+and the dispatch loop gave 1.2–1.3x on execution; the expansion pass another
+1.22–1.29x on execution on top (operand read 65 → 28 ns); `-no-dynamic-modules`
+0.13 s and `never_inline` in the cold modules 0.57 s off every start-up.
+The whole spec suite (17863/17863 through the REPL) and `run-wasi-test.py
+--fast` (7/7) pass on the final tree.
+
 ## Closing the last gap: the preprocessor daslang does not have
 
 `source/m3_exec_expand.das` (2026-09-08) is consequence 4 acted on. It is a
