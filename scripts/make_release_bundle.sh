@@ -3,8 +3,10 @@
 # pinned release bundle, its daslib, the port sources and the launchers.
 #
 # Usage: scripts/make_release_bundle.sh <daslang-root> <daslang-binary> <out-dir>
-#   daslang-root    the installed daslang release bundle (tmp/daslang), which
-#                   holds daslib/ and lib/ (the binary is dynamically linked)
+#   daslang-root    a built daslang checkout (its own daslang version) at the
+#                   commit pinned in scripts/daslang_pin; holds daslib/ and lib/
+#   daslang-binary  the daslang executable to ship (daslang, daslang.exe);
+#                   it is installed as bin/daslang[.exe]
 #   daslang-binary  the daslang executable to ship (daslang, daslang.exe);
 #                   it is installed as bin/daslang[.exe]
 #   out-dir         bundle root to create (removed first if it exists)

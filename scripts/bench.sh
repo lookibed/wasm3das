@@ -14,11 +14,12 @@
 # reported numbers are warm-page, warm-JIT-cache numbers for all of them.
 #
 # Environment:
+#   DASLANG_ROOT  required: the daslang checkout at the commit pinned in
+#                 scripts/daslang_pin, built in place
 #   DASLANG       daslang used for the interpreter row (default:
-#                 tmp/daslang/bin/daslang, the release bundle installed by
-#                 scripts/install_daslang.sh)
-#   DASLANG_JIT   daslang used for the JIT rows (default: the same release
-#                 binary, which ships the LLVM JIT)
+#                 $DASLANG_ROOT/bin/daslang)
+#   DASLANG_JIT   daslang used for the JIT rows (default: the same binary,
+#                 which ships the LLVM JIT when built with LLVM)
 #   RUNS          timed runs per cell, the median is reported (default 3)
 #   NS            fib arguments, first one is the start-up column (default "1 25 30 35")
 #   ENGINES       subset of engine names to run (default: all known ones)
@@ -43,7 +44,8 @@ BASELINE="${BASELINE:-wasm3-c}"
 WASMTIME="${WASMTIME:-$repo_root/tools/bin/wasmtime}"
 WASM3C="${WASM3C:-$repo_root/tools/bin/wasm3}"
 NATIVE="${NATIVE:-$repo_root/tmp/native/bin/wasm3das}"
-DASLANG="${DASLANG:-$repo_root/tmp/daslang/bin/daslang}"
+: "${DASLANG_ROOT:?set DASLANG_ROOT to your daslang checkout at the pinned commit; see README, Install and run}"
+DASLANG="${DASLANG:-$DASLANG_ROOT/bin/daslang}"
 DASLANG_JIT="${DASLANG_JIT:-$DASLANG}"
 JIT_APP="${JIT_APP:-}"
 
