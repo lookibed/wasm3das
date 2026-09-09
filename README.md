@@ -71,8 +71,8 @@ API (`m3_ParseModule`, `m3_LoadModule`, `m3_FindFunction`, `m3_CallV`,
 `m3_GetResultsV`, `m3_GetMemory`):
 
 ```sh
-$ tmp/daslang/bin/daslang tests/host_test/smoke.das
-$ tmp/daslang/bin/daslang tests/host_test/main.das -- tests/manual/real-world-h264bsd-mp4/generated/h264mp4.wasm clip.mp4 outdir 12
+$ $DASLANG_ROOT/bin/daslang tests/host_test/smoke.das
+$ $DASLANG_ROOT/bin/daslang tests/host_test/main.das -- tests/manual/real-world-h264bsd-mp4/generated/h264mp4.wasm clip.mp4 outdir 12
 ```
 
 Interactive session, the same protocol the spec-test driver speaks:
@@ -129,28 +129,35 @@ neither downloads nor ships a compiler.
    ```
 
 2. Clone, check out and build the daslang the port is pinned against
-   (the commit in `scripts/daslang_pin`):
+   (the commit in `scripts/daslang_pin`). The checkout lives beside this
+   repository, never inside it (a `daScript/` directory in the working tree
+   would be an untracked stranger to every `git status`); a git worktree of
+   an existing daScript clone works the same way:
 
    ```sh
-   git clone https://github.com/GaijinEntertainment/daScript.git
-   git -C daScript checkout "$(sed -n 's/^\\([0-9a-f]\\{40\\}\\)$/\\1/p' scripts/daslang_pin | head -n 1)"
-   scripts/build-daslang.sh daScript
+   git clone https://github.com/GaijinEntertainment/daScript.git ../daScript
+   git -C ../daScript checkout "$(sed -n 's/^\([0-9a-f]\{40\}\)$/\1/p' scripts/daslang_pin | head -n 1)"
+   scripts/build-daslang.sh ../daScript
    ```
 
-   The build is Release with the headless module set (no LLVM/GUI/media),
-   the exact set every gate and launcher expects. The result lives inside
-   the checkout itself: `daScript/bin/daslang`, `daScript/lib/`,
-   `daScript/include/`, `daScript/daslib/`.
+   The build is Release with the headless module set (no LLVM/GUI/media)
+   plus the dasHV dynamic module the daslang MCP server requires; it needs
+   the OpenSSL development headers (`libssl-dev` on Debian). That is the
+   exact set every gate, launcher and editor tool expects. The result lives
+   inside the checkout itself: `bin/daslang`, `lib/`, `include/`, `daslib/`,
+   `modules/dasHV/dasModuleHV.shared_module`.
 
 3. Point the repository at your daslang and run:
 
    ```sh
-   export DASLANG_ROOT="$(pwd)/daScript"
+   export DASLANG_ROOT="$(cd .. && pwd)/daScript"
    scripts/verify_daslang.sh          # the pin and the built layout are checked
    scripts/wasm3 wasm3c/test/lang/fib32.wasm --func fib 25
    ```
 
    Every script, the gate, CI and the editor tooling read `DASLANG_ROOT`;
+   put the `export` into your shell profile, because the pre-push hook and
+   the MCP/LSP servers of `.mcp.json` read it from the environment too.
    `scripts/gate.sh` refuses to run against any other daslang (set
    `DASLANG_ALLOW_UNPINNED=1` for a local experiment off the pin).
 
