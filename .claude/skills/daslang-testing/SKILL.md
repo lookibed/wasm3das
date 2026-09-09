@@ -5,7 +5,7 @@ description: dastest conventions for writing and running component tests (test d
 
 # daslang testing (wasm3das)
 
-Read the release bundle's instructions in full first:
+Read the pinned daslang's instructions in full first:
 `$DASLANG_ROOT/skills/writing_tests.md`.
 
 wasm3das specifics:

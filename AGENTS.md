@@ -172,7 +172,7 @@ harnesses (`tools/dapdrive.py`, `tools/dasdap_mcp.py`, `logs/probe*.py` and
 similar historical scripts).
 
 Do not use the wasm3 runtime itself as the smoke-test debuggee. Use
-$DASLANG_ROOT/utils/dap/_fixture.das for connection smoke tests and the
+`$DASLANG_ROOT/utils/dap/_fixture.das` for connection smoke tests and the
 real wasm runner only for scoped runtime investigation.
 
 ### DAP session contract

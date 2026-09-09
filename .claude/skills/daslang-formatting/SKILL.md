@@ -5,7 +5,7 @@ description: Formatting rules for .das files (gen2 layout, MCP format_file, .lin
 
 # daslang formatting (wasm3das)
 
-Read the release bundle's instructions in full before formatting:
+Read the pinned daslang's instructions in full before formatting:
 `$DASLANG_ROOT/skills/das_formatting.md`.
 
 wasm3das rules on top of it:

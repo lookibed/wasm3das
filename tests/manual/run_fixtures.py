@@ -40,11 +40,11 @@ saved report is Markdown.
 
 Usage, from the repository root:
   python3 tests/manual/run_fixtures.py [--filter substr]
-                                       [--runtimes wasmtime,wasm3,das,jit]
+                                       [--runtimes wasmtime,wasm3,das,native,aot_ctx,jit]
                                        [--slow]
 
 Paths can be overridden via env: WASMTIME, WASM3C, WASM3DAS, WASM3DAS_NATIVE,
-DASLANG_JIT.
+WASM3DAS_CTX, DASLANG_JIT; DASLANG_ROOT is required.
 """
 import argparse
 import datetime

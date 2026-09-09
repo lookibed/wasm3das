@@ -7,8 +7,6 @@
 #                   commit pinned in scripts/daslang_pin; holds daslib/ and lib/
 #   daslang-binary  the daslang executable to ship (daslang, daslang.exe);
 #                   it is installed as bin/daslang[.exe]
-#   daslang-binary  the daslang executable to ship (daslang, daslang.exe);
-#                   it is installed as bin/daslang[.exe]
 #   out-dir         bundle root to create (removed first if it exists)
 #
 # daslang locates daslib/ relative to its executable: <root>/bin/daslang
