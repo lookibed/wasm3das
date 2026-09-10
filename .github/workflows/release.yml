@@ -68,6 +68,13 @@ jobs:
           pin="$(sed -n 's/^\([0-9a-f]\{40\}\)$/\1/p' scripts/daslang_pin | head -n 1)"
           git clone https://github.com/GaijinEntertainment/daScript.git daslang-src
           git -C daslang-src checkout "$pin"
+          # Linux builds use clang, as daScript's own CI does: at the pinned
+          # commit GCC rejects include/vecmath/dag_vecMath_neon.h on aarch64
+          # (uint32x4_t to int32x4_t conversions), and one compiler for both
+          # Linux bundles keeps them comparable.
+          if [[ "${{ runner.os }}" == "Linux" ]]; then
+            export CC=clang CXX=clang++
+          fi
           # The bundle ships no modules; dasHV is the MCP server's need, not
           # the interpreter's, and on MSVC it builds OpenSSL from source.
           DASLANG_HV_DISABLED=ON scripts/build-daslang.sh daslang-src

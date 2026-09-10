@@ -3,4 +3,10 @@
 # holding this file: bin/daslang, daslib/, app/, source/, scripts/.
 set -euo pipefail
 here="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)"
+# bin/daslang is built from source and links liblibDaScriptDyn*.so through a
+# RUNPATH that names the build machine's lib/ directory; the bundle carries
+# the libraries in its own lib/, so the loader is pointed there explicitly.
+if [[ -d "$here/lib" ]]; then
+    export LD_LIBRARY_PATH="$here/lib${LD_LIBRARY_PATH:+:$LD_LIBRARY_PATH}"
+fi
 DASLANG="$here/bin/daslang" exec "$here/scripts/wasm3" "$@"
