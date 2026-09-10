@@ -26,6 +26,11 @@
 # Environment: DASLANG_ROOT (required), DASLANG_ALLOW_UNPINNED (optional).
 set -euo pipefail
 
+# This script asks git about another repository (the daslang checkout). A
+# git hook exports GIT_DIR / GIT_WORK_TREE / GIT_INDEX_FILE for its own
+# repository, and `git -C <other>` would keep answering about this one.
+unset GIT_DIR GIT_WORK_TREE GIT_INDEX_FILE
+
 repo_root="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")/.." && pwd)"
 pin="$(sed -n 's/^\([0-9a-f]\{40\}\)$/\1/p' "$repo_root/scripts/daslang_pin" | head -n 1)"
 if [[ -z "$pin" ]]; then
