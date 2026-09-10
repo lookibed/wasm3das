@@ -115,8 +115,12 @@ if (( ${#missing[@]} > 0 )); then
     echo "  build it: scripts/build-daslang.sh $root" >&2
     exit 2
 fi
-if ! version="$("$root/bin/daslang" --version 2>&1)"; then
-    echo "verify_daslang: $root/bin/daslang does not run:" >&2
+daslang_bin="$root/bin/daslang"
+if [[ -f "$root/bin/Release/daslang.exe" ]]; then
+    daslang_bin="$root/bin/Release/daslang.exe"
+fi
+if ! version="$("$daslang_bin" --version 2>&1)"; then
+    echo "verify_daslang: $daslang_bin does not run:" >&2
     echo "  $version" >&2
     exit 2
 fi

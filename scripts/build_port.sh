@@ -183,10 +183,12 @@ if (( msvc )); then
         exit 2
     fi
     rm -f "$out"/obj/*.obj
-    cl "${cxxflags[@]}" "/I$(cygpath -w "$out/ctx")" /c "$(cygpath -w "$repo_root/native/standalone_main.cpp")" \
+    # cl.exe and link.exe by their full names: Git bash puts coreutils' `link`
+    # (the hard-link tool) ahead of MSVC's on PATH.
+    cl.exe "${cxxflags[@]}" "/I$(cygpath -w "$out/ctx")" /c "$(cygpath -w "$repo_root/native/standalone_main.cpp")" \
         "/Fo$(cygpath -w "$out/obj/standalone_main.cpp.obj")"
     for src in "${sources[@]}"; do
-        cl "${cxxflags[@]}" /c "$(cygpath -w "$src")" "/Fo$(cygpath -w "$out/obj/$(basename "$src").obj")"
+        cl.exe "${cxxflags[@]}" /c "$(cygpath -w "$src")" "/Fo$(cygpath -w "$out/obj/$(basename "$src").obj")"
     done
     echo "build_port [$variant]: link (MSVC)"
     objs=()
@@ -194,7 +196,7 @@ if (( msvc )); then
     libdir="$DASLANG_ROOT/lib/Release"
     # The system libraries are the set daScript's CMake links into every
     # library target on Windows (dbghelp ws2_32 mswsock advapi32 rpcrt4).
-    link /nologo "/OUT:$(cygpath -w "$out/bin/wasm3das.exe")" "${objs[@]}" \
+    link.exe /nologo "/OUT:$(cygpath -w "$out/bin/wasm3das.exe")" "${objs[@]}" \
         "$(cygpath -w "$libdir/libDaScript.lib")" "$(cygpath -w "$libdir/libDaScript_runtime.lib")" \
         "$(cygpath -w "$libdir/libUriParser.lib")" \
         dbghelp.lib ws2_32.lib mswsock.lib advapi32.lib rpcrt4.lib

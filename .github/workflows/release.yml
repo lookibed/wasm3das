@@ -158,6 +158,9 @@ jobs:
           DASLANG_ROOT: ${{ github.workspace }}/daslang-src
           DASLANG_HV_DISABLED: "ON"
           JOBS: "4"
+          # Empty on purpose: the script picks bin/daslang or, under MSVC,
+          # bin/Release/daslang.exe; the job-level DASLANG names the former.
+          DASLANG: ""
         run: |
           set -euo pipefail
           scripts/build_port.sh ctx
