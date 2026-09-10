@@ -92,7 +92,7 @@ corpus into its working directory on first use):
 ```sh
 $ mkdir -p tmp/spec/run && cd tmp/spec/run
 $ ln -sfn ../../../wasm3c/test/run-spec-test.py .
-$ ln -sfn ../../../wasm3c/extra ../extra
+$ ln -sfn ../../wasm3c/extra ../extra    # resolved relative to tmp/spec/, where the link lives
 $ python3 run-spec-test.py --exec "$PWD/../../../scripts/wasm3 --repl"
 ...
  17863/17863 tests OK

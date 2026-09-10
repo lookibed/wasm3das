@@ -13,6 +13,16 @@
 #                   same binary serves both modes.
 #   WASM3DAS_JIT_ARGS extra daslang JIT switches, whitespace separated, only used
 #                   when WASM3DAS_JIT=1 (for example -jit-no-cache, -jit-stack).
+#                   These are daslang's own options and go before the `--`.
+#   WASM3DAS_JIT_OPTS options of the JIT's command-line schema (dasLLVM
+#                   llvm_jit_cli, for example --jit-opt-level=0), whitespace
+#                   separated, only used when WASM3DAS_JIT=1. daslang reads
+#                   them after the `--`, among the script's arguments, and
+#                   app/wasm3.das ignores them; passing them before the `--`
+#                   is an "unknown command line option" error.
+#                   --jit-opt-level=0 is the only level at which the port
+#                   runs correctly under the JIT at the pinned daslang
+#                   (tests/manual/fixture_report.md, docs/upstream-status.md).
 #   WASM3DAS_APP      alternative app entry point (default: app/wasm3.das), so an
 #                   experimental copy of the tree can be driven through this
 #                   same front end. Used by scripts/bench.sh.
@@ -52,12 +62,17 @@ done
 # Opt-in JIT. Without WASM3DAS_JIT=1 the command line is exactly what it was
 # before, so the pinned interpreter path stays untouched.
 das_opts=()
+jit_opts=()
 if [[ "${WASM3DAS_JIT:-}" == "1" ]]; then
     das_opts+=("-jit")
     if [[ -n "${WASM3DAS_JIT_ARGS:-}" ]]; then
         # Deliberately unquoted: the variable carries several switches.
         # shellcheck disable=SC2206
         das_opts+=(${WASM3DAS_JIT_ARGS})
+    fi
+    if [[ -n "${WASM3DAS_JIT_OPTS:-}" ]]; then
+        # shellcheck disable=SC2206
+        jit_opts=(${WASM3DAS_JIT_OPTS})
     fi
 else
     # The interpreter requires no dynamic module: app/wasm3.das and source/
@@ -72,4 +87,4 @@ fi
 
 app="${WASM3DAS_APP:-$repo_root/app/wasm3.das}"
 
-exec "$DASLANG" "$app" ${das_opts[@]+"${das_opts[@]}"} -- ${args[@]+"${args[@]}"}
+exec "$DASLANG" "$app" ${das_opts[@]+"${das_opts[@]}"} -- ${jit_opts[@]+"${jit_opts[@]}"} ${args[@]+"${args[@]}"}
