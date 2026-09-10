@@ -200,7 +200,20 @@ if (( msvc )); then
     libdir="$DASLANG_ROOT/lib/Release"
     # The system libraries are the set daScript's CMake links into every
     # library target on Windows (dbghelp ws2_32 mswsock advapi32 rpcrt4).
-    link.exe /nologo "/OUT:$(cygpath -w "$out/bin/wasm3das.exe")" "${objs[@]}" \
+    # Git ships /usr/bin/link.exe (coreutils) as well, so even link.exe by name
+    # is the wrong tool; the MSVC linker is taken from the Visual Studio
+    # environment (VCToolsInstallDir, set by vcvars / msvc-dev-cmd).
+    if [[ -n "${VCToolsInstallDir:-}" ]]; then
+        linker="$(cygpath -u "$VCToolsInstallDir")/bin/Hostx64/x64/link.exe"
+    else
+        linker="$(where.exe link.exe 2>/dev/null | tr -d '\r' | grep -i 'MSVC' | head -1 || true)"
+        [[ -n "$linker" ]] && linker="$(cygpath -u "$linker")"
+    fi
+    if [[ -z "$linker" || ! -f "$linker" ]]; then
+        echo "build_port: MSVC link.exe not found (VCToolsInstallDir='${VCToolsInstallDir:-}')" >&2
+        exit 2
+    fi
+    "$linker" /nologo "/OUT:$(cygpath -w "$out/bin/wasm3das.exe")" "${objs[@]}" \
         "$(cygpath -w "$libdir/libDaScript.lib")" "$(cygpath -w "$libdir/libDaScript_runtime.lib")" \
         "$(cygpath -w "$libdir/libUriParser.lib")" \
         dbghelp.lib ws2_32.lib mswsock.lib advapi32.lib rpcrt4.lib
