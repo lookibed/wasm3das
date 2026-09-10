@@ -30,6 +30,10 @@
 #                         module builds OpenSSL from source); default OFF
 set -euo pipefail
 
+# The git questions below are about the daslang checkout, never about the
+# repository a git hook may have exported these variables for.
+unset GIT_DIR GIT_WORK_TREE GIT_INDEX_FILE
+
 if [[ $# -ne 1 || ! -d "${1:-}" ]]; then
     echo "usage: $0 <daslang-root>   (an existing daScript checkout at the pinned commit)" >&2
     exit 2

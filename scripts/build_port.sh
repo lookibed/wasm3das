@@ -32,8 +32,20 @@ set -euo pipefail
 
 repo_root="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")/.." && pwd)"
 "$repo_root/scripts/verify_daslang.sh" >/dev/null
-DASLANG="${DASLANG:-$DASLANG_ROOT/bin/daslang}"
-CXX="${CXX:-$(command -v clang++ || command -v g++)}"
+# MSVC: Git bash on a Windows runner with the Visual Studio environment
+# loaded (cl on PATH). daScript's multi-config build puts its outputs under
+# bin/Release and lib/Release, and the object and link commands differ.
+msvc=0
+case "$(uname -s 2>/dev/null)" in
+    MINGW*|MSYS*|CYGWIN*) if command -v cl >/dev/null 2>&1; then msvc=1; fi ;;
+esac
+if (( msvc )); then
+    DASLANG="${DASLANG:-$DASLANG_ROOT/bin/Release/daslang.exe}"
+    CXX=cl
+else
+    DASLANG="${DASLANG:-$DASLANG_ROOT/bin/daslang}"
+    CXX="${CXX:-$(command -v clang++ || command -v g++)}"
+fi
 JOBS="${JOBS:-$(nproc 2>/dev/null || echo 4)}"
 cd "$repo_root"
 
@@ -47,17 +59,31 @@ esac
 out="$repo_root/${out_base:-$def_out}"
 mkdir -p "$out/aot" "$out/obj" "$out/bin"
 
-cxxflags=(-std=gnu++17 -O3 -fno-rtti -fomit-frame-pointer -fno-stack-protector -fwrapv
-          -DNDEBUG=1 -DDAS_ENABLE_DYN_INCLUDES=1 -DDAS_FUSION=2 -DDAS_NO_ASSERTIONS -DSIZE_OF_VOID_P=8
-          -DURIPARSER_BUILD_CHAR -DURI_STATIC_BUILD
-          -Wno-invalid-offsetof -Wno-unused-parameter -Wno-unused-variable -Wno-unused-but-set-variable
-          -I"$DASLANG_ROOT/include")
 ldflags=()
+if (( msvc )); then
+    # The same defines as the gcc/clang set; /MD matches daScript's default
+    # DAS_USE_STATIC_STD_LIBS=OFF; /bigobj because the ctx translation unit is
+    # one file with the whole port in it; /EHsc as daScript's own targets.
+    cxxflags=(/nologo /std:c++17 /O2 /Ob2 /EHsc /GR- /MD /bigobj /W0
+              /DNDEBUG=1 /DDAS_ENABLE_DYN_INCLUDES=1 /DDAS_FUSION=2 /DDAS_NO_ASSERTIONS /DSIZE_OF_VOID_P=8
+              /DURIPARSER_BUILD_CHAR /DURI_STATIC_BUILD /D_CRT_SECURE_NO_WARNINGS
+              "/I$(cygpath -w "$DASLANG_ROOT/include")")
+else
+    # The per-variant flags (-fPIC for aot, the standalone set for ctx) are
+    # added below, after the variant is known.
+    cxxflags=(-std=gnu++17 -O3 -fno-rtti -fomit-frame-pointer -fno-stack-protector -fwrapv
+              -DNDEBUG=1 -DDAS_ENABLE_DYN_INCLUDES=1 -DDAS_FUSION=2 -DDAS_NO_ASSERTIONS -DSIZE_OF_VOID_P=8
+              -DURIPARSER_BUILD_CHAR -DURI_STATIC_BUILD
+              -Wno-invalid-offsetof -Wno-unused-parameter -Wno-unused-variable -Wno-unused-but-set-variable
+              -I"$DASLANG_ROOT/include")
+fi
 # A source checkout keeps the fmt and uriparser headers under 3rdparty/ and
 # generated headers under build/; the built-in-place checkout exports
 # everything under include/, so these are optional.
 for inc in "$DASLANG_ROOT/3rdparty/fmt/include" "$DASLANG_ROOT/3rdparty/uriparser/include" "$DASLANG_ROOT/build/include"; do
-    if [[ -d "$inc" ]]; then cxxflags+=(-I"$inc"); fi
+    if [[ -d "$inc" ]]; then
+        if (( msvc )); then cxxflags+=("/I$(cygpath -w "$inc")"); else cxxflags+=(-I"$inc"); fi
+    fi
 done
 
 # Per-variant flags. Everything below the aot line was measured on the release
@@ -65,8 +91,10 @@ done
 # passes the spec suite 17863/17863 and fib32; the timings are the aot_ctx
 # "Итого" of tests/manual/run_fixtures.py (98 checks), four runs per variant,
 # baseline 7.41 s total / 29 ms start. See
-# notes/release_squeeze_plan_2026-09-10.md, B1-B3.
-case "$variant" in
+# notes/release_squeeze_plan_2026-09-10.md, B1-B3. gcc/clang only; the MSVC
+# arm keeps cl's own set (the equivalents were not measured there).
+if (( msvc )); then variant_flags=skip; else variant_flags="$variant"; fi
+case "$variant_flags" in
 aot)
     # Unchanged: this variant compiles one TU per module and was not part of
     # the B1 measurement, so it keeps the flag set it was validated with.
@@ -147,35 +175,62 @@ ctx)
     ;;
 esac
 
-rm -f "$out"/obj/*.o
-if [[ "$variant" == "ctx" ]]; then
-    "$CXX" "${cxxflags[@]}" -I"$out/ctx" -c "$repo_root/native/standalone_main.cpp" -o "$out/obj/standalone_main.cpp.o" &
-    stub_pid=$!
-    wait "$stub_pid"
-fi
-pids=()
-for src in "${sources[@]}"; do
-    "$CXX" "${cxxflags[@]}" -c "$src" -o "$out/obj/$(basename "$src").o" &
-    pids+=($!)
-    if (( ${#pids[@]} >= JOBS )); then
-        wait "${pids[0]}" || true
-        pids=("${pids[@]:1}")
+if (( msvc )); then
+    # One compile at a time (the ctx variant has one unit plus the stub);
+    # objects are .obj, paths are Windows paths for cl and link.
+    if [[ "$variant" != "ctx" ]]; then
+        echo "build_port: the aot variant has no MSVC arm; use ctx" >&2
+        exit 2
     fi
-done
-wait
-for src in "${sources[@]}"; do
-    if [[ ! -f "$out/obj/$(basename "$src").o" ]]; then
-        echo "build_port: compile failed for $src" >&2
-        exit 1
+    rm -f "$out"/obj/*.obj
+    cl "${cxxflags[@]}" "/I$(cygpath -w "$out/ctx")" /c "$(cygpath -w "$repo_root/native/standalone_main.cpp")" \
+        "/Fo$(cygpath -w "$out/obj/standalone_main.cpp.obj")"
+    for src in "${sources[@]}"; do
+        cl "${cxxflags[@]}" /c "$(cygpath -w "$src")" "/Fo$(cygpath -w "$out/obj/$(basename "$src").obj")"
+    done
+    echo "build_port [$variant]: link (MSVC)"
+    objs=()
+    for o in "$out"/obj/*.obj; do objs+=("$(cygpath -w "$o")"); done
+    libdir="$DASLANG_ROOT/lib/Release"
+    # The system libraries are the set daScript's CMake links into every
+    # library target on Windows (dbghelp ws2_32 mswsock advapi32 rpcrt4).
+    link /nologo "/OUT:$(cygpath -w "$out/bin/wasm3das.exe")" "${objs[@]}" \
+        "$(cygpath -w "$libdir/libDaScript.lib")" "$(cygpath -w "$libdir/libDaScript_runtime.lib")" \
+        "$(cygpath -w "$libdir/libUriParser.lib")" \
+        dbghelp.lib ws2_32.lib mswsock.lib advapi32.lib rpcrt4.lib
+    binary="$out/bin/wasm3das.exe"
+else
+    rm -f "$out"/obj/*.o
+    if [[ "$variant" == "ctx" ]]; then
+        "$CXX" "${cxxflags[@]}" -I"$out/ctx" -c "$repo_root/native/standalone_main.cpp" -o "$out/obj/standalone_main.cpp.o" &
+        stub_pid=$!
+        wait "$stub_pid"
     fi
-done
+    pids=()
+    for src in "${sources[@]}"; do
+        "$CXX" "${cxxflags[@]}" -c "$src" -o "$out/obj/$(basename "$src").o" &
+        pids+=($!)
+        if (( ${#pids[@]} >= JOBS )); then
+            wait "${pids[0]}" || true
+            pids=("${pids[@]:1}")
+        fi
+    done
+    wait
+    for src in "${sources[@]}"; do
+        if [[ ! -f "$out/obj/$(basename "$src").o" ]]; then
+            echo "build_port: compile failed for $src" >&2
+            exit 1
+        fi
+    done
 
-echo "build_port [$variant]: link"
-"$CXX" ${ldflags[@]+"${ldflags[@]}"} ${extra_ldflags[@]+"${extra_ldflags[@]}"} \
-    -o "$out/bin/wasm3das" "$out"/obj/*.o \
-    "$DASLANG_ROOT/lib/liblibDaScript.a" "$DASLANG_ROOT/lib/liblibDaScript_runtime.a" \
-    "$DASLANG_ROOT/lib/liblibUriParser.a" \
-    -lpthread -ldl -lm
+    echo "build_port [$variant]: link"
+    "$CXX" ${ldflags[@]+"${ldflags[@]}"} ${extra_ldflags[@]+"${extra_ldflags[@]}"} \
+        -o "$out/bin/wasm3das" "$out"/obj/*.o \
+        "$DASLANG_ROOT/lib/liblibDaScript.a" "$DASLANG_ROOT/lib/liblibDaScript_runtime.a" \
+        "$DASLANG_ROOT/lib/liblibUriParser.a" \
+        -lpthread -ldl -lm
+    binary="$out/bin/wasm3das"
+fi
 
 # Runtime layout beside the binary: daslib for the compiler, app and source
 # for the startup compile (the ctx variant runs no startup compile; the
@@ -184,5 +239,5 @@ rm -rf "$out/daslib" "$out/app" "$out/source"
 cp -R "$DASLANG_ROOT/daslib" "$out/daslib"
 cp -R "$repo_root/app" "$out/app"
 cp -R "$repo_root/source" "$out/source"
-ls -la "$out/bin/wasm3das"
-echo "build_port [$variant]: $out/bin/wasm3das"
+ls -la "$binary"
+echo "build_port [$variant]: $binary"
