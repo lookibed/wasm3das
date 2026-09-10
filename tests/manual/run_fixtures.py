@@ -22,9 +22,9 @@ Runs every scalar (non host-adapter) fixture export through these runtimes:
               JIT compiles the port on first use into ./.jitted_scripts, so
               the first ever run is much slower than the cached ones.
               The JIT's own options go through WASM3DAS_JIT_OPTS, default
-              --jit-opt-level=0: at the pinned daslang that is the only
-              opt level at which the port runs correctly under the JIT,
-              and the value used is printed in the report header.)
+              --jit-opt-level=3 (daslang's own default, spelled out so the
+              report header records it; --jit-opt-level=0 is the control
+              for upstream #3991, see the comment at WASM3DAS_JIT_OPTS).)
 
 Each command is timed with the full wall clock from process spawn to
 complete output (subprocess.run + perf_counter, stdout+stderr captured).
@@ -101,10 +101,13 @@ WASM3DAS_CTX = os.environ.get(
 DASLANG_JIT = os.environ.get(
     "DASLANG_JIT", os.path.join(DASLANG_ROOT or "SET-DASLANG-ROOT", "bin", "daslang"))
 # The JIT's command-line options (scripts/wasm3 places them after the `--`).
-# Opt level 0 is the default because at the pinned daslang the default O3
-# miscompiles the port (six spec assertions, most of these fixtures); the
-# value goes into the report header so a column is reproducible.
-WASM3DAS_JIT_OPTS = os.environ.get("WASM3DAS_JIT_OPTS", "--jit-opt-level=0")
+# The level is spelled out, at daslang's own default O3, so the report header
+# records it and a column is reproducible. Upstream #3991 (a const pointer
+# parameter emitted `readonly`) miscompiled the port at O1 and above until
+# every such parameter became `var`; if a JIT column ever disagrees with the
+# baseline again, WASM3DAS_JIT_OPTS=--jit-opt-level=0 tells whether that
+# defect is back.
+WASM3DAS_JIT_OPTS = os.environ.get("WASM3DAS_JIT_OPTS", "--jit-opt-level=3")
 
 
 def gen(fixture: str) -> str:
