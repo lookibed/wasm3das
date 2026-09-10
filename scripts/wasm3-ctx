@@ -23,14 +23,12 @@ if [[ ! -x "$CTX" ]]; then
     exit 1
 fi
 
-# Ops return to the RunLoop dispatcher (m3_exec_defs.das), so only a wasm call
-# nests native frames, but the daslang context stack of app/wasm3.das
-# (`options stack`) still needs a native stack a few times larger: with the
-# default 8 MiB thread stack an unbounded wasm recursion kills the process
-# with SIGSEGV before op_Entry can report `[trap] stack overflow`, which the
-# spec suite's assert_exhaustion cases expect. Raise the limit when the shell
-# is allowed to.
-ulimit -s 262144 2>/dev/null || true
+# The standalone binary runs the program on a thread with its own 256 MiB
+# stack (native/standalone_main.cpp), so unlike scripts/wasm3 and
+# scripts/wasm3-native this launcher raises no ulimit: a runaway wasm
+# recursion ends in `[trap] stack overflow` with the default 8 MiB shell
+# limit, which is also how the shipped standalone bundle behaves without any
+# launcher.
 
 # There is no daslang CLI in front of the app, so nothing steals --help/-h and
 # no --wasm3-help alias is needed; the app accepts all three spellings. Every

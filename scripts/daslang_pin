@@ -13,4 +13,11 @@
 # ("Merge pull request #3980"): standalone -ctx (#3967 fix, PR #3838),
 # JIT/interpreter function-address fixes (#3968/#3969/#3970, PR #3974),
 # standalone module emission and the SDK install of ast_gen.inc.
-46c4715867b21b79bd25709809a2acf0b1b6e58a
+#
+# Bumped 2026-09-10 to 388691eb1a0e64f2baacdf64607584d9dc6f64e1
+# ("Merge pull request #3988"): the JIT's emitter-free DLL cache hit and
+# per-program symbol tables (PR #3982, warm -jit start), --jit-debug with
+# das names and locals for gdb/lldb (PR #3981), and 105 commits of
+# dasLLAMA/Vulkan work the port does not touch. #3991 (readonly on const
+# pointer parameters) is still open at this commit.
+388691eb1a0e64f2baacdf64607584d9dc6f64e1

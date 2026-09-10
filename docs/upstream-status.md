@@ -6,8 +6,10 @@ per-issue record: what each upstream defect meant for wasm3das, which fix the
 pin carries, and how the port verifies it. Re-verify the whole table after
 every pin bump; update the statuses there as upstream moves.
 
-Checked against the pin: 2026-09-09, commit `46c4715`; issue #3991 added
-2026-09-10 (reproduced on the pin and on master `388691eb1`).
+Checked against the pin: 2026-09-10, commit `388691eb1` (bumped from
+`46c4715` the same day: PR #3982, the JIT's emitter-free cache hit, and PR
+#3981, `--jit-debug`; the port needed no adaptation, the gate passed
+unchanged). Issue #3991 reproduces on both commits.
 
 | Issue / area | What it meant for the port | Fix in the pin | How the port verifies |
 |---|---|---|---|
@@ -65,8 +67,10 @@ Checked against the pin: 2026-09-09, commit `46c4715`; issue #3991 added
   moves once #3991 is fixed upstream, so that a JIT run needs no port-side
   precaution at all.
 - Deep wasm recursion without `M3_MUSTTAIL` costs native frames: the
-  launchers raise `ulimit -s` for the spec suite's `assert_exhaustion`
-  cases. Trampoline/tail-call architecture remains the future port task.
+  interpreted and aot launchers raise `ulimit -s` for the spec suite's
+  `assert_exhaustion` cases; the standalone binary reserves a 256 MiB
+  thread stack itself (`native/standalone_main.cpp`) and needs no launcher.
+  Trampoline/tail-call architecture remains the future port task.
 
 ## Historical record
 
