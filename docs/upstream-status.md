@@ -62,10 +62,11 @@ unchanged). Issue #3991 reproduces on both commits.
   standalone `ctx` binary and 2.9 s for the C wasm3. JIT start is 3.5 s of
   codegen cold, 0.15 s from the DLL cache (0.67 s of total process time).
 
-  The `jit` runtime of `tests/manual/run_fixtures.py` still defaults to
-  `--jit-opt-level=0` and `-jit` stays opt-in and off the gate: the default
-  moves once #3991 is fixed upstream, so that a JIT run needs no port-side
-  precaution at all.
+  The `jit` runtime of `tests/manual/run_fixtures.py` records daslang's own
+  default, `--jit-opt-level=3`, in the report header (`WASM3DAS_JIT_OPTS`);
+  `--jit-opt-level=0` is the control for a JIT column that disagrees with
+  the baseline. `-jit` stays opt-in and off the gate. Once #3991 is fixed
+  upstream the `var` spellings can stay: they match the C declarations.
 - Deep wasm recursion without `M3_MUSTTAIL` costs native frames: the
   interpreted and aot launchers raise `ulimit -s` for the spec suite's
   `assert_exhaustion` cases; the standalone binary reserves a 256 MiB

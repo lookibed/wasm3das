@@ -20,9 +20,11 @@
 #                   them after the `--`, among the script's arguments, and
 #                   app/wasm3.das ignores them; passing them before the `--`
 #                   is an "unknown command line option" error.
-#                   --jit-opt-level=0 is the only level at which the port
-#                   runs correctly under the JIT at the pinned daslang
-#                   (tests/manual/fixture_report.md, docs/upstream-status.md).
+#                   Since every pointer parameter the port writes through is
+#                   `var` (the workaround for upstream #3991), the port is
+#                   correct at daslang's default O3; --jit-opt-level=0 is the
+#                   control that tells whether that defect is back
+#                   (docs/upstream-status.md).
 #   WASM3DAS_APP      alternative app entry point (default: app/wasm3.das), so an
 #                   experimental copy of the tree can be driven through this
 #                   same front end. Used by scripts/bench.sh.
