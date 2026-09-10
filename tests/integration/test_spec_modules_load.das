@@ -309,7 +309,7 @@ var private g_lastI32 = 0
 
 // C: m3ApiRawFunction (counting_print_i32). m3ApiGetArg (int32_t, i_value)
 // reads one 32-bit slot off _sp and advances it.
-def private counting_print_i32(runtime : IM3Runtime; _ctx : IM3ImportContext; _sp : u64?; _mem : void?) : M3Result {
+def private counting_print_i32(runtime : IM3Runtime; _ctx : IM3ImportContext; var _sp : u64?; var _mem : void?) : M3Result {
     g_rawCalls++
     unsafe {
         g_lastI32 = *reinterpret<i32?>(_sp)
@@ -318,7 +318,7 @@ def private counting_print_i32(runtime : IM3Runtime; _ctx : IM3ImportContext; _s
 }
 
 
-def private counting_dummy(runtime : IM3Runtime; _ctx : IM3ImportContext; _sp : u64?; _mem : void?) : M3Result {
+def private counting_dummy(runtime : IM3Runtime; _ctx : IM3ImportContext; var _sp : u64?; var _mem : void?) : M3Result {
     g_rawCalls++
     return m3Err_none
 }

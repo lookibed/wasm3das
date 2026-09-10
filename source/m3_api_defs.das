@@ -16,10 +16,10 @@ require ./m3_env.das public
     `runtime` gives the memory size. The port spells every macro as a
     function; the raw function keeps its own cursor:
 
-        def m3_libc_memset(runtime : IM3Runtime; _ctx : IM3ImportContext; _sp : u64?; _mem : void?) : M3Result {
+        def m3_libc_memset(runtime : IM3Runtime; _ctx : IM3ImportContext; var _sp : u64?; var _mem : void?) : M3Result {
             var sp = _sp
-            let raw_return = m3ApiReturnType(sp)        // m3ApiReturnType (int32_t)
-            let i_ptr = m3ApiGetArgMem(sp, _mem)       // m3ApiGetArgMem (void*, i_ptr)
+            var raw_return = m3ApiReturnType(sp)        // m3ApiReturnType (int32_t)
+            var i_ptr = m3ApiGetArgMem(sp, _mem)       // m3ApiGetArgMem (void*, i_ptr)
             let i_value = m3ApiGetArg_i32(sp)          // m3ApiGetArg (int32_t, i_value)
             let i_size = m3ApiGetArg_u32(sp)           // m3ApiGetArg (uint32_t, i_size)
             let check = m3ApiCheckMem(runtime, _mem, i_ptr, u64(i_size))
@@ -154,21 +154,25 @@ def m3ApiGetArgMem(var _sp : u64?&; _mem : void?) : void? {
 
 // C: # define m3ApiReturn(VALUE)                   { *raw_return = (VALUE); return m3Err_none;}
 // The store keeps the C width: `TYPE* raw_return` writes sizeof(TYPE) bytes.
-def m3ApiReturn_i32(raw_return : u64?; value : i32) {
+// Every one of these takes `raw_return` as `var`: the parameter is written
+// through, and a non-`var` pointer parameter gets the LLVM `readonly`
+// attribute from the daslang JIT (upstream #3991), which folds the caller's
+// read of the return slot from `--jit-opt-level=1` upwards.
+def m3ApiReturn_i32(var raw_return : u64?; value : i32) {
     unsafe {
         reinterpret<i32?>(raw_return)[0] = value
     }
 }
 
 
-def m3ApiReturn_u32(raw_return : u64?; value : u32) {
+def m3ApiReturn_u32(var raw_return : u64?; value : u32) {
     unsafe {
         reinterpret<u32?>(raw_return)[0] = value
     }
 }
 
 
-def m3ApiReturn_i64(raw_return : u64?; value : i64) {
+def m3ApiReturn_i64(var raw_return : u64?; value : i64) {
     unsafe {
         reinterpret<i64?>(raw_return)[0] = value
     }
@@ -182,14 +186,14 @@ def m3ApiReturn_u64(var raw_return : u64?; value : u64) {
 }
 
 
-def m3ApiReturn_f32(raw_return : u64?; value : f32) {
+def m3ApiReturn_f32(var raw_return : u64?; value : f32) {
     unsafe {
         reinterpret<f32?>(raw_return)[0] = value
     }
 }
 
 
-def m3ApiReturn_f64(raw_return : u64?; value : f64) {
+def m3ApiReturn_f64(var raw_return : u64?; value : f64) {
     unsafe {
         reinterpret<f64?>(raw_return)[0] = value
     }
@@ -229,28 +233,30 @@ def m3ApiReadMem64(ptr : void?) : u64 {
 }
 
 
-def m3ApiWriteMem8(ptr : void?; val : u8) {
+// `ptr` is `var` for the same reason as `raw_return` above: these four store
+// into the guest's linear memory through the parameter (upstream #3991).
+def m3ApiWriteMem8(var ptr : void?; val : u8) {
     unsafe {
         reinterpret<u8?>(ptr)[0] = val
     }
 }
 
 
-def m3ApiWriteMem16(ptr : void?; val : u16) {
+def m3ApiWriteMem16(var ptr : void?; val : u16) {
     unsafe {
         reinterpret<u16?>(ptr)[0] = val
     }
 }
 
 
-def m3ApiWriteMem32(ptr : void?; val : u32) {
+def m3ApiWriteMem32(var ptr : void?; val : u32) {
     unsafe {
         reinterpret<u32?>(ptr)[0] = val
     }
 }
 
 
-def m3ApiWriteMem64(ptr : void?; val : u64) {
+def m3ApiWriteMem64(var ptr : void?; val : u64) {
     unsafe {
         reinterpret<u64?>(ptr)[0] = val
     }

@@ -506,7 +506,11 @@ def public m3_GetTimestamp() : u64 {
 let private m3_mem_chunk_max : u64 = 0x7ffffffful
 
 
-def private m3_zero_bytes(i_ptr : void?; i_size : u64) {
+// `i_ptr` and `i_to` are the destinations of the fill and the copy, so both are
+// `var`: the daslang JIT gives a non-`var` pointer parameter the LLVM
+// `readonly` attribute (upstream #3991), which folds the caller's read of the
+// filled memory from `--jit-opt-level=1` upwards.
+def private m3_zero_bytes(var i_ptr : void?; i_size : u64) {
     if (i_ptr == null || i_size == 0ul) {
         return
     }
@@ -529,7 +533,7 @@ def private m3_zero_bytes(i_ptr : void?; i_size : u64) {
 }
 
 
-def private m3_copy_bytes(i_to : void?; i_from : void?; i_size : u64) {
+def private m3_copy_bytes(var i_to : void?; i_from : void?; i_size : u64) {
     if (i_size == 0ul) {
         return
     }
@@ -561,7 +565,7 @@ def private m3_copy_bytes(i_to : void?; i_from : void?; i_size : u64) {
 
 def public m3_Malloc_Impl(i_size : u64) : void? {
     unsafe {
-        let ptr = malloc(i_size)
+        var ptr = malloc(i_size)
 
         if (ptr != null) {
             m3_zero_bytes(ptr, i_size)
@@ -612,7 +616,7 @@ def public m3_Realloc_Impl(
         return null
     }
 
-    let newPtr = m3_Malloc_Impl(i_newSize)
+    var newPtr = m3_Malloc_Impl(i_newSize)
 
     if (newPtr == null) {
         return null
@@ -637,7 +641,7 @@ def public m3_Realloc_Impl(
 
 
 def public m3_CopyMem(i_from : voidptr_t; i_size : u64) : void? {
-    let ptr = m3_Malloc_Impl(i_size)
+    var ptr = m3_Malloc_Impl(i_size)
 
     if (ptr != null && i_size != 0ul) {
         m3_copy_bytes(ptr, i_from, i_size)

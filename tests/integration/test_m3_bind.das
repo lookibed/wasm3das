@@ -235,7 +235,7 @@ var private g_lastUserdata : void? = null
 
 // C: m3ApiRawFunction (recording_print_i32). m3ApiGetArg (int32_t, i_value)
 // reads one slot off _sp; _ctx->userdata is the m3_LinkRawFunctionEx payload.
-def private recording_print_i32(runtime : IM3Runtime; _ctx : IM3ImportContext; _sp : u64?; _mem : void?) : M3Result {
+def private recording_print_i32(runtime : IM3Runtime; _ctx : IM3ImportContext; var _sp : u64?; var _mem : void?) : M3Result {
     g_calls++
     unsafe {
         g_lastArg = *reinterpret<i32?>(_sp)
@@ -245,7 +245,7 @@ def private recording_print_i32(runtime : IM3Runtime; _ctx : IM3ImportContext; _
 }
 
 
-def private trapping_print_i32(runtime : IM3Runtime; _ctx : IM3ImportContext; _sp : u64?; _mem : void?) : M3Result {
+def private trapping_print_i32(runtime : IM3Runtime; _ctx : IM3ImportContext; var _sp : u64?; var _mem : void?) : M3Result {
     return m3Err_trapAbort
 }
 

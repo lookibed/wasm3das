@@ -300,9 +300,9 @@ def public wasi_fd_open_preopens() {
 // ============================================================================
 
 
-def public m3_wasi_generic_fd_prestat_dir_name(runtime : IM3Runtime; _ctx : IM3ImportContext; _sp : u64?; _mem : void?) : M3Result {
+def public m3_wasi_generic_fd_prestat_dir_name(runtime : IM3Runtime; _ctx : IM3ImportContext; var _sp : u64?; var _mem : void?) : M3Result {
     var sp = unsafe(reinterpret<u64?>(_sp))
-    let raw_return = m3ApiReturnType(sp)
+    var raw_return = m3ApiReturnType(sp)
     let fd = m3ApiGetArg_u32(sp)
     let path = m3ApiGetArgMem(sp, _mem)
     let path_len = m3ApiGetArg_u32(sp)
@@ -332,9 +332,9 @@ def public m3_wasi_generic_fd_prestat_dir_name(runtime : IM3Runtime; _ctx : IM3I
 }
 
 
-def public m3_wasi_generic_fd_prestat_get(runtime : IM3Runtime; _ctx : IM3ImportContext; _sp : u64?; _mem : void?) : M3Result {
+def public m3_wasi_generic_fd_prestat_get(runtime : IM3Runtime; _ctx : IM3ImportContext; var _sp : u64?; var _mem : void?) : M3Result {
     var sp = unsafe(reinterpret<u64?>(_sp))
-    let raw_return = m3ApiReturnType(sp)
+    var raw_return = m3ApiReturnType(sp)
     let fd = m3ApiGetArg_u32(sp)
     let buf = m3ApiGetArgMem(sp, _mem)
 
@@ -356,9 +356,9 @@ def public m3_wasi_generic_fd_prestat_get(runtime : IM3Runtime; _ctx : IM3Import
 }
 
 
-def public m3_wasi_generic_fd_fdstat_get(runtime : IM3Runtime; _ctx : IM3ImportContext; _sp : u64?; _mem : void?) : M3Result {
+def public m3_wasi_generic_fd_fdstat_get(runtime : IM3Runtime; _ctx : IM3ImportContext; var _sp : u64?; var _mem : void?) : M3Result {
     var sp = unsafe(reinterpret<u64?>(_sp))
-    let raw_return = m3ApiReturnType(sp)
+    var raw_return = m3ApiReturnType(sp)
     let fd = m3ApiGetArg_u32(sp)
     let fdstat = m3ApiGetArgMem(sp, _mem)
 
@@ -405,9 +405,9 @@ def public m3_wasi_generic_fd_fdstat_get(runtime : IM3Runtime; _ctx : IM3ImportC
 }
 
 
-def public m3_wasi_generic_fd_fdstat_set_flags(runtime : IM3Runtime; _ctx : IM3ImportContext; _sp : u64?; _mem : void?) : M3Result {
+def public m3_wasi_generic_fd_fdstat_set_flags(runtime : IM3Runtime; _ctx : IM3ImportContext; var _sp : u64?; var _mem : void?) : M3Result {
     var sp = unsafe(reinterpret<u64?>(_sp))
-    let raw_return = m3ApiReturnType(sp)
+    var raw_return = m3ApiReturnType(sp)
     // C reads both arguments and does nothing with them ("// TODO"); the
     // reads still have to happen, because they are what advances _sp.
     m3ApiGetArg_u32(sp) // __wasi_fd_t fd
@@ -420,13 +420,13 @@ def public m3_wasi_generic_fd_fdstat_set_flags(runtime : IM3Runtime; _ctx : IM3I
 
 // The two fd_seek flavours differ only in the whence encoding: wasi_unstable
 // numbered it CUR/END/SET, wasi_snapshot_preview1 SET/CUR/END.
-def public m3_wasi_unstable_fd_seek(runtime : IM3Runtime; _ctx : IM3ImportContext; _sp : u64?; _mem : void?) : M3Result {
+def public m3_wasi_unstable_fd_seek(runtime : IM3Runtime; _ctx : IM3ImportContext; var _sp : u64?; var _mem : void?) : M3Result {
     var sp = unsafe(reinterpret<u64?>(_sp))
-    let raw_return = m3ApiReturnType(sp)
+    var raw_return = m3ApiReturnType(sp)
     let fd = m3ApiGetArg_u32(sp)
     let offset = m3ApiGetArg_i64(sp)
     let wasi_whence = m3ApiGetArg_u32(sp)
-    let result = m3ApiGetArgMem(sp, _mem)
+    var result = m3ApiGetArgMem(sp, _mem)
 
     let check : M3Result = wasi_check_mem(runtime, _mem, result, 8ul) // sizeof(__wasi_filesize_t)
     if (check != m3Err_none) { return check }
@@ -444,13 +444,13 @@ def public m3_wasi_unstable_fd_seek(runtime : IM3Runtime; _ctx : IM3ImportContex
 }
 
 
-def public m3_wasi_snapshot_preview1_fd_seek(runtime : IM3Runtime; _ctx : IM3ImportContext; _sp : u64?; _mem : void?) : M3Result {
+def public m3_wasi_snapshot_preview1_fd_seek(runtime : IM3Runtime; _ctx : IM3ImportContext; var _sp : u64?; var _mem : void?) : M3Result {
     var sp = unsafe(reinterpret<u64?>(_sp))
-    let raw_return = m3ApiReturnType(sp)
+    var raw_return = m3ApiReturnType(sp)
     let fd = m3ApiGetArg_u32(sp)
     let offset = m3ApiGetArg_i64(sp)
     let wasi_whence = m3ApiGetArg_u32(sp)
-    let result = m3ApiGetArgMem(sp, _mem)
+    var result = m3ApiGetArgMem(sp, _mem)
 
     let check : M3Result = wasi_check_mem(runtime, _mem, result, 8ul) // sizeof(__wasi_filesize_t)
     if (check != m3Err_none) { return check }
@@ -479,7 +479,11 @@ def public m3_wasi_snapshot_preview1_fd_seek(runtime : IM3Runtime; _ctx : IM3Imp
     handle that is open can only fail here on a negative resulting offset
     (EINVAL) or on a pipe (ESPIPE), and EINVAL is the one the guest can
     provoke, so that is what the port reports. */
-def private wasi_fd_seek_common(raw_return : u64?; fd : u32; offset : i64; whence : int; result : void?) : M3Result {
+// `raw_return` and `result` are `var`: both are written through here, and the
+// daslang JIT marks a non-`var` pointer parameter LLVM `readonly` (upstream
+// #3991), which folds the caller's read of that memory from
+// `--jit-opt-level=1` upwards.
+def private wasi_fd_seek_common(var raw_return : u64?; fd : u32; offset : i64; whence : int; var result : void?) : M3Result {
     let f = wasi_fd_handle(fd)
     if (f == null) {
         m3ApiReturn_u32(raw_return, u32(errno_to_wasi(EBADF)))
@@ -500,9 +504,9 @@ def private wasi_fd_seek_common(raw_return : u64?; fd : u32; offset : i64; whenc
 }
 
 
-def public m3_wasi_generic_path_open(runtime : IM3Runtime; _ctx : IM3ImportContext; _sp : u64?; _mem : void?) : M3Result {
+def public m3_wasi_generic_path_open(runtime : IM3Runtime; _ctx : IM3ImportContext; var _sp : u64?; var _mem : void?) : M3Result {
     var sp = unsafe(reinterpret<u64?>(_sp))
-    let raw_return = m3ApiReturnType(sp)
+    var raw_return = m3ApiReturnType(sp)
     let dirfd = m3ApiGetArg_u32(sp)
     // C reads dirflags (__WASI_LOOKUPFLAGS_SYMLINK_FOLLOW) and never uses it.
     m3ApiGetArg_u32(sp) // __wasi_lookupflags_t dirflags
@@ -513,7 +517,7 @@ def public m3_wasi_generic_path_open(runtime : IM3Runtime; _ctx : IM3ImportConte
     // C reads fs_rights_inheriting and never uses it.
     m3ApiGetArg_u64(sp) // __wasi_rights_t fs_rights_inheriting
     let fs_flags = m3ApiGetArg_u32(sp)
-    let fd = m3ApiGetArgMem(sp, _mem)
+    var fd = m3ApiGetArgMem(sp, _mem)
 
     var check : M3Result = wasi_check_mem(runtime, _mem, path, u64(path_len))
     if (check != m3Err_none) { return check }
@@ -629,13 +633,13 @@ def public m3_wasi_generic_path_open(runtime : IM3Runtime; _ctx : IM3ImportConte
     rather than inventing one. The observable difference is on a pipe, where
     readv returns whatever is available in one syscall; fread(3) blocks until
     the buffer is full or the stream ends. */
-def public m3_wasi_generic_fd_read(runtime : IM3Runtime; _ctx : IM3ImportContext; _sp : u64?; _mem : void?) : M3Result {
+def public m3_wasi_generic_fd_read(runtime : IM3Runtime; _ctx : IM3ImportContext; var _sp : u64?; var _mem : void?) : M3Result {
     var sp = unsafe(reinterpret<u64?>(_sp))
-    let raw_return = m3ApiReturnType(sp)
+    var raw_return = m3ApiReturnType(sp)
     let fd = m3ApiGetArg_u32(sp)
     let wasi_iovs = m3ApiGetArgMem(sp, _mem)
     let iovs_len = m3ApiGetArg_u32(sp)
-    let nread = m3ApiGetArgMem(sp, _mem)
+    var nread = m3ApiGetArgMem(sp, _mem)
 
     // C: m3ApiCheckMem(wasi_iovs, iovs_len * sizeof(wasi_iovec_t)).
     var check : M3Result = wasi_check_mem(runtime, _mem, wasi_iovs, u64(iovs_len) * u64(WASI_IOVEC_SIZE))
@@ -676,13 +680,13 @@ def public m3_wasi_generic_fd_read(runtime : IM3Runtime; _ctx : IM3ImportContext
 }
 
 
-def public m3_wasi_generic_fd_write(runtime : IM3Runtime; _ctx : IM3ImportContext; _sp : u64?; _mem : void?) : M3Result {
+def public m3_wasi_generic_fd_write(runtime : IM3Runtime; _ctx : IM3ImportContext; var _sp : u64?; var _mem : void?) : M3Result {
     var sp = unsafe(reinterpret<u64?>(_sp))
-    let raw_return = m3ApiReturnType(sp)
+    var raw_return = m3ApiReturnType(sp)
     let fd = m3ApiGetArg_u32(sp)
     let wasi_iovs = m3ApiGetArgMem(sp, _mem)
     let iovs_len = m3ApiGetArg_u32(sp)
-    let nwritten = m3ApiGetArgMem(sp, _mem)
+    var nwritten = m3ApiGetArgMem(sp, _mem)
 
     var check : M3Result = wasi_check_mem(runtime, _mem, wasi_iovs, u64(iovs_len) * u64(WASI_IOVEC_SIZE))
     if (check != m3Err_none) { return check }
@@ -728,9 +732,9 @@ def public m3_wasi_generic_fd_write(runtime : IM3Runtime; _ctx : IM3ImportContex
 }
 
 
-def public m3_wasi_generic_fd_close(runtime : IM3Runtime; _ctx : IM3ImportContext; _sp : u64?; _mem : void?) : M3Result {
+def public m3_wasi_generic_fd_close(runtime : IM3Runtime; _ctx : IM3ImportContext; var _sp : u64?; var _mem : void?) : M3Result {
     var sp = unsafe(reinterpret<u64?>(_sp))
-    let raw_return = m3ApiReturnType(sp)
+    var raw_return = m3ApiReturnType(sp)
     let fd = m3ApiGetArg_u32(sp)
 
     // C: int ret = close(fd). Releasing the table slot is what stands in for
@@ -756,9 +760,9 @@ def public m3_wasi_generic_fd_close(runtime : IM3Runtime; _ctx : IM3ImportContex
 }
 
 
-def public m3_wasi_generic_fd_datasync(runtime : IM3Runtime; _ctx : IM3ImportContext; _sp : u64?; _mem : void?) : M3Result {
+def public m3_wasi_generic_fd_datasync(runtime : IM3Runtime; _ctx : IM3ImportContext; var _sp : u64?; var _mem : void?) : M3Result {
     var sp = unsafe(reinterpret<u64?>(_sp))
-    let raw_return = m3ApiReturnType(sp)
+    var raw_return = m3ApiReturnType(sp)
     let fd = m3ApiGetArg_u32(sp)
 
     // C on Linux: int ret = fdatasync(fd). fflush is the fio equivalent for

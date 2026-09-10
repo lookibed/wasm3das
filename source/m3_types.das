@@ -286,7 +286,12 @@ typedef public IM3ImportContext = M3ImportContext?
 
 
 /* C wasm3.h: typedef const void * (* M3RawCall) (IM3Runtime runtime, IM3ImportContext _ctx, uint64_t * _sp, void * _mem); */
-typedef public M3RawCall = function<(runtime : IM3Runtime; _ctx : IM3ImportContext; _sp : u64?; _mem : void?) : M3Result>
+// `_sp` and `_mem` are `var`: C declares both as mutable pointers and every
+// raw function writes through them (the return slot, the guest buffers). A
+// non-`var` pointer parameter gets the LLVM `readonly` attribute from the
+// daslang JIT (upstream #3991), which folds the caller's read of that memory
+// from `--jit-opt-level=1` upwards.
+typedef public M3RawCall = function<(runtime : IM3Runtime; _ctx : IM3ImportContext; var _sp : u64?; var _mem : void?) : M3Result>
 
 
 // ============================================================================

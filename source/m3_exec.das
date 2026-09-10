@@ -79,24 +79,23 @@ var public ResizeMemoryHook : function<(var io_runtime : IM3Runtime; i_numPages 
 // C: M3Result ResizeMemory (IM3Runtime io_runtime, u32 i_numPages) — m3_env.c,
 // registered by m3_env.das (see CompileFunctionHook note). Private: m3_env.das
 // defines the real ResizeMemory and must not see this bridge as a second candidate.
-def private ResizeMemory(io_runtime : IM3Runtime; i_numPages : u32) : M3Result {
+// `io_runtime` and `io_function` are `var`: both bridges hand the pointer to a
+// hook that writes through it (ResizeMemory rewrites runtime->memory,
+// CompileFunction fills function->compiled), and the daslang JIT gives a
+// non-`var` pointer parameter the LLVM `readonly` attribute (upstream #3991),
+// which folds the caller's read of that memory from `--jit-opt-level=1` up.
+def private ResizeMemory(var io_runtime : IM3Runtime; i_numPages : u32) : M3Result {
     if (ResizeMemoryHook == null) {
         return "memory resize hook is not wired"
     }
-    unsafe {
-        var rt = reinterpret<IM3Runtime>(io_runtime)
-        return ResizeMemoryHook(rt, i_numPages)
-    }
+    return ResizeMemoryHook(io_runtime, i_numPages)
 }
 
-def private CompileFunction(io_function : IM3Function) : M3Result {
+def private CompileFunction(var io_function : IM3Function) : M3Result {
     if (CompileFunctionHook == null) {
         return "lazy compilation hook is not wired"
     }
-    unsafe {
-        var f = reinterpret<IM3Function>(io_function)
-        return CompileFunctionHook(f)
-    }
+    return CompileFunctionHook(io_function)
 }
 
 
@@ -105,9 +104,11 @@ def private CompileFunction(io_function : IM3Function) : M3Result {
 // ============================================================================
 
 
-def c_memmove(dst : u8?; src : u8?; size : u32) {
+// `dst` is `var`: it is the destination of the move, and the daslang JIT marks
+// a non-`var` pointer parameter LLVM `readonly` (upstream #3991).
+def c_memmove(var dst : u8?; src : u8?; size : u32) {
     unsafe {
-        var dptr = reinterpret<u8?>(dst)
+        var dptr = dst
         var sptr = reinterpret<u8?>(src)
         if (size == 0u) { return }
         let d = reinterpret<i64>(dptr)
@@ -3095,14 +3096,14 @@ def public op_Call(var _pc : pc_t&; var _sp : m3stack_t&; var _mem : M3MemoryHea
 
 def public op_CallIndirect(var _pc : pc_t&; var _sp : m3stack_t&; var _mem : M3MemoryHeader?&; var _r0 : m3reg_t&; var _fp0 : f64&) : M3Result {
     let tableIndex = slot_u32(_pc, _sp)
-    let _module = immediate_module(_pc)
+    var _module = immediate_module(_pc)
     let _type = immediate_functype(_pc)
     let stackOffset = immediate_i32(_pc)
     let memory = m3MemInfo(_mem)
     var sp = unsafe(_sp + stackOffset)
     var r : M3Result = m3Err_none
     if (tableIndex < _module.table0Size) {
-        let _function = unsafe(_module.table0[tableIndex])
+        var _function = unsafe(_module.table0[tableIndex])
         if (_function != null) {
             if (_type == _function.funcType) {
                 if (_function.compiled == null) { r = CompileFunction(_function) }
@@ -3126,7 +3127,9 @@ def public op_CallRawFunction(var _pc : pc_t&; var _sp : m3stack_t&; var _mem : 
     let call = immediate_rawcall(_pc)
     ctx._function = immediate_function(_pc)
     ctx.userdata = immediate_code(_pc)
-    let sp = unsafe(reinterpret<u64?>(_sp))
+    // `sp` is `var`: M3RawCall takes `_sp` and `_mem` as `var` (see the
+    // typedef in m3_types.das, upstream #3991).
+    var sp = unsafe(reinterpret<u64?>(_sp))
     let memory = m3MemInfo(_mem)
     var runtime = m3MemRuntime(_mem)
     let stack_backup = runtime.stack
@@ -3144,7 +3147,7 @@ def public op_MemSize(var _pc : pc_t&; var _sp : m3stack_t&; var _mem : M3Memory
 }
 
 def public op_MemGrow(var _pc : pc_t&; var _sp : m3stack_t&; var _mem : M3MemoryHeader?&; var _r0 : m3reg_t&; var _fp0 : f64&) : M3Result {
-    let runtime = m3MemRuntime(_mem)
+    var runtime = m3MemRuntime(_mem)
     let memory = unsafe(addr(runtime.memory))
     let numPagesToGrow = i32(_r0)
     if (numPagesToGrow >= 0) {
@@ -3165,7 +3168,7 @@ def public op_MemCopy(var _pc : pc_t&; var _sp : m3stack_t&; var _mem : M3Memory
     let destination = u64(slot_u32(_pc, _sp))
     if (destination + u64(size) <= _mem.length) {
         if (source + u64(size) <= _mem.length) {
-            let dst = unsafe(m3MemData(_mem) + int64(destination))
+            var dst = unsafe(m3MemData(_mem) + int64(destination))
             let src = unsafe(m3MemData(_mem) + int64(source))
             unsafe { c_memmove(dst, src, size) }
             return nextOpDirect(_pc, _sp, _mem, _r0, _fp0)
@@ -3191,7 +3194,7 @@ def public op_Compile(var _pc : pc_t&; var _sp : m3stack_t&; var _mem : M3Memory
         // Through u64: the AOT backend lowers a function-to-pointer reinterpret to the value's address; see EmitWord in m3_code.das.
         rewrite[0] = unsafe(reinterpret<code_t>(reinterpret<u64>(@@op_Call)))
     }
-    let _function = immediate_function(_pc)
+    var _function = immediate_function(_pc)
     var result : M3Result = m3Err_none
     if (_function.compiled == null) { result = CompileFunction(_function) }
     if (result == m3Err_none) {
