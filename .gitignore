@@ -21,6 +21,10 @@ Thumbs.db
 # Session-local LSP/MCP wiring (machine-specific absolute paths)
 /opencode.json
 
+# Machine-local shell environment of the checkout (DASLANG_ROOT and friends);
+# Claude Code sessions take the same values from .claude/settings.local.json
+/.env
+
 # Diagnostic and benchmark scratch data
 /logs/
 /benchmarks/tmp/
