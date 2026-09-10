@@ -50,7 +50,7 @@ require math
 
 
 // C: m3ApiRawFunction (m3_libc_abort) { m3ApiTrap (m3Err_trapAbort); }
-def public m3_libc_abort(runtime : IM3Runtime; _ctx : IM3ImportContext; _sp : u64?; _mem : void?) : M3Result {
+def public m3_libc_abort(runtime : IM3Runtime; _ctx : IM3ImportContext; var _sp : u64?; var _mem : void?) : M3Result {
     return m3Err_trapAbort
 }
 
@@ -60,7 +60,7 @@ def public m3_libc_abort(runtime : IM3Runtime; _ctx : IM3ImportContext; _sp : u6
 // ============================================================================
 
 
-def public m3_libc_exit(runtime : IM3Runtime; _ctx : IM3ImportContext; _sp : u64?; _mem : void?) : M3Result {
+def public m3_libc_exit(runtime : IM3Runtime; _ctx : IM3ImportContext; var _sp : u64?; var _mem : void?) : M3Result {
     var sp = unsafe(reinterpret<u64?>(_sp))
 
     // C: m3ApiGetArg (int32_t, code). The value is unused in C as well; the
@@ -85,7 +85,10 @@ def public m3_libc_exit(runtime : IM3Runtime; _ctx : IM3ImportContext; _sp : u64
 let private c_libcChunkMax = 0x10000000u
 
 
-def private libc_memset(i_ptr : void?; i_value : int; i_size : u32) {
+// The destination parameters of these three are `var`: they are written
+// through, and the daslang JIT gives a non-`var` pointer parameter the LLVM
+// `readonly` attribute (upstream #3991).
+def private libc_memset(var i_ptr : void?; i_value : int; i_size : u32) {
     unsafe {
         var p = reinterpret<u8?>(i_ptr)
         var remaining = i_size
@@ -99,7 +102,7 @@ def private libc_memset(i_ptr : void?; i_value : int; i_size : u32) {
 }
 
 
-def private libc_memcpy(o_dst : void?; i_src : void?; i_size : u32) {
+def private libc_memcpy(var o_dst : void?; i_src : void?; i_size : u32) {
     unsafe {
         var dst = reinterpret<u8?>(o_dst)
         var src = reinterpret<u8?>(i_src)
@@ -118,7 +121,7 @@ def private libc_memcpy(o_dst : void?; i_src : void?; i_size : u32) {
 // C memmove. Daslang has no memmove builtin: the non-overlapping case is a
 // memcpy, an overlap is copied in the direction that keeps the source bytes
 // intact, exactly as a libc memmove does.
-def private libc_memmove(o_dst : void?; i_src : void?; i_size : u32) {
+def private libc_memmove(var o_dst : void?; i_src : void?; i_size : u32) {
     if (i_size == 0u) { return }
 
     let dst_at = intptr(o_dst)
@@ -161,7 +164,7 @@ def private libc_strnlen(i_ptr : void?; i_maxlen : int) : int {
 }
 
 
-def public m3_libc_memset(runtime : IM3Runtime; _ctx : IM3ImportContext; _sp : u64?; _mem : void?) : M3Result {
+def public m3_libc_memset(runtime : IM3Runtime; _ctx : IM3ImportContext; var _sp : u64?; var _mem : void?) : M3Result {
     /*
         A Daslang function parameter is const, and a const pointer value
         cannot initialise a non-const pointer variable, so the two C
@@ -170,12 +173,19 @@ def public m3_libc_memset(runtime : IM3Runtime; _ctx : IM3ImportContext; _sp : u
         value - are re-declared here through reinterpret. The pointees are the
         same objects; nothing is copied. The same two lines open every raw
         function below that needs them.
+
+        `_sp` and `_mem` themselves are declared `var` (as C declares them):
+        both are written through, and the daslang JIT marks a non-`var`
+        pointer parameter LLVM `readonly` (upstream #3991), which folds the
+        caller's read of the return slot and of the guest memory from
+        `--jit-opt-level=1` upwards. A pointer derived from them and passed
+        on to a writing helper must be `var` for the same reason.
     */
     var sp = unsafe(reinterpret<u64?>(_sp))
     var rt = unsafe(reinterpret<IM3Runtime>(runtime))
-    let raw_return = m3ApiReturnType(sp)                    // m3ApiReturnType (int32_t)
+    var raw_return = m3ApiReturnType(sp)                    // m3ApiReturnType (int32_t)
 
-    let i_ptr = m3ApiGetArgMem(sp, _mem)                    // m3ApiGetArgMem (void*, i_ptr)
+    var i_ptr = m3ApiGetArgMem(sp, _mem)                    // m3ApiGetArgMem (void*, i_ptr)
     let i_value = m3ApiGetArg_i32(sp)                       // m3ApiGetArg (int32_t, i_value)
     let i_size = m3ApiGetArg_u32(sp)                        // m3ApiGetArg (wasm_size_t, i_size)
 
@@ -196,12 +206,12 @@ def public m3_libc_memset(runtime : IM3Runtime; _ctx : IM3ImportContext; _sp : u
 // ============================================================================
 
 
-def public m3_libc_memmove(runtime : IM3Runtime; _ctx : IM3ImportContext; _sp : u64?; _mem : void?) : M3Result {
+def public m3_libc_memmove(runtime : IM3Runtime; _ctx : IM3ImportContext; var _sp : u64?; var _mem : void?) : M3Result {
     var sp = unsafe(reinterpret<u64?>(_sp))
     var rt = unsafe(reinterpret<IM3Runtime>(runtime))
-    let raw_return = m3ApiReturnType(sp)                    // m3ApiReturnType (int32_t)
+    var raw_return = m3ApiReturnType(sp)                    // m3ApiReturnType (int32_t)
 
-    let o_dst = m3ApiGetArgMem(sp, _mem)                    // m3ApiGetArgMem (void*, o_dst)
+    var o_dst = m3ApiGetArgMem(sp, _mem)                    // m3ApiGetArgMem (void*, o_dst)
     let i_src = m3ApiGetArgMem(sp, _mem)                    // m3ApiGetArgMem (void*, i_src)
     let i_size = m3ApiGetArg_u32(sp)                        // m3ApiGetArg (wasm_size_t, i_size)
 
@@ -223,10 +233,10 @@ def public m3_libc_memmove(runtime : IM3Runtime; _ctx : IM3ImportContext; _sp : 
 // ============================================================================
 
 
-def public m3_libc_print(runtime : IM3Runtime; _ctx : IM3ImportContext; _sp : u64?; _mem : void?) : M3Result {
+def public m3_libc_print(runtime : IM3Runtime; _ctx : IM3ImportContext; var _sp : u64?; var _mem : void?) : M3Result {
     var sp = unsafe(reinterpret<u64?>(_sp))
     var rt = unsafe(reinterpret<IM3Runtime>(runtime))
-    let raw_return = m3ApiReturnType(sp)                    // m3ApiReturnType (uint32_t)
+    var raw_return = m3ApiReturnType(sp)                    // m3ApiReturnType (uint32_t)
 
     let i_ptr = m3ApiGetArgMem(sp, _mem)                    // m3ApiGetArgMem (void*, i_ptr)
     let i_size = m3ApiGetArg_u32(sp)                        // m3ApiGetArg (wasm_size_t, i_size)
@@ -324,10 +334,10 @@ def private internal_itoa(i_n : int; radix : int) : string {
       flush, so a trap in the middle leaves exactly the bytes C would have
       written.
 */
-def public m3_libc_printf(runtime : IM3Runtime; _ctx : IM3ImportContext; _sp : u64?; _mem : void?) : M3Result {
+def public m3_libc_printf(runtime : IM3Runtime; _ctx : IM3ImportContext; var _sp : u64?; var _mem : void?) : M3Result {
     var sp = unsafe(reinterpret<u64?>(_sp))
     var rt = unsafe(reinterpret<IM3Runtime>(runtime))
-    let raw_return = m3ApiReturnType(sp)                    // m3ApiReturnType (int32_t)
+    var raw_return = m3ApiReturnType(sp)                    // m3ApiReturnType (int32_t)
 
     let i_fmt = m3ApiGetArgMem(sp, _mem)                    // m3ApiGetArgMem (const char*, i_fmt)
     let i_args = m3ApiGetArgMem(sp, _mem)                   // m3ApiGetArgMem (wasm_ptr_t*, i_args)
@@ -428,9 +438,9 @@ def public m3_libc_printf(runtime : IM3Runtime; _ctx : IM3ImportContext; _sp : u
 var private s_clock_ref = 0l
 
 
-def public m3_libc_clock_ms(runtime : IM3Runtime; _ctx : IM3ImportContext; _sp : u64?; _mem : void?) : M3Result {
+def public m3_libc_clock_ms(runtime : IM3Runtime; _ctx : IM3ImportContext; var _sp : u64?; var _mem : void?) : M3Result {
     var sp = unsafe(reinterpret<u64?>(_sp))
-    let raw_return = m3ApiReturnType(sp)                    // m3ApiReturnType (uint32_t)
+    var raw_return = m3ApiReturnType(sp)                    // m3ApiReturnType (uint32_t)
 
     if (s_clock_ref == 0l) { s_clock_ref = ref_time_ticks() }
     let clock_ms = get_time_nsec(s_clock_ref) / 1000000l
@@ -460,7 +470,7 @@ def private SuppressLookupFailure(i_result : M3Result) : M3Result {
 
 
 // C: m3ApiRawFunction (m3_spectest_dummy) { m3ApiSuccess (); }
-def public m3_spectest_dummy(runtime : IM3Runtime; _ctx : IM3ImportContext; _sp : u64?; _mem : void?) : M3Result {
+def public m3_spectest_dummy(runtime : IM3Runtime; _ctx : IM3ImportContext; var _sp : u64?; var _mem : void?) : M3Result {
     return m3Err_none
 }
 

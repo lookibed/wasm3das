@@ -272,13 +272,20 @@ def private convert_timespec(ts : timespec) : wasi_timestamp_t {
 
 
 // C: m3ApiRawFunction(m3_wasi_generic_args_get)
-def public m3_wasi_generic_args_get(runtime : IM3Runtime; _ctx : IM3ImportContext; _sp : u64?; _mem : void?) : M3Result {
+def public m3_wasi_generic_args_get(runtime : IM3Runtime; _ctx : IM3ImportContext; var _sp : u64?; var _mem : void?) : M3Result {
     // The M3RawCall parameters arrive const; `_sp` is C's mutable cursor and
     // m3ApiCheckMem takes the runtime by mutable value, so both are re-typed
     // once here, as in every raw function of this port.
+    //
+    // `_sp` and `_mem` are declared `var`, as C declares them: both are
+    // written through, and the daslang JIT gives a non-`var` pointer
+    // parameter the LLVM `readonly` attribute (upstream #3991), which folds
+    // the caller's read of that memory from `--jit-opt-level=1` upwards.
+    // Every local that is later passed to a writing helper is `var` for the
+    // same reason.
     var rt = unsafe(reinterpret<IM3Runtime>(runtime))
     var sp = unsafe(reinterpret<u64?>(_sp))
-    let raw_return = m3ApiReturnType(sp)                     // m3ApiReturnType (uint32_t)
+    var raw_return = m3ApiReturnType(sp)                     // m3ApiReturnType (uint32_t)
     var argv : u32?                                          // m3ApiGetArgMem (uint32_t *, argv)
     var argv_buf : u8?                                       // m3ApiGetArgMem (char *, argv_buf)
     unsafe {
@@ -328,12 +335,12 @@ def public m3_wasi_generic_args_get(runtime : IM3Runtime; _ctx : IM3ImportContex
 
 
 // C: m3ApiRawFunction(m3_wasi_generic_args_sizes_get)
-def public m3_wasi_generic_args_sizes_get(runtime : IM3Runtime; _ctx : IM3ImportContext; _sp : u64?; _mem : void?) : M3Result {
+def public m3_wasi_generic_args_sizes_get(runtime : IM3Runtime; _ctx : IM3ImportContext; var _sp : u64?; var _mem : void?) : M3Result {
     var rt = unsafe(reinterpret<IM3Runtime>(runtime))
     var sp = unsafe(reinterpret<u64?>(_sp))
-    let raw_return = m3ApiReturnType(sp)                     // m3ApiReturnType (uint32_t)
-    let argc = m3ApiGetArgMem(sp, _mem)                      // m3ApiGetArgMem (__wasi_size_t *, argc)
-    let argv_buf_size = m3ApiGetArgMem(sp, _mem)             // m3ApiGetArgMem (__wasi_size_t *, argv_buf_size)
+    var raw_return = m3ApiReturnType(sp)                     // m3ApiReturnType (uint32_t)
+    var argc = m3ApiGetArgMem(sp, _mem)                      // m3ApiGetArgMem (__wasi_size_t *, argc)
+    var argv_buf_size = m3ApiGetArgMem(sp, _mem)             // m3ApiGetArgMem (__wasi_size_t *, argv_buf_size)
 
     var check : M3Result = m3ApiCheckMem(rt, _mem, argc, 4ul)
     if (check != m3Err_none) { return check }
@@ -367,9 +374,9 @@ def public m3_wasi_generic_args_sizes_get(runtime : IM3Runtime; _ctx : IM3Import
 // The C body is a bare `// TODO` followed by the success return; the two
 // memory arguments are consumed and never used, which is why nothing is
 // written into the guest buffers.
-def public m3_wasi_generic_environ_get(runtime : IM3Runtime; _ctx : IM3ImportContext; _sp : u64?; _mem : void?) : M3Result {
+def public m3_wasi_generic_environ_get(runtime : IM3Runtime; _ctx : IM3ImportContext; var _sp : u64?; var _mem : void?) : M3Result {
     var sp = unsafe(reinterpret<u64?>(_sp))
-    let raw_return = m3ApiReturnType(sp)                     // m3ApiReturnType (uint32_t)
+    var raw_return = m3ApiReturnType(sp)                     // m3ApiReturnType (uint32_t)
     m3ApiGetArgMem(sp, _mem)                                 // m3ApiGetArgMem (uint32_t *, env)
     m3ApiGetArgMem(sp, _mem)                                 // m3ApiGetArgMem (char *, env_buf)
 
@@ -380,12 +387,12 @@ def public m3_wasi_generic_environ_get(runtime : IM3Runtime; _ctx : IM3ImportCon
 
 
 // C: m3ApiRawFunction(m3_wasi_generic_environ_sizes_get)
-def public m3_wasi_generic_environ_sizes_get(runtime : IM3Runtime; _ctx : IM3ImportContext; _sp : u64?; _mem : void?) : M3Result {
+def public m3_wasi_generic_environ_sizes_get(runtime : IM3Runtime; _ctx : IM3ImportContext; var _sp : u64?; var _mem : void?) : M3Result {
     var rt = unsafe(reinterpret<IM3Runtime>(runtime))
     var sp = unsafe(reinterpret<u64?>(_sp))
-    let raw_return = m3ApiReturnType(sp)                     // m3ApiReturnType (uint32_t)
-    let env_count = m3ApiGetArgMem(sp, _mem)                 // m3ApiGetArgMem (__wasi_size_t *, env_count)
-    let env_buf_size = m3ApiGetArgMem(sp, _mem)              // m3ApiGetArgMem (__wasi_size_t *, env_buf_size)
+    var raw_return = m3ApiReturnType(sp)                     // m3ApiReturnType (uint32_t)
+    var env_count = m3ApiGetArgMem(sp, _mem)                 // m3ApiGetArgMem (__wasi_size_t *, env_count)
+    var env_buf_size = m3ApiGetArgMem(sp, _mem)              // m3ApiGetArgMem (__wasi_size_t *, env_buf_size)
 
     var check : M3Result = m3ApiCheckMem(rt, _mem, env_count, 4ul)
     if (check != m3Err_none) { return check }
@@ -450,11 +457,11 @@ def private seed_wasi_random() {
 
 
 // C: m3ApiRawFunction(m3_wasi_generic_random_get)
-def public m3_wasi_generic_random_get(runtime : IM3Runtime; _ctx : IM3ImportContext; _sp : u64?; _mem : void?) : M3Result {
+def public m3_wasi_generic_random_get(runtime : IM3Runtime; _ctx : IM3ImportContext; var _sp : u64?; var _mem : void?) : M3Result {
     var rt = unsafe(reinterpret<IM3Runtime>(runtime))
     var sp = unsafe(reinterpret<u64?>(_sp))
-    let raw_return = m3ApiReturnType(sp)                     // m3ApiReturnType (uint32_t)
-    let buf = m3ApiGetArgMem(sp, _mem)                       // m3ApiGetArgMem (uint8_t *, buf)
+    var raw_return = m3ApiReturnType(sp)                     // m3ApiReturnType (uint32_t)
+    var buf = m3ApiGetArgMem(sp, _mem)                       // m3ApiGetArgMem (uint8_t *, buf)
     let buf_len = m3ApiGetArg_u32(sp)                        // m3ApiGetArg (__wasi_size_t, buf_len)
 
     let check : M3Result = m3ApiCheckMem(rt, _mem, buf, u64(buf_len))
@@ -475,12 +482,12 @@ def public m3_wasi_generic_random_get(runtime : IM3Runtime; _ctx : IM3ImportCont
 
 
 // C: m3ApiRawFunction(m3_wasi_generic_clock_res_get)
-def public m3_wasi_generic_clock_res_get(runtime : IM3Runtime; _ctx : IM3ImportContext; _sp : u64?; _mem : void?) : M3Result {
+def public m3_wasi_generic_clock_res_get(runtime : IM3Runtime; _ctx : IM3ImportContext; var _sp : u64?; var _mem : void?) : M3Result {
     var rt = unsafe(reinterpret<IM3Runtime>(runtime))
     var sp = unsafe(reinterpret<u64?>(_sp))
-    let raw_return = m3ApiReturnType(sp)                     // m3ApiReturnType (uint32_t)
+    var raw_return = m3ApiReturnType(sp)                     // m3ApiReturnType (uint32_t)
     let wasi_clk_id = m3ApiGetArg_u32(sp)                    // m3ApiGetArg (__wasi_clockid_t, wasi_clk_id)
-    let resolution = m3ApiGetArgMem(sp, _mem)                // m3ApiGetArgMem (__wasi_timestamp_t *, resolution)
+    var resolution = m3ApiGetArgMem(sp, _mem)                // m3ApiGetArgMem (__wasi_timestamp_t *, resolution)
 
     let check : M3Result = m3ApiCheckMem(rt, _mem, resolution, 8ul)
     if (check != m3Err_none) { return check }
@@ -504,13 +511,13 @@ def public m3_wasi_generic_clock_res_get(runtime : IM3Runtime; _ctx : IM3ImportC
 
 
 // C: m3ApiRawFunction(m3_wasi_generic_clock_time_get)
-def public m3_wasi_generic_clock_time_get(runtime : IM3Runtime; _ctx : IM3ImportContext; _sp : u64?; _mem : void?) : M3Result {
+def public m3_wasi_generic_clock_time_get(runtime : IM3Runtime; _ctx : IM3ImportContext; var _sp : u64?; var _mem : void?) : M3Result {
     var rt = unsafe(reinterpret<IM3Runtime>(runtime))
     var sp = unsafe(reinterpret<u64?>(_sp))
-    let raw_return = m3ApiReturnType(sp)                     // m3ApiReturnType (uint32_t)
+    var raw_return = m3ApiReturnType(sp)                     // m3ApiReturnType (uint32_t)
     let wasi_clk_id = m3ApiGetArg_u32(sp)                    // m3ApiGetArg (__wasi_clockid_t, wasi_clk_id)
     m3ApiGetArg_u64(sp)                                      // m3ApiGetArg (__wasi_timestamp_t, precision)
-    let _time = m3ApiGetArgMem(sp, _mem)                     // m3ApiGetArgMem (__wasi_timestamp_t *, time); C name `time`
+    var _time = m3ApiGetArgMem(sp, _mem)                     // m3ApiGetArgMem (__wasi_timestamp_t *, time); C name `time`
 
     let check : M3Result = m3ApiCheckMem(rt, _mem, _time, 8ul)
     if (check != m3Err_none) { return check }
@@ -539,7 +546,7 @@ def public m3_wasi_generic_clock_time_get(runtime : IM3Runtime; _ctx : IM3Import
 // C: m3ApiRawFunction(m3_wasi_generic_proc_exit)
 // No m3ApiReturnType: the C signature is "v(i)", so the first slot is the
 // argument, not a return value.
-def public m3_wasi_generic_proc_exit(runtime : IM3Runtime; _ctx : IM3ImportContext; _sp : u64?; _mem : void?) : M3Result {
+def public m3_wasi_generic_proc_exit(runtime : IM3Runtime; _ctx : IM3ImportContext; var _sp : u64?; var _mem : void?) : M3Result {
     var sp = unsafe(reinterpret<u64?>(_sp))
     let code = m3ApiGetArg_u32(sp)                           // m3ApiGetArg (uint32_t, code)
 

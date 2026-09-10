@@ -332,7 +332,11 @@ def m3_FreeRuntime(var i_runtime : IM3Runtime) {
 }
 
 
-def EvaluateExpression(var i_module : IM3Module; o_expressed : void?; i_type : u8; var io_bytes : bytes_t&; i_end : cbytes_t) : M3Result {
+// `o_expressed` is the out-parameter the evaluated value is stored into, so it
+// is `var`: the daslang JIT marks a non-`var` pointer parameter LLVM
+// `readonly` (upstream #3991), which folds the caller's read of the result
+// from `--jit-opt-level=1` upwards.
+def EvaluateExpression(var i_module : IM3Module; var o_expressed : void?; i_type : u8; var io_bytes : bytes_t&; i_end : cbytes_t) : M3Result {
     var result : M3Result = m3Err_none
     var runtime = M3Runtime(environment = i_module.runtime.environment, numStackSlots = i_module.runtime.numStackSlots, stack = i_module.runtime.stack)
 
