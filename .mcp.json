@@ -1,16 +1,12 @@
 {
   "mcpServers": {
     "daslang": {
-      "command": "python3",
+      "command": "${DASLANG_ROOT}/bin/daslang",
       "args": [
-        "${DASLANG_ROOT}/utils/mcp/mcp_supervisor.py",
-        "--repo-root",
-        ".",
-        "--stderr-log",
-        "logs/claude-mcp-daslang-child.log"
+        "-ignore-manifest",
+        "${DASLANG_ROOT}/utils/mcp/main.das"
       ],
       "env": {
-        "DASLANG_MCP_BIN": "${DASLANG_ROOT}/bin/daslang",
         "DAS_LINT_CONFIG_PATH": ".lint_config"
       },
       "defer_loading": false

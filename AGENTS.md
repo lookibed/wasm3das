@@ -145,11 +145,16 @@ Three servers are required, whichever client is used:
   here; `notes/codex_tooling_smoke_test.md` describes its smoke test.
 - All three servers use the daslang checkout pointed to by the `DASLANG_ROOT`
   environment variable, at the commit pinned in `scripts/daslang_pin` and
-  built in place (README "Install and run"). `.mcp.json` runs
-  `$DASLANG_ROOT/utils/mcp/mcp_supervisor.py` with
-  `DASLANG_MCP_BIN=$DASLANG_ROOT/bin/daslang`; the LSP plugin runs
-  `$DASLANG_ROOT/utils/lsp/lsp_supervisor.py`; restart the client after
-  changing `DASLANG_ROOT`.
+  built in place (README "Install and run"). `.mcp.json` runs the server
+  directly, `$DASLANG_ROOT/bin/daslang -ignore-manifest
+  $DASLANG_ROOT/utils/mcp/main.das` (the pin no longer carries the Python
+  supervisor; upstream's watchdog front needs the `stddlg` module the
+  headless build leaves out, so the server runs without a respawn wrapper);
+  the LSP plugin runs `$DASLANG_ROOT/utils/lsp/lsp_supervisor.py`. Claude
+  Code expands `${DASLANG_ROOT}` from its own environment, so the variable
+  has to be set where the client starts: `.claude/settings.local.json`
+  (untracked, per machine) carries `"env": {"DASLANG_ROOT": ...}` for that.
+  Restart the client after changing `DASLANG_ROOT`.
 - The `daslang-dap` server runs the bridge `utils/dap/mcp_bridge.py` from the
   same `$DASLANG_ROOT` checkout — the DAP bridge and `utils/dap` are merged
   upstream (PR #3937) and the pin commit carries them.
