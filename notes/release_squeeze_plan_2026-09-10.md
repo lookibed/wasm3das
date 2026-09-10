@@ -57,6 +57,11 @@ across all of them.
 | **combo2** | **combo1 + nsa (shipped)** | **45.79 MB** | **30.53 MB** | **7.06 s** | **25 ms** |
 | combo3 | combo1 + `-march=x86-64-v3` | 45.80 MB | 30.54 MB | 7.13 s | 26 ms |
 
+The shipped set was then rebuilt from the branch itself (no `EXTRA_*`
+overrides): the same 45,785,904 bytes, `Result: 832040`, spec 17863/17863,
+`run-wasi-test.py` 12/12 and 7.09 s / 7.02 s against 7.55 s / 7.42 s for two
+interleaved baseline runs.
+
 Run-to-run spread of the total is ±0.1 s, so only the ~0.35 s of the combined
 set and the 4 ms of start are outside the noise. The "without startup" column
 of the report moves the other way for `nopie` (4.75 s against 4.60 s) because
