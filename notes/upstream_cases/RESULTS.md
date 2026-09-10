@@ -153,6 +153,33 @@ The generated constructor ends with `context.runInitScript()`; the emitted
 - The `tests-cpp/big/standalone_module_global/CMakeLists.txt` was written
   after `tests-cpp/big/standalone_ctx/CMakeLists.txt` and not configured.
 
+## Case 5 (2026-09-10): `const` parameter emitted `readonly`, issue #3991
+
+Run on two source builds with dasLLVM (prebuilt LLVM 22.1.5-r4), never on a
+bundle: the pinned commit `46c4715` (this machine, Linux x86_64, Debian 13)
+and master `388691eb1` (the Ryzen stand, Ubuntu 22.04 under WSL2). Three
+runs per mode, every run byte-identical; `.jitted_scripts` removed between
+opt levels.
+
+`$D` = `<checkout>/bin/daslang`. The opt level is a clargs option of the JIT
+and goes after the `--`.
+
+| mode | `evidence/const_arg_readonly/minimal.das` | `tests/jit_tests/test_const_arg_readonly.das` (checks pass-fail) |
+|---|---|---|
+| `$D minimal.das` (interpreter) | `slot = 41` | 8-0 |
+| `$D -jit minimal.das -- --jit-opt-level=0` | `slot = 41` | 8-0 |
+| `$D -jit minimal.das -- --jit-opt-level=1` | **`slot = 0`** | 4-4 (`memcpy` and the cross-module spelling still pass) |
+| `$D -jit minimal.das -- --jit-opt-level=2` | **`slot = 0`** | 2-6 |
+| `$D -jit minimal.das -- --jit-opt-level=3` and plain `-jit` | **`slot = 0`** | 2-6 (only the `var` control and the `success` probe pass) |
+
+Identical on both commits. `--jit-dump --jit-compile-only` at O1 shows the
+definition with `ptr readonly ... %dst` and `store i32 %v, ptr %dst` in one
+function, and `main` handing the constant `0` to the string builder with the
+load of `slot` gone; the `var` control gets `writeonly` from LLVM's own
+inference. Source of the attribute:
+`modules/dasLLVM/daslib/llvm_jit.das`, `apply_impl_param_attrs` (line 647
+at the pin, 663 on master).
+
 ## Impact on wasm3das
 
 `source/m3_exec.das` `op_Compile` writes `op_Call`'s address into a code

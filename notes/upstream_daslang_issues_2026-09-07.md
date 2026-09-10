@@ -12,7 +12,7 @@ pull request; #3967 has no answer yet but its fix is already on master.
 | [#3968](https://github.com/GaijinEntertainment/daScript/issues/3968) qualified `math::` intrinsic | [PR #3974](https://github.com/GaijinEntertainment/daScript/pull/3974) `aleksisch/fix-reported-bugs` | open | merge, then the next release |
 | [#3969](https://github.com/GaijinEntertainment/daScript/issues/3969) function ↔ int cast in JIT | PR #3974 | open | same |
 | [#3970](https://github.com/GaijinEntertainment/daScript/issues/3970) interpreter yields 0 | PR #3974 | open | same |
-| item 5 below, wrong results at `--jit-opt-level >= 1` | none | not filed | reduce to a standalone program on the release that carries PR #3974 |
+| [#3991](https://github.com/GaijinEntertainment/daScript/issues/3991) `const` pointer parameter emitted `readonly`, wrong results at `--jit-opt-level >= 1` (item 5 below, reduced 2026-09-10) | none | filed 2026-09-10 | a maintainer answer; reproduces on master `388691eb1` |
 
 PR #3974 (12 files, +371/−74) goes further than the reports: every intrinsic
 emitter keys on the declared name (ten sites, which also fixes `math::min`
@@ -409,7 +409,28 @@ Files: `llvm_jit.das` (modified), the three tests (added), `tests/README.md`
 
 ---
 
-## 5. Not filed: wrong results at `--jit-opt-level >= 1`
+## 5. Wrong results at `--jit-opt-level >= 1`: reduced and filed as #3991 (2026-09-10)
+
+The reduction on the pinned daslang (`46c4715`, built with dasLLVM) and on
+master `388691eb1` found the cause, and the hypothesis at the end of this
+section was close: not `noalias`, but `readonly`. `apply_impl_param_attrs`
+in `modules/dasLLVM/daslib/llvm_jit.das` gives every `const` pointer,
+reference or string parameter the LLVM `readonly` attribute from the
+declared type; daslang lets the callee write through such a parameter after
+an `unsafe` `reinterpret` or `intptr` (the `void?` out-parameter idiom
+`EvaluateExpression` uses), so the emitted module stores through a
+parameter it declares as never written, and from O1 the optimizer folds
+the caller's read of that memory to its pre-call value. The same body with
+a `var` parameter gets LLVM's own `writeonly` and is correct in every mode.
+
+The reusable case is `notes/upstream_cases/tests/jit_tests/test_const_arg_readonly.das`
+(five spellings of the write, a cross-module call, a `var` control) with
+its module fixture `_const_arg_readonly_writer.das`, plus the 17-line
+`notes/upstream_cases/evidence/const_arg_readonly/minimal.das`; the run
+log is in `notes/upstream_cases/RESULTS.md` ("Case 5"). Workaround for a
+program that wants O3 before the fix: declare such parameters `var`.
+
+The text below is the state before the reduction, kept as provenance.
 
 With the patch applied to a scratch JIT daslib, wasm3das compiles under `-jit`
 (906 functions) but `--func tinyexpr_error_code` returns 1 instead of 6 and
