@@ -24,7 +24,10 @@
 #   EXTRA_CXXFLAGS, EXTRA_LDFLAGS  appended to each compile and link line
 #
 # The C++ flags are the ones libDaScript itself is built with (daScript
-# CMake: -O3 -fno-rtti -fwrapv -std=gnu++17, DAS_FUSION=2).
+# CMakeCommon.txt, Release on unix: -O3 -fno-rtti -fomit-frame-pointer
+# -fno-stack-protector -DNDEBUG=1 -std=gnu++17 -fPIC -fwrapv
+# -fno-strict-aliasing under gcc, DAS_FUSION=2, DAS_NO_ASSERTIONS), plus the
+# standalone-executable flags of the ctx variant below.
 set -euo pipefail
 
 repo_root="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")/.." && pwd)"
@@ -56,6 +59,7 @@ esac
 out="$repo_root/${out_base:-$def_out}"
 mkdir -p "$out/aot" "$out/obj" "$out/bin"
 
+ldflags=()
 if (( msvc )); then
     # The same defines as the gcc/clang set; /MD matches daScript's default
     # DAS_USE_STATIC_STD_LIBS=OFF; /bigobj because the ctx translation unit is
@@ -65,7 +69,9 @@ if (( msvc )); then
               /DURIPARSER_BUILD_CHAR /DURI_STATIC_BUILD /D_CRT_SECURE_NO_WARNINGS
               "/I$(cygpath -w "$DASLANG_ROOT/include")")
 else
-    cxxflags=(-std=gnu++17 -O3 -fno-rtti -fomit-frame-pointer -fno-stack-protector -fwrapv -fPIC
+    # The per-variant flags (-fPIC for aot, the standalone set for ctx) are
+    # added below, after the variant is known.
+    cxxflags=(-std=gnu++17 -O3 -fno-rtti -fomit-frame-pointer -fno-stack-protector -fwrapv
               -DNDEBUG=1 -DDAS_ENABLE_DYN_INCLUDES=1 -DDAS_FUSION=2 -DDAS_NO_ASSERTIONS -DSIZE_OF_VOID_P=8
               -DURIPARSER_BUILD_CHAR -DURI_STATIC_BUILD
               -Wno-invalid-offsetof -Wno-unused-parameter -Wno-unused-variable -Wno-unused-but-set-variable
@@ -79,6 +85,59 @@ for inc in "$DASLANG_ROOT/3rdparty/fmt/include" "$DASLANG_ROOT/3rdparty/uriparse
         if (( msvc )); then cxxflags+=("/I$(cygpath -w "$inc")"); else cxxflags+=(-I"$inc"); fi
     fi
 done
+
+# Per-variant flags. Everything below the aot line was measured on the release
+# stand (Ryzen 7 7435HS, gcc 11.4, daslang master 388691eb1): every variant
+# passes the spec suite 17863/17863 and fib32; the timings are the aot_ctx
+# "Итого" of tests/manual/run_fixtures.py (98 checks), four runs per variant,
+# baseline 7.41 s total / 29 ms start. See
+# notes/release_squeeze_plan_2026-09-10.md, B1-B3. gcc/clang only; the MSVC
+# arm keeps cl's own set (the equivalents were not measured there).
+if (( msvc )); then variant_flags=skip; else variant_flags="$variant"; fi
+case "$variant_flags" in
+aot)
+    # Unchanged: this variant compiles one TU per module and was not part of
+    # the B1 measurement, so it keeps the flag set it was validated with.
+    cxxflags+=(-fPIC)
+    ;;
+ctx)
+    # -fno-pic/-no-pie: the standalone binary is an executable that is never
+    #   dlopen'ed, so the PIE indirection buys nothing. It deletes the 7 MB
+    #   .rela.dyn: 52.8 -> 45.9 MB, 37.5 -> 30.6 MB stripped, and the process
+    #   start drops 29 -> 25 ms (-13 %), which is 0.3 s of the fixture total.
+    #   The cost is ASLR of the image itself (stack, heap and the shared libc
+    #   stay randomized); drop these two flags to get it back.
+    # -ffunction-sections -fdata-sections + --gc-sections: -137 KB (0.3 %).
+    #   Small because the two TUs of this build are already whole-program and
+    #   the daslang archives are not compiled with section splitting; free at
+    #   runtime (7.36 s vs 7.41 s, inside the noise).
+    # -fno-strict-aliasing: what daScript compiles its own sources with under
+    #   gcc (CMakeCommon.txt SETUP_COMPILER, "GNU uses strict aliasing
+    #   optimizations too hard, which breaks our code"). The emitted context
+    #   is generated code over the same headers and the same vec4f punning, so
+    #   the build now states the assumption instead of inheriting the default.
+    #   Measured neutral: 7.41 s standalone against a 7.41 s baseline.
+    # -fcf-protection=none (x86-64 only): removes the endbr64 landing pad in
+    #   front of every indirect branch target. The RunLoop dispatch is one
+    #   indirect call per wasm operation, so this is the only flag here that
+    #   touches execution: 7.35 s vs 7.41 s (-0.9 %). It gives up the CET
+    #   indirect-branch tracking the distro gcc enables by default.
+    cxxflags+=(-fno-pic -ffunction-sections -fdata-sections -fno-strict-aliasing)
+    ldflags+=(-no-pie -Wl,--gc-sections)
+    if [[ "$(uname -m)" == "x86_64" ]]; then
+        cxxflags+=(-fcf-protection=none)
+    fi
+    # Together: 45.8 MB / 30.5 MB stripped and 7.06 s against the baseline's
+    # 52.8 MB / 37.5 MB and 7.41 s (-13 % size, -19 % stripped, -4.8 % total,
+    # execution itself unchanged).
+    #
+    # Measured and rejected: -flto (no size change, 7.49 s), -march=x86-64-v3
+    # (7.13 s against 7.13 s for the same set without it, B2). Dropping
+    # liblibDaScript.a from the link fails on one symbol, register_Module_Ast,
+    # which the emitted module table of the standalone context references.
+    ;;
+esac
+
 extra_ldflags=()
 if [[ -n "${EXTRA_CXXFLAGS:-}" ]]; then read -r -a extra_cxx <<< "$EXTRA_CXXFLAGS"; cxxflags+=("${extra_cxx[@]}"); fi
 if [[ -n "${EXTRA_LDFLAGS:-}" ]]; then read -r -a extra_ldflags <<< "$EXTRA_LDFLAGS"; fi
@@ -165,7 +224,8 @@ else
     done
 
     echo "build_port [$variant]: link"
-    "$CXX" ${extra_ldflags[@]+"${extra_ldflags[@]}"} -o "$out/bin/wasm3das" "$out"/obj/*.o \
+    "$CXX" ${ldflags[@]+"${ldflags[@]}"} ${extra_ldflags[@]+"${extra_ldflags[@]}"} \
+        -o "$out/bin/wasm3das" "$out"/obj/*.o \
         "$DASLANG_ROOT/lib/liblibDaScript.a" "$DASLANG_ROOT/lib/liblibDaScript_runtime.a" \
         "$DASLANG_ROOT/lib/liblibUriParser.a" \
         -lpthread -ldl -lm

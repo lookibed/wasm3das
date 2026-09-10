@@ -26,14 +26,56 @@ Baseline (`tests/manual/fixture_report.md`, Ryzen 7 7435HS, 98 checks): wasm3 C
 
 | # | Item | Evidence | Gain (measured or hypothesis) | Cost | State |
 |---|---|---|---|---|---|
-| B1 | ctx links both `liblibDaScript.a` (the compiler) and `_runtime`, without `--gc-sections` or LTO: 52 MB, 37 MB stripped | `build_port.sh`, `ls -la` of the asset | smaller binary and faster load (certain); 0–10 % exec (hypothesis, measure) | try runtime-only link, `-ffunction-sections -Wl,--gc-sections`, `-flto`; keep the variant that passes spec+WASI and measure on the stand | open |
-| B2 | ctx is generic x86-64 | `build_port.sh` flags | small; free to check | a second asset at `-march=x86-64-v3` (AVX2), measured; ship only if it wins | open |
-| B3 | Strict aliasing not decided: the generated C++ and the port pun memory through pointer casts; all suites pass, but the flag set was copied without checking what daScript itself uses | `build_port.sh` cxxflags | no speed; latent-correctness insurance, the same shape as #3991 | read daScript's CMake flags; either confirm or add `-fno-strict-aliasing` deliberately | open |
+| B1 | ctx links both `liblibDaScript.a` (the compiler) and `_runtime`, without `--gc-sections` or LTO: 52 MB, 37 MB stripped | `build_port.sh`, `ls -la` of the asset | **measured**: 52.8 → 45.8 MB, 37.5 → 30.5 MB stripped (−13 % / −19 %), process start 29 → 25 ms, fixture total 7.41 → 7.06 s (−4.8 %); execution itself unchanged | `-fno-pic -ffunction-sections -fdata-sections` + `-no-pie -Wl,--gc-sections` in `build_port.sh ctx` (with `-fcf-protection=none` on x86-64); LTO and a runtime-only link rejected, see the table under this section | done in PR #41 |
+| B2 | ctx is generic x86-64 | `build_port.sh` flags | **measured: nothing**. `-march=x86-64-v3` on top of the B1 set: 7.13 s against 7.13 s without it; alone: 7.48 s against a 7.41 s baseline. No second asset | — | closed, not shipping |
+| B3 | Strict aliasing not decided: the generated C++ and the port pun memory through pointer casts; all suites pass, but the flag set was copied without checking what daScript itself uses | `build_port.sh` cxxflags | daScript compiles **its own** sources with `-fno-strict-aliasing` under gcc (`CMakeCommon.txt` `SETUP_COMPILER`: "GNU uses strict aliasing optimizations too hard, which breaks our code"; `DAS_STRICT_ALIASING=OFF` in the stand's cache, and the pin's `compile_commands.json` shows it on every libDaScript TU). Adopted for ctx; measured neutral (7.41 s against 7.41 s) | — | done in PR #41 |
+| B9 | The standalone binary links the whole compiler archive for one symbol: without `liblibDaScript.a` the link fails only on `register_Module_Ast`, which the emitted module table lists (`ast_core`, index 4) although nothing in the port requires `ast`; with an empty stub of that function the binary is 37.7 MB / 26.4 MB stripped and still passes the spec suite | B1 experiment on the stand | −15 MB more, faster load | a host-side stub in `native/` (measure spec, WASI, fixtures) or an upstream change so a standalone program registers only the modules it uses | open |
 | B4 | Interpreter start (0.18–0.29 s) is the compile of `app/` + `source/` at every run; `-module-cache` parked on RC2 because it printed `deser: clean` to stdout; master after the pin carries startup work (#3960, #3971) | `notes/daslang_release_pin_2026-09-07.md` | interpreter start possibly several times lower, no port change | re-test `-module-cache` on the pin; check stdout hygiene with the WASI driver | open |
 | B5 | Second expansion layer in the interpreter: the `OP_*` helpers of `m3_math_utils` and `m3MemData` in load/store ops through the same pre-infer macro | `notes/interp_node_cost_2026-09-08.md` (48 ns per function-value call) | 5–15 % on heavy rows (estimate from the first layer) | extend `m3_exec_expand.das`; gate, spec, fixtures | open |
 | B6 | JIT runs at O0 because of #3991; the port-side workaround is `var` on every out-parameter and const pointer the callee writes through | `docs/upstream-status.md`, #3991 | measured at O3 on the stand (master `388691eb1`): the whole fixture set costs 8.7 s of exec against 85.2 s interpreted, 4.7 s ctx and 2.9 s C wasm3, i.e. 3.0x C and 1.8x ctx; warm JIT start 0.55 s per process, cold codegen 3.5 s | PR #40: `var` on the `M3RawCall` typedef (`_sp`, `_mem`) and every raw host function, on `m3ApiReturn_*`/`m3ApiWriteMem*`, `libc_mem*`, `wasi_fd_seek_common`, `m3_zero_bytes`/`m3_copy_bytes`, `EvaluateExpression`, `c_memmove`, the `ResizeMemory`/`CompileFunction` bridges; daslang only adds constness through a pointer, so the only ways to write through a non-`var` parameter are `reinterpret`/`intptr`/`addr`/`memcpy`, which bounded the audit | done in PR #40 (gate green; O3 spec 17863/17863, WASI 12/12, fixtures 86/86); the harness default stays O0 until #3991 is fixed upstream |
 | B7 | JIT start 0.86 s per process; upstream PR #3982 (merged) cuts the warm start (hello world 240 → 90 ms) | agent runs; upstream PR | JIT full-time column comparable with ctx | pin bump to current master (105 commits), full gate and fixture rerun | pin bumped to `388691eb1` 2026-09-10 (gate green unchanged); JIT start to be re-measured |
 | B8 | `-exe` never tried: the JIT's standalone executable, no compiler at start, cross-platform through LLVM | daslang docs, maintainer's advice | potentially the fastest tier on every platform | needs B6 (O3 correctness) first; then `daslang -exe -output <out> app/wasm3.das`, spec, WASI, fixtures | open |
+
+### B1–B3 measurements (2026-09-10, stand, gcc 11.4, daslang master 388691eb1)
+
+One `scripts/build_port.sh ctx tmp/native-ctx-<variant>` per row, driven by
+`EXTRA_CXXFLAGS`/`EXTRA_LDFLAGS`. Every row prints `Result: 832040` for
+`fib32.wasm --func fib 30` and passes the spec suite 17863/17863 through
+`WASM3DAS_CTX=<binary> scripts/wasm3-ctx --repl`. Time is the aot_ctx "Итого"
+of `tests/manual/run_fixtures.py --runtimes wasm3,aot_ctx` (98 checks),
+arithmetic mean of four runs; the C wasm3 reference stayed at 3.02–3.09 s
+across all of them.
+
+| variant | flags | unstripped | stripped | total | start |
+|---|---|---:|---:|---:|---:|
+| base | as shipped | 52.83 MB | 37.54 MB | 7.41 s | 29 ms |
+| gcs | `-ffunction-sections -fdata-sections -Wl,--gc-sections` | 52.70 MB | 37.44 MB | 7.36 s | 28 ms |
+| nopie | `-fno-pic -no-pie` | 45.92 MB | 30.62 MB | 7.22 s | 25 ms |
+| v3 | `-march=x86-64-v3` | 52.86 MB | 37.56 MB | 7.48 s | 28 ms |
+| nsa | `-fno-strict-aliasing` | 52.84 MB | 37.54 MB | 7.41 s | 28 ms |
+| cfnone | `-fcf-protection=none` | 52.81 MB | 37.52 MB | 7.35 s | 28 ms |
+| lto | `-flto=2` | 52.82 MB | 37.51 MB | 7.49 s | 29 ms |
+| combo1 | nopie + gcs + cfnone | 45.78 MB | 30.52 MB | 7.13 s | 25 ms |
+| **combo2** | **combo1 + nsa (shipped)** | **45.79 MB** | **30.53 MB** | **7.06 s** | **25 ms** |
+| combo3 | combo1 + `-march=x86-64-v3` | 45.80 MB | 30.54 MB | 7.13 s | 26 ms |
+
+The shipped set was then rebuilt from the branch itself (no `EXTRA_*`
+overrides): the same 45,785,904 bytes, `Result: 832040`, spec 17863/17863,
+`run-wasi-test.py` 12/12 and 7.09 s / 7.02 s against 7.55 s / 7.42 s for two
+interleaved baseline runs.
+
+Run-to-run spread of the total is ±0.1 s, so only the ~0.35 s of the combined
+set and the 4 ms of start are outside the noise. The "without startup" column
+of the report moves the other way for `nopie` (4.75 s against 4.60 s) because
+it is derived as `total − start × rows`: a smaller start pushes the same time
+into the estimate. Execution proper is flat; the whole win is image size and
+relocation processing, which is what a 98-process fixture set rewards.
+
+Two negative results worth keeping: LTO buys nothing (two translation units
+already, and the daslang archives are not built with IPO: `SETUP_LTO` is
+applied to the shared library and the `daslang` binary, not to
+`liblibDaScript*.a`); and the compiler archive cannot be dropped by a link
+flag, see B9.
 
 ## C. Blind spots in the measurements
 
