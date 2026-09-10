@@ -184,7 +184,11 @@ if (( msvc )); then
     fi
     rm -f "$out"/obj/*.obj
     # cl.exe and link.exe by their full names: Git bash puts coreutils' `link`
-    # (the hard-link tool) ahead of MSVC's on PATH.
+    # (the hard-link tool) ahead of MSVC's on PATH. And no MSYS path
+    # conversion for their arguments: Git bash rewrites every `/flag` into
+    # `C:/Program Files/Git/flag` (cl then warns D9024 per flag and link fails
+    # with LNK1181 on nologo.obj); the paths here are already Windows paths.
+    export MSYS_NO_PATHCONV=1 MSYS2_ARG_CONV_EXCL='*'
     cl.exe "${cxxflags[@]}" "/I$(cygpath -w "$out/ctx")" /c "$(cygpath -w "$repo_root/native/standalone_main.cpp")" \
         "/Fo$(cygpath -w "$out/obj/standalone_main.cpp.obj")"
     for src in "${sources[@]}"; do
