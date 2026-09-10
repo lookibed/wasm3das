@@ -47,16 +47,18 @@ case "$daslang_binary" in
         if command -v strip >/dev/null 2>&1; then
             strip "$out/bin/daslang" || true
         fi
+        # A source-built Linux binary links liblibDaScriptDyn*.so with a
+        # RUNPATH naming the build machine's lib/; the shared objects travel
+        # in lib/ beside bin/ and the bundle launcher (scripts/bundle/wasm3)
+        # points LD_LIBRARY_PATH at it. The static archives are not needed
+        # at run time. (Git bash on Windows also has an ldd, which is why
+        # this lives in the non-.exe branch.)
+        if command -v ldd >/dev/null 2>&1 && ldd "$daslang_binary" 2>/dev/null | grep -q libDaScript; then
+            mkdir -p "$out/lib"
+            cp "$daslang_root"/lib/*libDaScript*.so* "$out/lib/"
+        fi
         ;;
 esac
-
-# The Linux/macOS release binary finds libDaScriptDyn* through rpath
-# $ORIGIN/../lib, so the shared objects travel in lib/ beside bin/; the static
-# archives of the bundle are not needed at run time.
-if command -v ldd >/dev/null 2>&1 && ldd "$daslang_binary" 2>/dev/null | grep -q libDaScript; then
-    mkdir -p "$out/lib"
-    cp "$daslang_root"/lib/*libDaScript*.so* "$out/lib/"
-fi
 
 cp -R "$daslang_root/daslib" "$out/daslib"
 cp -R "$repo_root/app" "$out/app"

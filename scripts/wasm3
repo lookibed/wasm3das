@@ -30,8 +30,12 @@ set -euo pipefail
 
 repo_root="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")/.." && pwd)"
 
-: "${DASLANG_ROOT:?set DASLANG_ROOT to your daslang checkout at the pinned commit; see README, Install and run}"
-DASLANG="${DASLANG:-$DASLANG_ROOT/bin/daslang}"
+# A release bundle names its own compiler through DASLANG (scripts/bundle/wasm3)
+# and carries no checkout; a repository run resolves it from DASLANG_ROOT.
+if [[ -z "${DASLANG:-}" ]]; then
+    : "${DASLANG_ROOT:?set DASLANG_ROOT to your daslang checkout at the pinned commit; see README, Install and run}"
+    DASLANG="$DASLANG_ROOT/bin/daslang"
+fi
 
 if [[ ! -x "$DASLANG" ]]; then
     echo "wasm3: missing daslang at $DASLANG (build your DASLANG_ROOT checkout)" >&2
