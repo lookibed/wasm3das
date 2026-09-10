@@ -20,7 +20,11 @@ Runs every scalar (non host-adapter) fixture export through these runtimes:
               WASM3DAS_JIT=1; daslang ships the JIT when your DASLANG_ROOT
               checkout is built without -DDAS_LLVM_DISABLED. The
               JIT compiles the port on first use into ./.jitted_scripts, so
-              the first ever run is much slower than the cached ones.)
+              the first ever run is much slower than the cached ones.
+              The JIT's own options go through WASM3DAS_JIT_OPTS, default
+              --jit-opt-level=0: at the pinned daslang that is the only
+              opt level at which the port runs correctly under the JIT,
+              and the value used is printed in the report header.)
 
 Each command is timed with the full wall clock from process spawn to
 complete output (subprocess.run + perf_counter, stdout+stderr captured).
@@ -44,7 +48,8 @@ Usage, from the repository root:
                                        [--slow]
 
 Paths can be overridden via env: WASMTIME, WASM3C, WASM3DAS, WASM3DAS_NATIVE,
-WASM3DAS_CTX, DASLANG_JIT; DASLANG_ROOT is required.
+WASM3DAS_CTX, DASLANG_JIT, and the JIT options via WASM3DAS_JIT_OPTS;
+DASLANG_ROOT is required.
 """
 import argparse
 import datetime
@@ -95,6 +100,11 @@ WASM3DAS_CTX = os.environ.get(
 # so by default this is the binary of $DASLANG_ROOT.
 DASLANG_JIT = os.environ.get(
     "DASLANG_JIT", os.path.join(DASLANG_ROOT or "SET-DASLANG-ROOT", "bin", "daslang"))
+# The JIT's command-line options (scripts/wasm3 places them after the `--`).
+# Opt level 0 is the default because at the pinned daslang the default O3
+# miscompiles the port (six spec assertions, most of these fixtures); the
+# value goes into the report header so a column is reproducible.
+WASM3DAS_JIT_OPTS = os.environ.get("WASM3DAS_JIT_OPTS", "--jit-opt-level=0")
 
 
 def gen(fixture: str) -> str:
@@ -425,7 +435,8 @@ RUNTIME_SHORT = {
 # The JIT runtime is scripts/wasm3 with the LLVM path switched on and the
 # JIT-enabled compiler selected; everything else inherits the environment.
 RUNTIME_ENV = {
-    "jit": {"WASM3DAS_JIT": "1", "DASLANG": DASLANG_JIT},
+    "jit": {"WASM3DAS_JIT": "1", "DASLANG": DASLANG_JIT,
+            "WASM3DAS_JIT_OPTS": WASM3DAS_JIT_OPTS},
 }
 
 # Upper bound on a single run, capping the per-test timeout of T.  The JIT
