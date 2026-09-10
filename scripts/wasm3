@@ -4,24 +4,37 @@
 # `--exec "<repo>/scripts/wasm3 --repl"`.
 #
 # Environment:
-#   DASLANG           daslang binary (default: tmp/daslang/bin/daslang, the
-#                     release bundle installed by scripts/install_daslang.sh)
-#   WASM3DAS_JIT      when 1, pass -jit to daslang so the port runs LLVM-compiled
-#                     instead of interpreted. The release bundle ships the LLVM
-#                     JIT, so the same binary serves both modes.
+#   DASLANG_ROOT    required: the checked-out and built daslang at the commit
+#                   pinned in scripts/daslang_pin (see README "Install and run")
+#   DASLANG         daslang binary (default: $DASLANG_ROOT/bin/daslang)
+#   WASM3DAS_JIT    when 1, pass -jit to daslang so the port runs LLVM-compiled
+#                   instead of interpreted. The local daslang build ships the
+#                   LLVM JIT when built without -DDAS_LLVM_DISABLED=ON; the
+#                   same binary serves both modes.
 #   WASM3DAS_JIT_ARGS extra daslang JIT switches, whitespace separated, only used
-#                     when WASM3DAS_JIT=1 (for example -jit-no-cache, -jit-stack).
+#                   when WASM3DAS_JIT=1 (for example -jit-no-cache, -jit-stack).
+#                   These are daslang's own options and go before the `--`.
+#   WASM3DAS_JIT_OPTS options of the JIT's command-line schema (dasLLVM
+#                   llvm_jit_cli, for example --jit-opt-level=0), whitespace
+#                   separated, only used when WASM3DAS_JIT=1. daslang reads
+#                   them after the `--`, among the script's arguments, and
+#                   app/wasm3.das ignores them; passing them before the `--`
+#                   is an "unknown command line option" error.
+#                   --jit-opt-level=0 is the only level at which the port
+#                   runs correctly under the JIT at the pinned daslang
+#                   (tests/manual/fixture_report.md, docs/upstream-status.md).
 #   WASM3DAS_APP      alternative app entry point (default: app/wasm3.das), so an
-#                     experimental copy of the tree can be driven through this
-#                     same front end. Used by scripts/bench.sh.
+#                   experimental copy of the tree can be driven through this
+#                   same front end. Used by scripts/bench.sh.
 set -euo pipefail
 
 repo_root="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")/.." && pwd)"
 
-DASLANG="${DASLANG:-$repo_root/tmp/daslang/bin/daslang}"
+: "${DASLANG_ROOT:?set DASLANG_ROOT to your daslang checkout at the pinned commit; see README, Install and run}"
+DASLANG="${DASLANG:-$DASLANG_ROOT/bin/daslang}"
 
 if [[ ! -x "$DASLANG" ]]; then
-    echo "wasm3: missing daslang at $DASLANG (run scripts/install_daslang.sh)" >&2
+    echo "wasm3: missing daslang at $DASLANG (build your DASLANG_ROOT checkout)" >&2
     exit 1
 fi
 
@@ -49,12 +62,17 @@ done
 # Opt-in JIT. Without WASM3DAS_JIT=1 the command line is exactly what it was
 # before, so the pinned interpreter path stays untouched.
 das_opts=()
+jit_opts=()
 if [[ "${WASM3DAS_JIT:-}" == "1" ]]; then
     das_opts+=("-jit")
     if [[ -n "${WASM3DAS_JIT_ARGS:-}" ]]; then
         # Deliberately unquoted: the variable carries several switches.
         # shellcheck disable=SC2206
         das_opts+=(${WASM3DAS_JIT_ARGS})
+    fi
+    if [[ -n "${WASM3DAS_JIT_OPTS:-}" ]]; then
+        # shellcheck disable=SC2206
+        jit_opts=(${WASM3DAS_JIT_OPTS})
     fi
 else
     # The interpreter requires no dynamic module: app/wasm3.das and source/
@@ -69,4 +87,4 @@ fi
 
 app="${WASM3DAS_APP:-$repo_root/app/wasm3.das}"
 
-exec "$DASLANG" "$app" ${das_opts[@]+"${das_opts[@]}"} -- ${args[@]+"${args[@]}"}
+exec "$DASLANG" "$app" ${das_opts[@]+"${das_opts[@]}"} -- ${jit_opts[@]+"${jit_opts[@]}"} ${args[@]+"${args[@]}"}

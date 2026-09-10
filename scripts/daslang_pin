@@ -1,0 +1,16 @@
+# The pinned daslang source of wasm3das.
+#
+# One line: the full sha of the upstream master commit the port is validated
+# against. Whoever clones the wasm3das repository must have a checkout of
+# GaijinEntertainment/daScript at exactly this commit, built locally, and
+# point DASLANG_ROOT at it (see README "Install and run").
+#
+# The pin changes only through a deliberate bump: build the new commit,
+# run the full gate and the manual fixture run, land the port adaptations,
+# commit the new sha here. See docs/development-pipeline.md.
+#
+# Bumped 2026-09-09 to 46c4715867b21b79bd25709809a2acf0b1b6e58a
+# ("Merge pull request #3980"): standalone -ctx (#3967 fix, PR #3838),
+# JIT/interpreter function-address fixes (#3968/#3969/#3970, PR #3974),
+# standalone module emission and the SDK install of ast_gen.inc.
+46c4715867b21b79bd25709809a2acf0b1b6e58a

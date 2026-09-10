@@ -1,0 +1,39 @@
+#!/usr/bin/env bash
+# wasm3 command line front end for the standalone-context (`-ctx`) build of
+# the Daslang port: the same drop-in replacement for the C `wasm3` binary
+# that scripts/wasm3 and scripts/wasm3-native provide, backed by the binary
+# scripts/build_port.sh ctx embeds the compiled program into and starts with
+# no daslang front end at all.
+#
+# Usage is identical to scripts/wasm3, so the three front ends can be swapped
+# in a runner invocation:
+#   wasm3c/test/run-spec-test.py --exec "<repo>/scripts/wasm3-ctx --repl"
+#   wasm3c/test/run-wasi-test.py --exec "<repo>/scripts/wasm3-ctx"
+#
+# Environment:
+#   WASM3DAS_CTX   the standalone binary (default: tmp/native-ctx/bin/wasm3das)
+set -euo pipefail
+
+repo_root="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")/.." && pwd)"
+
+CTX="${WASM3DAS_CTX:-$repo_root/tmp/native-ctx/bin/wasm3das}"
+
+if [[ ! -x "$CTX" ]]; then
+    echo "wasm3-ctx: missing standalone binary at $CTX (run scripts/build_port.sh ctx)" >&2
+    exit 1
+fi
+
+# Ops return to the RunLoop dispatcher (m3_exec_defs.das), so only a wasm call
+# nests native frames, but the daslang context stack of app/wasm3.das
+# (`options stack`) still needs a native stack a few times larger: with the
+# default 8 MiB thread stack an unbounded wasm recursion kills the process
+# with SIGSEGV before op_Entry can report `[trap] stack overflow`, which the
+# spec suite's assert_exhaustion cases expect. Raise the limit when the shell
+# is allowed to.
+ulimit -s 262144 2>/dev/null || true
+
+# There is no daslang CLI in front of the app, so nothing steals --help/-h and
+# no --wasm3-help alias is needed; the app accepts all three spellings. Every
+# argument is forwarded unchanged; the host stub puts them after the literal
+# `--` the app's argument reader expects.
+exec "$CTX" "$@"

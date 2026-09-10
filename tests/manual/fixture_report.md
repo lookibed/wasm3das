@@ -1,133 +1,159 @@
 # Spider manual fixtures: parity and timing
 
-| Тест | wasmtime | wasm3 C | wasm3das | × к wasmtime | × к wasm3 C |
-| --- | ---: | ---: | ---: | ---: | ---: |
-| `add` 1 2 | 0.013s | 0.002s | 1.527s | ~114x | ~911x |
-| `hash_loop` seed 123456789, 200000 итераций | 0.009s | 0.006s | 2.166s | ~244x | ~346x |
-| `hash_loop` seed 1, 65536 итераций | 0.007s | 0.003s | 1.650s | ~222x | ~603x |
-| `hash_f32` 2048 элементов | 0.009s | 0.002s | 1.423s | ~152x | ~926x |
-| `hash_f64` 2048 элементов | 0.008s | 0.002s | 1.445s | ~172x | ~661x |
-| `hash_i64_mix` 512 элементов | 0.011s | 0.002s | 1.453s | ~130x | ~789x |
-| `hash_i64_div` 512 элементов | 0.011s | 0.002s | 1.384s | ~126x | ~871x |
-| `probe_div_s64` | 0.010s | 0.002s | 1.288s | ~129x | ~754x |
-| `probe_rem_s64` | 0.010s | 0.001s | 1.179s | ~122x | ~852x |
-| `probe_div_u64` | 0.010s | 0.001s | 1.185s | ~120x | ~862x |
-| `probe_rem_u64` | 0.010s | 0.001s | 1.158s | ~119x | ~819x |
-| `tinyexpr_hash` 256 выражений | 0.024s | 0.003s | 1.295s | ~53x | ~387x |
-| `tinyexpr_error_code` | 0.023s | 0.002s | 1.197s | ~52x | ~586x |
-| `miniz_roundtrip_hash` уровень 6 | 0.040s | 0.005s | 1.578s | ~39x | ~307x |
-| `miniz_probe_compressed_size` уровень 6 | 0.039s | 0.004s | 1.465s | ~38x | ~342x |
-| `miniz_probe_crc32` | 0.039s | 0.003s | 1.215s | ~31x | ~483x |
-| `miniz_probe_adler32` | 0.039s | 0.002s | 1.206s | ~31x | ~484x |
-| `miniz_probe_fold_hash` | 0.040s | 0.003s | 1.231s | ~31x | ~486x |
-| `miniz_full_hash` уровень 6 | 0.050s | 0.009s | 1.697s | ~34x | ~193x |
-| `miniz_full_num_files` уровень 6 | 0.054s | 0.009s | 1.743s | ~32x | ~195x |
-| `miniz_full_archive_size` уровень 6 | 0.053s | 0.009s | 1.746s | ~33x | ~200x |
-| `miniz_full_locate_mix` уровень 6 | 0.052s | 0.009s | 1.723s | ~33x | ~190x |
-| `miniz_full_extract_hash` уровень 6 | 0.056s | 0.009s | 1.678s | ~30x | ~190x |
-| `miniz_full_validate` уровень 6 | 0.050s | 0.009s | 1.714s | ~34x | ~196x |
-| `miniz_file_hash` уровень 6 | 0.064s | 0.013s | 1.892s | ~30x | ~144x |
-| `miniz_file_num_files` уровень 6 | 0.066s | 0.013s | 1.863s | ~28x | ~140x |
-| `miniz_file_archive_size` уровень 6 | 0.067s | 0.013s | 1.856s | ~28x | ~143x |
-| `miniz_file_extract_hash` уровень 6 | 0.058s | 0.013s | 1.904s | ~33x | ~148x |
-| `miniz_file_in_place` уровень 6 | 0.066s | 0.013s | 1.858s | ~28x | ~144x |
-| `lodepng_roundtrip` картинка 0 | 0.087s | 0.015s | 2.348s | ~27x | ~157x |
-| `lodepng_encoded_size` картинка 0 | 0.083s | 0.014s | 2.245s | ~27x | ~165x |
-| `lodepng_decode_hash` картинка 0 | 0.083s | 0.014s | 2.337s | ~28x | ~167x |
-| `lodepng_input_hash` картинка 0 | 0.086s | 0.007s | 1.184s | ~14x | ~178x |
-| `lodepng_png_hash` картинка 0 | 0.095s | 0.012s | 2.188s | ~23x | ~176x |
-| `lodepng_roundtrip` картинка 1 | 0.085s | 0.018s | 2.889s | ~34x | ~159x |
-| `lodepng_encoded_size` картинка 1 | 0.084s | 0.016s | 2.712s | ~32x | ~168x |
-| `lodepng_decode_hash` картинка 1 | 0.085s | 0.017s | 2.874s | ~34x | ~169x |
-| `lodepng_input_hash` картинка 1 | 0.082s | 0.007s | 1.210s | ~15x | ~184x |
-| `lodepng_png_hash` картинка 1 | 0.085s | 0.016s | 2.637s | ~31x | ~162x |
-| `chipmunk_hash_scene` 60 шагов | 0.053s | 0.009s | 1.891s | ~36x | ~200x |
-| `chipmunk_hash_scene` 600 шагов | 0.059s | 0.070s | 7.068s | ~120x | ~101x |
-| `chipmunk_variant` 600 шагов | 0.059s | 0.086s | 8.935s | ~152x | ~104x |
-| `chipmunk_probe_x` тело 0, 600 шагов | 0.057s | 0.069s | 7.224s | ~127x | ~104x |
-| `chipmunk_probe_y` тело 1, 600 шагов | 0.056s | 0.071s | 7.274s | ~130x | ~103x |
-| `chipmunk_probe_angle` тело 2, 600 шагов | 0.058s | 0.071s | 6.974s | ~120x | ~98x |
-| `secret_expected_length` | 0.035s | 0.003s | 1.177s | ~34x | ~372x |
-| `secret_expected_crc32` | 0.034s | 0.003s | 1.175s | ~34x | ~381x |
-| `profile_memory_walk` 400 итераций | 0.052s | 0.008s | 1.978s | ~38x | ~261x |
-| `profile_math_shim` 400 итераций | 0.053s | 0.004s | 1.271s | ~24x | ~298x |
-| `profile_branch_state` 400 итераций | 0.056s | 0.004s | 1.291s | ~23x | ~290x |
-| `profile_space_freefall` 120 шагов | 0.053s | 0.005s | 1.405s | ~27x | ~259x |
-| `profile_space_collision` 120 шагов | 0.055s | 0.015s | 2.411s | ~44x | ~159x |
-| `profile_space_full` 120 шагов | 0.056s | 0.015s | 2.459s | ~44x | ~169x |
-| `h264mp4_decode_hash` 8 кадров | 0.126s | 0.026s | 2.450s | ~19x | ~94x |
-| `h264mp4_width` | 0.131s | 0.015s | 1.602s | ~12x | ~106x |
-| `h264mp4_height` | 0.125s | 0.015s | 1.591s | ~13x | ~106x |
-| `h264mp4_frame_count` 8 кадров | 0.125s | 0.026s | 2.503s | ~20x | ~98x |
-| `h264mp4_first_frame` | 0.141s | 0.015s | 1.603s | ~11x | ~103x |
-| `h264mp4_last_frame` 8 кадров | 0.126s | 0.026s | 2.491s | ~20x | ~96x |
-| `plmpeg_decode_hash` 8 кадров | 0.068s | 0.030s | 3.343s | ~49x | ~110x |
-| `plmpeg_width` | 0.065s | 0.019s | 1.530s | ~24x | ~78x |
-| `plmpeg_height` | 0.067s | 0.020s | 1.586s | ~24x | ~80x |
-| `plmpeg_frame_count` 8 кадров | 0.068s | 0.031s | 3.306s | ~49x | ~108x |
-| `plmpeg_first_frame` | 0.068s | 0.020s | 1.547s | ~23x | ~77x |
-| `plmpeg_last_frame` 8 кадров | 0.069s | 0.031s | 3.442s | ~50x | ~111x |
-| `plmpeg_stream_decode_hash` 8 кадров | 0.031s | 0.041s | 3.284s | ~105x | ~80x |
-| `plmpeg_stream_width` | 0.029s | 0.020s | 1.519s | ~52x | ~76x |
-| `plmpeg_stream_height` | 0.030s | 0.020s | 1.568s | ~52x | ~80x |
-| `plmpeg_stream_frame_count` 8 кадров | 0.033s | 0.031s | 3.314s | ~101x | ~108x |
-| `plmpeg_stream_first_frame` | 0.030s | 0.020s | 1.547s | ~52x | ~78x |
-| `plmpeg_stream_last_frame` 8 кадров | 0.033s | 0.035s | 3.252s | ~100x | ~94x |
-| `libjpeg_decode_hash` | 0.242s | 0.018s | 2.342s | ~9.7x | ~133x |
-| `libjpeg_width` | 0.237s | 0.017s | 2.179s | ~9.2x | ~129x |
-| `libjpeg_height` | 0.237s | 0.017s | 2.046s | ~8.6x | ~121x |
-| `libjpeg_components` | 0.246s | 0.017s | 2.044s | ~8.3x | ~120x |
-| `libjpeg_input_hash` | 0.238s | 0.010s | 1.206s | ~5.1x | ~116x |
-| `libjpeg_rgb_size` | 0.235s | 0.018s | 2.103s | ~8.9x | ~120x |
-| `mjpeg_decode_hash` 12 кадров | 0.248s | 0.027s | 3.677s | ~15x | ~135x |
-| `mjpeg_width` | 0.238s | 0.013s | 1.491s | ~6.3x | ~112x |
-| `mjpeg_height` | 0.236s | 0.013s | 1.481s | ~6.3x | ~114x |
-| `mjpeg_components` | 0.240s | 0.013s | 1.575s | ~6.6x | ~121x |
-| `mjpeg_frame_count` 12 кадров | 0.244s | 0.030s | 3.722s | ~15x | ~126x |
-| `mjpeg_first_frame` | 0.238s | 0.013s | 1.519s | ~6.4x | ~119x |
-| `mjpeg_last_frame` 12 кадров | 0.240s | 0.027s | 3.804s | ~16x | ~139x |
-| `mjpeg_input_hash` | 0.237s | 0.011s | 1.226s | ~5.2x | ~111x |
-| `binjgb_decode_hash` 16 кадров | 0.093s | 0.160s | 23.135s | ~248x | ~145x |
-| `binjgb_width` | 0.077s | 0.017s | 1.188s | ~15x | ~69x |
-| `binjgb_height` | 0.071s | 0.019s | 1.191s | ~17x | ~64x |
-| `binjgb_frame_count` 16 кадров | 0.092s | 0.164s | 23.197s | ~253x | ~142x |
-| `binjgb_first_frame` | 0.076s | 0.028s | 2.543s | ~34x | ~90x |
-| `binjgb_last_frame` 16 кадров | 0.098s | 0.161s | 22.430s | ~228x | ~139x |
-| `builder_case_count` | 0.116s | 0.004s | 1.193s | ~10x | ~267x |
-| `builder_c0_code_hash` вариант 0 | 0.109s | 0.006s | 1.336s | ~12x | ~220x |
-| `builder_c0_run_hash` вариант 0 | 0.126s | 0.007s | 1.334s | ~11x | ~188x |
-| `builder_c1_code_hash` вариант 1 | 0.116s | 0.006s | 1.347s | ~12x | ~209x |
-| `builder_c1_run_hash` вариант 1 | 0.103s | 0.007s | 1.373s | ~13x | ~188x |
-| `builder_c2_code_hash` вариант 2 | 0.117s | 0.006s | 1.387s | ~12x | ~219x |
-| `builder_c2_run_hash` вариант 2 | 0.107s | 0.008s | 1.382s | ~13x | ~183x |
+## Основные
 
-Все результаты совпали с baseline (wasmtime 86/86, wasm3 C 86/86, wasm3das 86/86)
+По одной продакшен-конфигурации на модуль: самый тяжёлый реальный экспорт (декодер, полный цикл, длинная симуляция). Остальные экспорты и вариации аргументов — справочной таблицей ниже.
+
+| Тест | wasmtime | wasm3 C | wasm3das(inter) | wasm3das(aot) | wasm3das(aot_ctx) | wasm3das(jit) | × к wasmtime | × к wasm3 C |
+| --- | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: |
+| `add` 1 2 | 0.012s | 0.001s | 0.180s | 0.666s | 0.030s | 0.864s | ~15x | ~133x |
+| `hash_loop` seed 123456789, 200000 итераций | 0.014s | 0.004s | 0.484s | 0.828s | 0.045s | 0.909s | ~34x | ~116x |
+| `hash_f32` 2048 элементов | 0.014s | 0.001s | 0.183s | 0.654s | 0.031s | 0.888s | ~13x | ~133x |
+| `hash_f64` 2048 элементов | 0.012s | 0.002s | 0.191s | 0.672s | 0.029s | 0.871s | ~16x | ~108x |
+| `hash_i64_mix` 512 элементов | 0.014s | 0.001s | 0.187s | 0.684s | 0.032s | 0.918s | ~14x | ~127x |
+| `hash_i64_div` 512 элементов | 0.013s | 0.002s | 0.189s | 0.724s | 0.031s | 0.902s | ~14x | ~109x |
+| `tinyexpr_hash` 256 выражений | 0.019s | 0.003s | 0.254s | 0.724s | 0.034s | 0.896s | ~13x | ~92x |
+| `miniz_roundtrip_hash` уровень 6 | 0.028s | 0.005s | 0.406s | 0.857s | 0.043s | 0.900s | ~15x | ~77x |
+| `miniz_full_hash` уровень 6 | 0.031s | 0.012s | 0.481s | 0.772s | 0.045s | 0.907s | ~15x | ~41x |
+| `miniz_file_hash` уровень 6 | 0.033s | 0.022s | 0.576s | 0.929s | 0.053s | 0.955s | ~17x | ~26x |
+| `lodepng_roundtrip` картинка 1 | 0.038s | 0.028s | 1.181s | 1.304s | 0.080s | 1.054s | ~31x | ~42x |
+| `chipmunk_hash_scene` 600 шагов | 0.029s | 0.072s | 3.641s | 2.899s | 0.208s | 1.408s | ~126x | ~51x |
+| `secret_expected_crc32` | 0.028s | 0.003s | 0.202s | 0.895s | 0.033s | 1.095s | ~7.1x | ~66x |
+| `profile_memory_walk` 400 итераций | 0.029s | 0.008s | 0.683s | 1.247s | 0.063s | 1.199s | ~23x | ~81x |
+| `profile_math_shim` 400 итераций | 0.029s | 0.006s | 0.263s | 1.068s | 0.039s | 1.022s | ~9.1x | ~45x |
+| `profile_branch_state` 400 итераций | 0.028s | 0.006s | 0.270s | 1.057s | 0.037s | 1.128s | ~9.7x | ~45x |
+| `profile_space_freefall` 120 шагов | 0.028s | 0.007s | 0.361s | 1.164s | 0.046s | 1.022s | ~13x | ~51x |
+| `profile_space_collision` 120 шагов | 0.026s | 0.017s | 0.961s | 1.277s | 0.071s | 1.083s | ~37x | ~57x |
+| `profile_space_full` 120 шагов | 0.027s | 0.017s | 0.916s | 1.274s | 0.077s | 1.113s | ~34x | ~54x |
+| `h264mp4_decode_hash` 8 кадров | 0.051s | 0.044s | 0.991s | 1.350s | 0.084s | 1.124s | ~19x | ~23x |
+| `plmpeg_decode_hash` 8 кадров | 0.034s | 0.068s | 1.486s | 1.719s | 0.099s | 1.200s | ~44x | ~22x |
+| `plmpeg_stream_decode_hash` 8 кадров | 0.023s | 0.071s | 1.453s | 1.639s | 0.105s | 1.187s | ~64x | ~20x |
+| `libjpeg_decode_hash` | 0.063s | 0.035s | 0.798s | 0.997s | 0.065s | 0.969s | ~13x | ~23x |
+| `mjpeg_decode_hash` 12 кадров | 0.065s | 0.051s | 1.624s | 1.556s | 0.107s | 1.093s | ~25x | ~32x |
+| `binjgb_decode_hash` 16 кадров | 0.053s | 0.203s | 11.645s | 8.158s | 0.587s | 2.520s | ~219x | ~57x |
+| `builder_c0_run_hash` вариант 0 | 0.048s | 0.007s | 0.273s | 0.653s | 0.041s | 0.869s | ~5.7x | ~40x |
+
+| runtime | суммарное время (основные) | × к wasm3 C | без старта (оценка) | × к wasm3 C без старта |
+| --- | ---: | ---: | ---: | ---: |
+| wasmtime | 0.790s | ~1.1x | 0.481s | ~0.7x |
+| wasm3 C | 0.698s | ~1.0x | 0.663s | ~1.0x |
+| wasm3das(inter) | 29.880s | ~43x | 25.198s | ~38x |
+| wasm3das(aot) | 35.769s | ~51x | 18.768s | ~28x |
+| wasm3das(aot_ctx) | 2.115s | ~3.0x | 1.351s | ~2.0x |
+| wasm3das(jit) | 28.097s | ~40x | 5.627s | ~8.5x |
+
+## Вариации аргументов и остальные экспорты
+
+Справочные строки: остальные экспорты модулей, отладочные пробы и остальные конфигурации аргументов. Методика и колонки те же.
+
+| Тест | wasmtime | wasm3 C | wasm3das(inter) | wasm3das(aot) | wasm3das(aot_ctx) | wasm3das(jit) | × к wasmtime | × к wasm3 C |
+| --- | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: |
+| `hash_loop` seed 1, 65536 итераций | 0.012s | 0.002s | 0.272s | 0.779s | 0.035s | 0.909s | ~24x | ~116x |
+| `probe_div_s64` | 0.014s | 0.002s | 0.184s | 0.753s | 0.031s | 0.933s | ~13x | ~121x |
+| `probe_rem_s64` | 0.014s | 0.002s | 0.191s | 0.722s | 0.031s | 0.920s | ~14x | ~121x |
+| `probe_div_u64` | 0.013s | 0.001s | 0.185s | 0.737s | 0.030s | 0.881s | ~14x | ~141x |
+| `probe_rem_u64` | 0.013s | 0.002s | 0.181s | 0.677s | 0.030s | 0.874s | ~13x | ~108x |
+| `tinyexpr_error_code` | 0.017s | 0.002s | 0.192s | 0.697s | 0.031s | 0.911s | ~11x | ~117x |
+| `miniz_probe_compressed_size` уровень 6 | 0.027s | 0.005s | 0.341s | 0.772s | 0.040s | 0.914s | ~13x | ~70x |
+| `miniz_probe_crc32` | 0.027s | 0.003s | 0.206s | 0.675s | 0.032s | 0.888s | ~7.8x | ~81x |
+| `miniz_probe_adler32` | 0.027s | 0.002s | 0.205s | 0.665s | 0.032s | 0.880s | ~7.5x | ~83x |
+| `miniz_probe_fold_hash` | 0.026s | 0.002s | 0.201s | 0.683s | 0.033s | 0.885s | ~7.7x | ~85x |
+| `miniz_full_num_files` уровень 6 | 0.031s | 0.011s | 0.474s | 0.826s | 0.046s | 0.920s | ~15x | ~42x |
+| `miniz_full_archive_size` уровень 6 | 0.031s | 0.011s | 0.489s | 0.886s | 0.046s | 0.928s | ~16x | ~43x |
+| `miniz_full_locate_mix` уровень 6 | 0.032s | 0.012s | 0.502s | 1.034s | 0.049s | 0.980s | ~16x | ~43x |
+| `miniz_full_extract_hash` уровень 6 | 0.035s | 0.012s | 0.506s | 0.900s | 0.048s | 0.974s | ~15x | ~43x |
+| `miniz_full_validate` уровень 6 | 0.034s | 0.012s | 0.502s | 0.900s | 0.047s | 0.952s | ~15x | ~41x |
+| `miniz_file_num_files` уровень 6 | 0.034s | 0.021s | 0.574s | 0.867s | 0.053s | 0.936s | ~17x | ~27x |
+| `miniz_file_archive_size` уровень 6 | 0.032s | 0.022s | 0.572s | 0.900s | 0.053s | 0.940s | ~18x | ~26x |
+| `miniz_file_extract_hash` уровень 6 | 0.034s | 0.022s | 0.570s | 0.863s | 0.052s | 0.947s | ~17x | ~26x |
+| `miniz_file_in_place` уровень 6 | 0.033s | 0.021s | 0.568s | 0.901s | 0.054s | 0.946s | ~17x | ~27x |
+| `lodepng_roundtrip` картинка 0 | 0.037s | 0.023s | 0.836s | 1.054s | 0.066s | 0.970s | ~23x | ~37x |
+| `lodepng_encoded_size` картинка 0 | 0.036s | 0.021s | 0.742s | 1.002s | 0.061s | 0.966s | ~21x | ~35x |
+| `lodepng_decode_hash` картинка 0 | 0.037s | 0.023s | 0.847s | 1.109s | 0.065s | 0.975s | ~23x | ~38x |
+| `lodepng_input_hash` картинка 0 | 0.034s | 0.013s | 0.194s | 0.753s | 0.032s | 0.885s | ~5.7x | ~15x |
+| `lodepng_png_hash` картинка 0 | 0.035s | 0.021s | 0.742s | 1.017s | 0.061s | 1.013s | ~21x | ~35x |
+| `lodepng_encoded_size` картинка 1 | 0.037s | 0.026s | 1.023s | 1.741s | 0.076s | 1.092s | ~28x | ~40x |
+| `lodepng_decode_hash` картинка 1 | 0.041s | 0.030s | 1.217s | 1.316s | 0.079s | 1.017s | ~30x | ~40x |
+| `lodepng_input_hash` картинка 1 | 0.036s | 0.013s | 0.199s | 0.696s | 0.034s | 0.923s | ~5.5x | ~15x |
+| `lodepng_png_hash` картинка 1 | 0.037s | 0.024s | 1.033s | 1.367s | 0.072s | 1.032s | ~28x | ~43x |
+| `chipmunk_hash_scene` 60 шагов | 0.025s | 0.011s | 0.557s | 1.000s | 0.052s | 0.962s | ~22x | ~52x |
+| `chipmunk_variant` 600 шагов | 0.029s | 0.089s | 4.582s | 3.619s | 0.266s | 1.587s | ~159x | ~51x |
+| `chipmunk_probe_x` тело 0, 600 шагов | 0.027s | 0.070s | 3.602s | 2.951s | 0.209s | 1.394s | ~133x | ~51x |
+| `chipmunk_probe_y` тело 1, 600 шагов | 0.027s | 0.070s | 3.604s | 2.905s | 0.211s | 1.409s | ~132x | ~52x |
+| `chipmunk_probe_angle` тело 2, 600 шагов | 0.027s | 0.071s | 3.696s | 3.020s | 0.217s | 1.501s | ~135x | ~52x |
+| `secret_expected_length` | 0.029s | 0.003s | 0.193s | 0.882s | 0.033s | 1.014s | ~6.7x | ~69x |
+| `h264mp4_width` | 0.048s | 0.031s | 0.444s | 0.930s | 0.052s | 0.986s | ~9.2x | ~14x |
+| `h264mp4_height` | 0.048s | 0.030s | 0.438s | 0.938s | 0.051s | 0.993s | ~9.2x | ~14x |
+| `h264mp4_frame_count` 8 кадров | 0.050s | 0.042s | 0.967s | 1.396s | 0.087s | 1.204s | ~20x | ~23x |
+| `h264mp4_first_frame` | 0.050s | 0.031s | 0.448s | 0.959s | 0.052s | 1.015s | ~9.0x | ~14x |
+| `h264mp4_last_frame` 8 кадров | 0.051s | 0.043s | 0.997s | 1.273s | 0.082s | 1.066s | ~20x | ~23x |
+| `plmpeg_width` | 0.031s | 0.053s | 0.415s | 1.029s | 0.058s | 1.013s | ~13x | ~7.9x |
+| `plmpeg_height` | 0.032s | 0.053s | 0.418s | 1.008s | 0.051s | 0.973s | ~13x | ~7.9x |
+| `plmpeg_frame_count` 8 кадров | 0.033s | 0.068s | 1.433s | 1.727s | 0.117s | 1.176s | ~44x | ~21x |
+| `plmpeg_first_frame` | 0.033s | 0.051s | 0.407s | 1.007s | 0.059s | 1.004s | ~12x | ~7.9x |
+| `plmpeg_last_frame` 8 кадров | 0.033s | 0.069s | 1.416s | 1.657s | 0.100s | 1.148s | ~43x | ~20x |
+| `plmpeg_stream_width` | 0.023s | 0.053s | 0.422s | 1.040s | 0.053s | 1.035s | ~19x | ~7.9x |
+| `plmpeg_stream_height` | 0.023s | 0.053s | 0.422s | 0.971s | 0.049s | 0.966s | ~19x | ~8.0x |
+| `plmpeg_stream_frame_count` 8 кадров | 0.024s | 0.068s | 1.409s | 1.599s | 0.100s | 1.163s | ~60x | ~21x |
+| `plmpeg_stream_first_frame` | 0.023s | 0.053s | 0.416s | 0.974s | 0.052s | 1.003s | ~18x | ~7.9x |
+| `plmpeg_stream_last_frame` 8 кадров | 0.024s | 0.069s | 1.378s | 1.499s | 0.093s | 1.049s | ~58x | ~20x |
+| `libjpeg_width` | 0.060s | 0.035s | 0.699s | 0.986s | 0.060s | 0.956s | ~12x | ~20x |
+| `libjpeg_height` | 0.059s | 0.034s | 0.683s | 0.969s | 0.061s | 0.946s | ~12x | ~20x |
+| `libjpeg_components` | 0.061s | 0.034s | 0.691s | 0.986s | 0.061s | 0.941s | ~11x | ~20x |
+| `libjpeg_input_hash` | 0.060s | 0.026s | 0.192s | 0.673s | 0.035s | 0.879s | ~3.2x | ~7.5x |
+| `libjpeg_rgb_size` | 0.062s | 0.034s | 0.693s | 0.955s | 0.060s | 0.971s | ~11x | ~20x |
+| `mjpeg_width` | 0.061s | 0.028s | 0.355s | 0.748s | 0.046s | 0.909s | ~5.9x | ~13x |
+| `mjpeg_height` | 0.061s | 0.028s | 0.353s | 0.750s | 0.045s | 0.906s | ~5.8x | ~13x |
+| `mjpeg_components` | 0.062s | 0.028s | 0.353s | 0.776s | 0.047s | 0.912s | ~5.7x | ~13x |
+| `mjpeg_frame_count` 12 кадров | 0.061s | 0.049s | 1.572s | 1.535s | 0.103s | 1.074s | ~26x | ~32x |
+| `mjpeg_first_frame` | 0.059s | 0.028s | 0.346s | 0.731s | 0.044s | 0.892s | ~5.9x | ~12x |
+| `mjpeg_last_frame` 12 кадров | 0.060s | 0.049s | 1.602s | 1.552s | 0.101s | 1.074s | ~27x | ~33x |
+| `mjpeg_input_hash` | 0.059s | 0.025s | 0.204s | 0.679s | 0.037s | 0.870s | ~3.5x | ~8.1x |
+| `binjgb_width` | 0.044s | 0.047s | 0.188s | 0.662s | 0.038s | 0.868s | ~4.3x | ~4.0x |
+| `binjgb_height` | 0.041s | 0.047s | 0.196s | 0.650s | 0.039s | 0.866s | ~4.7x | ~4.2x |
+| `binjgb_frame_count` 16 кадров | 0.052s | 0.203s | 11.724s | 7.992s | 0.555s | 2.503s | ~224x | ~58x |
+| `binjgb_first_frame` | 0.044s | 0.057s | 0.950s | 1.124s | 0.075s | 0.966s | ~22x | ~17x |
+| `binjgb_last_frame` 16 кадров | 0.053s | 0.202s | 11.983s | 8.158s | 0.554s | 2.454s | ~227x | ~59x |
+| `builder_case_count` | 0.048s | 0.005s | 0.182s | 0.667s | 0.032s | 0.867s | ~3.8x | ~36x |
+| `builder_c0_code_hash` вариант 0 | 0.048s | 0.007s | 0.274s | 0.648s | 0.040s | 0.872s | ~5.8x | ~42x |
+| `builder_c1_code_hash` вариант 1 | 0.047s | 0.007s | 0.282s | 0.623s | 0.042s | 0.872s | ~6.0x | ~41x |
+| `builder_c1_run_hash` вариант 1 | 0.050s | 0.007s | 0.288s | 0.668s | 0.042s | 0.870s | ~5.8x | ~42x |
+| `builder_c2_code_hash` вариант 2 | 0.048s | 0.007s | 0.290s | 0.631s | 0.043s | 0.898s | ~6.0x | ~40x |
+| `builder_c2_run_hash` вариант 2 | 0.049s | 0.007s | 0.304s | 0.682s | 0.045s | 0.899s | ~6.2x | ~42x |
+
+Все результаты совпали с baseline (wasmtime 86/86, wasm3 C 86/86, wasm3das(inter) 86/86, wasm3das(aot) 86/86, wasm3das(aot_ctx) 86/86, wasm3das(jit) 86/86)
 
 Ещё 12 строк(и) без документированного baseline остаются в таблице, их результат не проверяется.
 
-## Итого
+## Итого (весь набор: основные + вариации)
 
 | runtime | суммарное время | × к wasm3 C | старт (`fixtures/add`) | без старта (оценка) | × к wasm3 C без старта |
 | --- | ---: | ---: | ---: | ---: | ---: |
-| wasmtime | 8.602s | ~4.3x | 0.013s | 7.285s | ~3.9x |
-| wasm3 C | 2.013s | ~1.0x | 0.002s | 1.849s | ~1.0x |
-| wasm3das | 4m34.8s | ~136x | 1.527s | 2m05.1s | ~68x |
+| wasmtime | 3.543s | ~1.1x | 0.012s | 2.378s | ~0.8x |
+| wasm3 C | 3.136s | ~1.0x | 0.001s | 3.002s | ~1.0x |
+| wasm3das(inter) | 1m45.7s | ~34x | 0.180s | 1m28.0s | ~29x |
+| wasm3das(aot) | 2m07.3s | ~41x | 0.654s | 1m03.2s | ~21x |
+| wasm3das(aot_ctx) | 7.683s | ~2.5x | 0.029s | 4.804s | ~1.6x |
+| wasm3das(jit) | 1m42.4s | ~33x | 0.864s | 17.718s | ~5.9x |
 
-Старт это полное время строки `fixtures/add` (исполнения там нет), «без старта» это сумма минус старт на каждую засчитанную строку: оценка рядом с честным полным временем, не вместо него.
+Старт это минимальное полное время среди строк без исполнения (`add`, `hash_f32`, `hash_f64`), «без старта» это сумма минус старт на каждую засчитанную строку: оценка рядом с честным полным временем, не вместо него.
 
 ## Прогон
 
-- Date (UTC): 2026-09-09T00:09:32Z
-- Machine: Intel(R) Core(TM) i5-6200U CPU @ 2.30GHz (4 logical CPUs)
-- Platform: Linux-6.12.107+deb13-amd64-x86_64-with-glibc2.41
-- Checks: 98 x 3 runtimes
-- Invocation: `tests/manual/run_fixtures.py --runtimes wasmtime,wasm3,das`
+- Date (UTC): 2026-09-10T09:03:26Z
+- Machine: AMD Ryzen 7 7435HS (16 logical CPUs)
+- Platform: Linux-6.6.87.2-microsoft-standard-WSL2-x86_64-with-glibc2.35
+- Checks: 98 x 6 runtimes
+- Invocation: `tests/manual/run_fixtures.py --runtimes wasmtime,wasm3,das,native,aot_ctx,jit`
 
 Runtimes:
 
-- wasmtime: `/home/andry/wasm3das/tools/bin/wasmtime` — wasmtime 48.0.1 (7bac2c277 2026-08-24)
-- wasm3 C: `/home/andry/wasm3das/tools/bin/wasm3` — Wasm3 v0.5.2 on x86_64 / Build: Sep  6 2026 21:52:29, GCC 14.2.0
-- wasm3das: `/home/andry/wasm3das/scripts/wasm3` — Wasm3 v0.5.2 on x86_64 / Build: Daslang port, Daslang 0.6.4
+- wasmtime: `/root/wasm3das/tools/bin/wasmtime` — wasmtime 48.0.1 (7bac2c277 2026-08-24)
+- wasm3 C: `/root/wasm3das/tools/bin/wasm3` — Wasm3 v0.5.2 on x86_64 / Build: Sep  9 2026 18:03:13, GCC 11.4.0
+- wasm3das(inter): `/root/wasm3das/scripts/wasm3` — Wasm3 v0.5.2 on x86_64 / Build: Daslang port, Daslang 0.6.4
+- wasm3das(aot): `/root/wasm3das/tmp/native/bin/wasm3das` — Wasm3 v0.5.2 on x86_64 / Build: Daslang port, Daslang 0.6.4
+- wasm3das(aot_ctx): `/root/wasm3das/tmp/native-ctx/bin/wasm3das` — Wasm3 v0.5.2 on x86_64 / Build: Daslang port, Daslang 0.6.4
+- wasm3das(jit): `DASLANG=/root/daScript/bin/daslang WASM3DAS_JIT=1 WASM3DAS_JIT_OPTS=--jit-opt-level=0 /root/wasm3das/scripts/wasm3` — Wasm3 v0.5.2 on x86_64 / Build: Daslang port, Daslang 0.6.4
 
 ## Skipped entries
 

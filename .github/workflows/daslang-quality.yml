@@ -19,11 +19,11 @@ jobs:
     timeout-minutes: 30
 
     env:
-      # The compiler is the daslang release bundle pinned in
-      # scripts/daslang_release.env, installed by scripts/install_daslang.sh
-      # into tmp/daslang, exactly as on a developer machine.
-      DASLANG_ROOT: ${{ github.workspace }}/tmp/daslang
-      DASLANG: ${{ github.workspace }}/tmp/daslang/bin/daslang
+      # The compiler is the daslang source pinned in scripts/daslang_pin,
+      # checked out from upstream and built in place, exactly as a developer
+      # machine would (see scripts/verify_daslang.sh and README, Install and run).
+      DASLANG_ROOT: ${{ github.workspace }}/daslang-src
+      DASLANG: ${{ github.workspace }}/daslang-src/bin/daslang
       DAS_LINT_CONFIG_PATH: ${{ github.workspace }}/.lint_config
 
     steps:
@@ -60,33 +60,43 @@ jobs:
             echo "run_gate=false" >> "$GITHUB_OUTPUT"
           fi
 
-      - name: Read the pinned daslang release
+      - name: Read the pinned daslang commit
         if: steps.changes.outputs.run_gate == 'true'
         id: pin
         shell: bash
         run: |
           set -euo pipefail
-          source scripts/daslang_release.env
-          echo "release=$DASLANG_RELEASE" >> "$GITHUB_OUTPUT"
-          echo "sha256=$DASLANG_SHA256_linux_x86_64" >> "$GITHUB_OUTPUT"
+          pin="$(sed -n 's/^\([0-9a-f]\{40\}\)$/\1/p' scripts/daslang_pin | head -n 1)"
+          if [[ -z "$pin" ]]; then
+            echo "scripts/daslang_pin carries no 40-hex commit" >&2
+            exit 1
+          fi
+          echo "commit=$pin" >> "$GITHUB_OUTPUT"
 
-      - name: Cache the daslang release bundle
+      - name: Cache the built daslang checkout
         if: steps.changes.outputs.run_gate == 'true'
         id: cache-daslang
         uses: actions/cache@v4
         with:
-          path: tmp/daslang
-          key: daslang-release-linux-x86_64-${{ steps.pin.outputs.release }}-${{ steps.pin.outputs.sha256 }}
+          path: daslang-src
+          # The script's flag set is part of the key: a cached tree built with
+          # an older set (no dasHV, no install) must not satisfy a newer one.
+          key: daslang-master-${{ steps.pin.outputs.commit }}-${{ hashFiles('scripts/build-daslang.sh') }}-${{ runner.os }}-${{ runner.arch }}-gcc
 
-      - name: Install the pinned daslang release
+      # One definition of the build: scripts/build-daslang.sh, the script a
+      # developer machine runs (README, Install and run). The flag set and the
+      # target list live there only; CI never spells them out again.
+      - name: Build the pinned daslang from upstream source
         if: steps.changes.outputs.run_gate == 'true' && steps.cache-daslang.outputs.cache-hit != 'true'
-        run: scripts/install_daslang.sh linux-x86_64
+        run: |
+          set -euo pipefail
+          git clone https://github.com/GaijinEntertainment/daScript.git daslang-src
+          git -C daslang-src checkout "${{ steps.pin.outputs.commit }}"
+          JOBS=8 scripts/build-daslang.sh daslang-src
 
       - name: Verify pinned compiler
         if: steps.changes.outputs.run_gate == 'true'
-        run: |
-          cat "$DASLANG_ROOT/.wasm3das-release"
-          "$DASLANG" --version
+        run: scripts/verify_daslang.sh
 
       # The gate itself is defined once in scripts/gate.sh and shared with the
       # pre-push hook; the steps below only split it for readable CI output.

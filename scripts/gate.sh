@@ -4,11 +4,12 @@
 # (.githooks/pre-push) both call this script, so the two can not drift.
 #
 # Environment:
-#   DASLANG_ROOT   the installed daslang release bundle (default: tmp/daslang,
-#                  installed by scripts/install_daslang.sh)
+#   DASLANG_ROOT   required: the git checkout of GaijinEntertainment/daScript
+#                  at the commit pinned in scripts/daslang_pin, built in place
+#                  (verify: scripts/verify_daslang.sh)
 #   DASLANG        compiler binary (default: $DASLANG_ROOT/bin/daslang)
-#   DASLANG_ALLOW_UNPINNED=1  skip the release-stamp check (local experiments
-#                  only; CI and the hook never set it)
+#   DASLANG_ALLOW_UNPINNED=1  run against a different checkout (local
+#                  experiments only; CI and the hook never set it)
 #
 # Usage: scripts/gate.sh [stage ...]
 #   stages: compile lint-paranoid lint-perf lint-style test invariants
@@ -18,28 +19,16 @@ set -euo pipefail
 repo_root="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")/.." && pwd)"
 cd "$repo_root"
 
-# shellcheck source=daslang_release.env
-source "$repo_root/scripts/daslang_release.env"
-DASLANG_ROOT="${DASLANG_ROOT:-$repo_root/tmp/daslang}"
-DASLANG="${DASLANG:-$DASLANG_ROOT/bin/daslang}"
+DASLANG_ROOT="${DASLANG_ROOT:-}"
+DASLANG="${DASLANG:-${DASLANG_ROOT:+$DASLANG_ROOT/bin/daslang}}"
 export DAS_LINT_CONFIG_PATH="${DAS_LINT_CONFIG_PATH:-$repo_root/.lint_config}"
 
-if [[ ! -x "$DASLANG" ]]; then
-    echo "gate: missing daslang at $DASLANG (run scripts/install_daslang.sh)" >&2
-    exit 1
-fi
-
-# The gate is defined for exactly one compiler: the release bundle pinned in
-# scripts/daslang_release.env. The install stamp is the proof it is that one.
-if [[ "${DASLANG_ALLOW_UNPINNED:-}" != "1" ]]; then
-    stamp="$DASLANG_ROOT/.wasm3das-release"
-    if [[ ! -f "$stamp" ]] || [[ "$(cut -d' ' -f1 "$stamp")" != "$DASLANG_RELEASE" ]]; then
-        echo "gate: $DASLANG_ROOT is not the pinned daslang release $DASLANG_RELEASE" >&2
-        echo "gate: run scripts/install_daslang.sh (or DASLANG_ALLOW_UNPINNED=1 for a local experiment)" >&2
-        exit 1
-    fi
-    echo "gate: daslang $DASLANG_RELEASE ($(cat "$stamp" | cut -d' ' -f2)), version $("$DASLANG" --version)"
-fi
+# The gate is defined for exactly one compiler: the daslang source pinned in
+# scripts/daslang_pin, built in the checkout the user verifies and points at.
+# The checkout HEAD matching the pin is the proof it is that one.
+"$repo_root/scripts/verify_daslang.sh"
+DASLANG="${DASLANG:-$DASLANG_ROOT/bin/daslang}"
+echo "gate: daslang $("$DASLANG" --version)"
 
 stage_compile() {
     echo "gate: compiler diagnostics"

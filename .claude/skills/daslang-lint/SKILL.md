@@ -7,10 +7,10 @@ description: Meaning and fixes for daslang lint findings (LINT*, PERF*, STYLE* r
 
 Read the rule references in full before acting on a finding:
 
-- `tmp/daslang/skills/perf_lint.md` (PERF rules)
-- `tmp/daslang/skills/style_lint.md` (STYLE rules)
+- `$DASLANG_ROOT/skills/perf_lint.md` (PERF rules)
+- `$DASLANG_ROOT/skills/style_lint.md` (STYLE rules)
 - LINT (paranoid) rules are documented inline next to their checks in
-  `tmp/daslang/daslib/lint.das` (search for the rule id, e.g. `LINT003`).
+  `$DASLANG_ROOT/daslib/lint.das` (search for the rule id, e.g. `LINT003`).
 
 wasm3das gate: all three profiles must report zero findings on `source`,
 `tests/integration`, `app` and `tests/host_test` (`tests/manual` holds fixtures only
@@ -19,7 +19,7 @@ and is never linted):
 ```sh
 export DAS_LINT_CONFIG_PATH="$PWD/.lint_config"
 for p in paranoid-only perf-only style-only; do
-  tmp/daslang/bin/daslang tmp/daslang/utils/lint/main.das -- --$p source tests/integration app tests/host_test
+  $DASLANG_ROOT/bin/daslang $DASLANG_ROOT/utils/lint/main.das -- --$p source tests/integration app tests/host_test
 done
 ```
 

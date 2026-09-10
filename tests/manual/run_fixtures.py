@@ -1,18 +1,30 @@
 #!/usr/bin/env python3
 """Spider manual-fixture parity + timing harness.
 
-Runs every scalar (non host-adapter) fixture export through four runtimes:
+Runs every scalar (non host-adapter) fixture export through these runtimes:
   wasmtime   (Windows default: D:/Backups/wasmtime/wasmtime-v24.0.1/wasmtime.exe;
               elsewhere: <repo>/tools/bin/wasmtime)
   wasm3      (original C; Windows: wasm3-original-win-x64.exe in the bundle;
               elsewhere: <repo>/tools/bin/wasm3 built from wasm3c/)
-  das        (wasm3das, interpreted: wasm3.cmd in the bundle, or
+  das       (wasm3das, interpreted: wasm3.cmd in the bundle, or
               <repo>/scripts/wasm3)
-  jit        (wasm3das, LLVM JIT: the very same front end run with
-              WASM3DAS_JIT=1; the daslang release bundle ships the JIT, so by
-              default this is the same <repo>/tmp/daslang/bin/daslang.  The
+  native    (wasm3das, native AOT: <repo>/scripts/wasm3-native, the binary
+              scripts/build_port.sh aot produces at <repo>/tmp/native; absent
+              on the release bundles, so this runtime is optional and must
+              be requested explicitly)
+  aot_ctx   (wasm3das, standalone context: <repo>/scripts/wasm3-ctx, the
+              binary scripts/build_port.sh ctx embeds the compiled program
+              into; no daslang front end at startup at all. Also absent from
+              the release bundles and must be requested explicitly.)
+  jit       (wasm3das, LLVM JIT: the very same front end run with
+              WASM3DAS_JIT=1; daslang ships the JIT when your DASLANG_ROOT
+              checkout is built without -DDAS_LLVM_DISABLED. The
               JIT compiles the port on first use into ./.jitted_scripts, so
-              the first ever run is much slower than the cached ones.)
+              the first ever run is much slower than the cached ones.
+              The JIT's own options go through WASM3DAS_JIT_OPTS, default
+              --jit-opt-level=0: at the pinned daslang that is the only
+              opt level at which the port runs correctly under the JIT,
+              and the value used is printed in the report header.)
 
 Each command is timed with the full wall clock from process spawn to
 complete output (subprocess.run + perf_counter, stdout+stderr captured).
@@ -32,10 +44,12 @@ saved report is Markdown.
 
 Usage, from the repository root:
   python3 tests/manual/run_fixtures.py [--filter substr]
-                                       [--runtimes wasmtime,wasm3,das,jit]
+                                       [--runtimes wasmtime,wasm3,das,native,aot_ctx,jit]
                                        [--slow]
 
-Paths can be overridden via env: WASMTIME, WASM3C, WASM3DAS, DASLANG_JIT.
+Paths can be overridden via env: WASMTIME, WASM3C, WASM3DAS, WASM3DAS_NATIVE,
+WASM3DAS_CTX, DASLANG_JIT, and the JIT options via WASM3DAS_JIT_OPTS;
+DASLANG_ROOT is required.
 """
 import argparse
 import datetime
@@ -64,11 +78,33 @@ else:
     WASM3C = os.environ.get("WASM3C", os.path.join(REPO_ROOT, "tools", "bin", "wasm3"))
     WASM3DAS = os.environ.get("WASM3DAS", os.path.join(REPO_ROOT, "scripts", "wasm3"))
 
-# The JIT runtime drives the same scripts/wasm3 front end with -jit; the
-# release bundle's daslang ships the LLVM JIT, so it is the same binary the
-# interpreter column uses (scripts/install_daslang.sh installs it).
+# The daslang *checkout* the port runs under, at the commit pinned in
+# scripts/daslang_pin, built in place by whoever cloned this repository
+# (README "Install and run"); DASLANG_ROOT is required.
+DASLANG_ROOT = os.environ.get("DASLANG_ROOT", "")
+
+# The native AOT runtime drives scripts/wasm3-native, the drop-in counterpart
+# of scripts/wasm3; the binary it executes is what scripts/build_port.sh aot
+# produced at tmp/native/bin/wasm3das (not shipped in the release bundles).
+WASM3DAS_NATIVE = os.environ.get(
+    "WASM3DAS_NATIVE",
+    os.path.join(REPO_ROOT, "tmp", "native", "bin", "wasm3das.exe" if os.name == "nt" else "wasm3das"))
+# The standalone-context runtime is the same front end over the -ctx binary
+# (scripts/build_port.sh ctx, tmp/native-ctx/bin/wasm3das): the compiled
+# program is embedded there, so it runs with no daslang front end at start.
+WASM3DAS_CTX = os.environ.get(
+    "WASM3DAS_CTX",
+    os.path.join(REPO_ROOT, "tmp", "native-ctx", "bin", "wasm3das.exe" if os.name == "nt" else "wasm3das"))
+# The JIT runtime drives the same scripts/wasm3 front end with -jit; daslang
+# ships the LLVM JIT when the checkout is built without -DDAS_LLVM_DISABLED,
+# so by default this is the binary of $DASLANG_ROOT.
 DASLANG_JIT = os.environ.get(
-    "DASLANG_JIT", os.path.join(REPO_ROOT, "tmp", "daslang", "bin", "daslang"))
+    "DASLANG_JIT", os.path.join(DASLANG_ROOT or "SET-DASLANG-ROOT", "bin", "daslang"))
+# The JIT's command-line options (scripts/wasm3 places them after the `--`).
+# Opt level 0 is the default because at the pinned daslang the default O3
+# miscompiles the port (six spec assertions, most of these fixtures); the
+# value goes into the report header so a column is reproducible.
+WASM3DAS_JIT_OPTS = os.environ.get("WASM3DAS_JIT_OPTS", "--jit-opt-level=0")
 
 
 def gen(fixture: str) -> str:
@@ -198,6 +234,44 @@ SKIPPED = [
     ("real-world-smollm2", "no wasm module built (upstream blocker on tensor callbacks)"),
 ]
 
+# The rows of the report's main ("основные") table: one entry per fixture
+# module, the heaviest production-representative export of that module at its
+# production configuration.  Everything else in T — the other exports, the
+# debug probes and the argument variations — lands in the reference table
+# below it ("вариации").  Picked by hand, one line of reasoning each:
+# the micro-benches take their longest run; the codecs take the full decode;
+# lodepng takes picture 1 (the larger of the two built-ins: encoded 6518
+# bytes against 3870); chipmunk takes the 600-step simulation; miniz takes
+# the roundtrip/full/file work export at level 6; the builder takes case 0.
+BASE_NAMES = frozenset({
+    "fixtures/add",
+    "hash_loop 123456789 200000",
+    "hash_f32 2048",
+    "hash_f64 2048",
+    "hash_i64_mix 512",
+    "hash_i64_div 512",
+    "tinyexpr_hash 256",
+    "miniz_roundtrip_hash 6",
+    "miniz_full_hash 6",
+    "miniz_file_hash 6",
+    "lodepng_roundtrip 1",
+    "chipmunk_hash_scene 600",
+    "secret_expected_crc32",
+    "profile_memory_walk 400",
+    "profile_math_shim 400",
+    "profile_branch_state 400",
+    "profile_space_freefall 120",
+    "profile_space_collision 120",
+    "profile_space_full 120",
+    "h264mp4_decode_hash 8",
+    "plmpeg_decode_hash 8",
+    "plmpeg_stream_decode_hash 8",
+    "libjpeg_decode_hash",
+    "mjpeg_decode_hash 12",
+    "binjgb_decode_hash 16",
+    "builder_c0_run_hash",
+})
+
 
 # How the arguments of an export read in the report's first column, keyed by
 # the exported function name.  `{0}`, `{1}` … are the raw arguments in order.
@@ -326,10 +400,24 @@ def cmd_das(wasm, func, args):
     return [WASM3DAS, wasm, "--func", func] + args
 
 
+def cmd_native(wasm, func, args):
+    # scripts/wasm3-native forwards its arguments unchanged to the native
+    # binary, which takes the same CLI as the interpreted front end.
+    return [WASM3DAS_NATIVE, wasm, "--func", func] + args
+
+
+def cmd_ctx(wasm, func, args):
+    # scripts/wasm3-ctx forwards its arguments unchanged the same way; the
+    # standalone binary accepts the CLI the app itself parses.
+    return [WASM3DAS_CTX, wasm, "--func", func] + args
+
+
 RUNTIMES = {
     "wasmtime": ("wasmtime", cmd_wasmtime, 300),
     "wasm3": ("wasm3 (original C)", cmd_wasm3c, 600),
     "das": ("wasm3das", cmd_das, 2400),
+    "native": ("wasm3das (native AOT)", cmd_native, 2400),
+    "aot_ctx": ("wasm3das (ctx)", cmd_ctx, 2400),
     "jit": ("wasm3das (JIT)", cmd_das, 2400),
 }
 
@@ -337,7 +425,9 @@ RUNTIMES = {
 RUNTIME_SHORT = {
     "wasmtime": "wasmtime",
     "wasm3": "wasm3 C",
-    "das": "wasm3das",
+    "das": "wasm3das(inter)",
+    "native": "wasm3das(aot)",
+    "aot_ctx": "wasm3das(aot_ctx)",
     "jit": "wasm3das(jit)",
 }
 
@@ -345,7 +435,8 @@ RUNTIME_SHORT = {
 # The JIT runtime is scripts/wasm3 with the LLVM path switched on and the
 # JIT-enabled compiler selected; everything else inherits the environment.
 RUNTIME_ENV = {
-    "jit": {"WASM3DAS_JIT": "1", "DASLANG": DASLANG_JIT},
+    "jit": {"WASM3DAS_JIT": "1", "DASLANG": DASLANG_JIT,
+            "WASM3DAS_JIT_OPTS": WASM3DAS_JIT_OPTS},
 }
 
 # Upper bound on a single run, capping the per-test timeout of T.  The JIT
@@ -357,7 +448,7 @@ RUNTIME_CAP = {"jit": 180}
 # Executable behind each runtime; used only to print the paths and to ask
 # each engine for its version in the report header.
 RUNTIME_BIN = {"wasmtime": WASMTIME, "wasm3": WASM3C, "das": WASM3DAS,
-               "jit": WASM3DAS}
+               "native": WASM3DAS_NATIVE, "aot_ctx": WASM3DAS_CTX, "jit": WASM3DAS}
 VERSION_TIMEOUT = 60
 
 
@@ -444,6 +535,10 @@ def main() -> int:
     for r in wanted:
         if r not in RUNTIMES:
             sys.exit(f"unknown runtime {r!r}; known: {', '.join(RUNTIMES)}")
+    if not DASLANG_ROOT:
+        sys.exit("DASLANG_ROOT is not set: point it at your daslang checkout of the "
+                 "commit pinned in scripts/daslang_pin, built in place (README, "
+                 "Install and run)")
     tests = [t for t in T if ns.filter.lower() in t[0].lower()
              or ns.filter.lower() in (t[2] + " " + " ".join(t[3])).lower()]
     if not tests:
@@ -459,6 +554,7 @@ def main() -> int:
     out(f"  wasmtime : {WASMTIME}")
     out(f"  wasm3    : {WASM3C}")
     out(f"  wasm3das : {WASM3DAS}")
+    out(f"  native   : {WASM3DAS_NATIVE}")
     out("=" * 148)
 
     rows = []
@@ -509,8 +605,12 @@ def main() -> int:
                     base_counts[r] += 1
                 row[r] = ("TIMEOUT", float(deadline), False)
         rows.append(row)
-        print(f"  ran: {name:44s} das={fmt_time(row['das'][1]):>9s}"
-              if "das" in row else "", file=sys.stderr)
+        ran_parts = []
+        if "das" in row:
+            ran_parts.append(f"das={fmt_time(row['das'][1]):>9s}")
+        if "native" in row:
+            ran_parts.append(f"aot={fmt_time(row['native'][1]):>9s}")
+        print(f"  ran: {name:44s} {' '.join(ran_parts)}", file=sys.stderr)
 
     w = 150
     out()
@@ -531,17 +631,21 @@ def main() -> int:
             line += f" {vs[:14]:>14s} {fmt_time(dt):>9s} {ms:>5s} |"
         out(line)
     out("-" * w)
-    # Start-up estimate per runtime: the wall time of the T0 smoke row
-    # (`fixtures/add`, one add of two constants, so its execution is nothing
-    # and the whole cell is process start plus, for wasm3das, the compile of
-    # app/wasm3.das). "exec only" is the total minus that once per counted
-    # row: an estimate, printed beside the honest full wall clock, never
-    # instead of it.
+    # Start-up estimate per runtime: the wall time of a run whose execution is
+    # nothing (one add of two constants; the hash_f32/f64 micro rows hash a
+    # few thousand floats, microseconds even on the C engine), so the whole
+    # cell is process start plus, for wasm3das, the compile of app/wasm3.das.
+    # The MINIMUM over the three rows is taken: any single sample carries
+    # scheduler noise (an add run once measured 0.065s against its usual
+    # 0.012s, which alone drove the exec-only estimate to zero). "exec only"
+    # is the total minus that once per counted row: an estimate, printed
+    # beside the honest full wall clock, never instead of it.
+    STARTUP_ROWS = ("fixtures/add", "hash_f32 2048", "hash_f64 2048")
     startup = {}
     for r in wanted:
-        add_rows = [row for row in rows if row["name"] == "fixtures/add"
-                    and row[r][2] is not False and not isinstance(row[r][0], str)]
-        startup[r] = add_rows[0][r][1] if add_rows else None
+        cand = [row[r][1] for row in rows if row["name"] in STARTUP_ROWS
+                and row[r][2] is not False and not isinstance(row[r][0], str)]
+        startup[r] = min(cand) if cand else None
 
     def exec_only(r):
         if startup[r] is None:
@@ -565,10 +669,16 @@ def main() -> int:
     # One row per entry of T, in T's order: the export with a human reading
     # of its arguments, the full wall clock of every runtime, and how much
     # slower interpreted wasm3das is than wasmtime and than the C wasm3.
+    # The main table carries one production-representative row per fixture
+    # module (BASE_NAMES); every other export and argument variation of T
+    # lands in the reference table below it.
     doc = []
     now = datetime.datetime.now(datetime.timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
     doc.append("# Spider manual fixtures: parity and timing")
     doc.append("")
+
+    base_rows = [row for row in rows if row["name"] in BASE_NAMES]
+    var_rows = [row for row in rows if row["name"] not in BASE_NAMES]
 
     def ratio_cell(row, ref):
         """`× к <ref>`: the wasm3das time over the reference runtime's time."""
@@ -579,23 +689,69 @@ def main() -> int:
             return MISSING
         return fmt_ratio(mine[1] / theirs[1])
 
-    head = "| Тест |"
-    sep = "| --- |"
-    for r in wanted:
-        head += f" {md(RUNTIME_SHORT[r])} |"
-        sep += " ---: |"
-    head += " × к wasmtime | × к wasm3 C |"
-    sep += " ---: | ---: |"
-    doc.append(head)
-    doc.append(sep)
-    for row in rows:
-        line = f"| {describe(row['name'], row['func'], row['args'])} |"
+    def emit_table(rs):
+        head = "| Тест |"
+        sep = "| --- |"
         for r in wanted:
-            line += f" {md_cell(row.get(r))} |"
-        line += f" {ratio_cell(row, 'wasmtime')} | {ratio_cell(row, 'wasm3')} |"
-        doc.append(line)
+            head += f" {md(RUNTIME_SHORT[r])} |"
+            sep += " ---: |"
+        head += " × к wasmtime | × к wasm3 C |"
+        sep += " ---: | ---: |"
+        doc.append(head)
+        doc.append(sep)
+        for row in rs:
+            line = f"| {describe(row['name'], row['func'], row['args'])} |"
+            for r in wanted:
+                line += f" {md_cell(row.get(r))} |"
+            line += f" {ratio_cell(row, 'wasmtime')} | {ratio_cell(row, 'wasm3')} |"
+            doc.append(line)
+
+    doc.append("## Основные")
+    doc.append("")
+    doc.append("По одной продакшен-конфигурации на модуль: самый тяжёлый "
+               "реальный экспорт (декодер, полный цикл, длинная симуляция). "
+               "Остальные экспорты и вариации аргументов — справочной таблицей ниже.")
+    doc.append("")
+    emit_table(base_rows)
+
+    # Totals of the main table only, same cost model as the full set below.
+    base_totals = {r: 0.0 for r in wanted}
+    base_timed = {r: 0 for r in wanted}
+    base_errs = {r: 0 for r in wanted}
+    for row in base_rows:
+        for r in wanted:
+            val, dt, match = row[r]
+            if not isinstance(val, str):
+                base_totals[r] += dt
+                base_timed[r] += 1
+            else:
+                base_errs[r] += 1
+    base_startup = startup
+    with_ratio = "wasm3" in wanted and base_totals.get("wasm3", 0.0) > 0
+    base_ref_exec = (max(0.0, base_totals["wasm3"] - base_startup["wasm3"] * base_timed["wasm3"])
+                     if base_startup.get("wasm3") is not None and base_timed["wasm3"] else None)
+    doc.append("")
+    doc.append("| runtime | суммарное время (основные) | × к wasm3 C | без старта (оценка) | × к wasm3 C без старта |")
+    doc.append("| --- | ---: | ---: | ---: | ---: |")
+    for r in wanted:
+        ratio = fmt_ratio(base_totals[r] / base_totals["wasm3"]) if with_ratio else MISSING
+        eo = (max(0.0, base_totals[r] - base_startup[r] * base_timed[r])
+              if base_startup.get(r) is not None and base_timed[r] else None)
+        errs = f" ({base_errs[r]} ERR)" if base_errs[r] else ""
+        eo_ratio = (fmt_ratio(eo / base_ref_exec)
+                    if eo is not None and base_ref_exec else MISSING)
+        doc.append(f"| {md(RUNTIME_SHORT[r])} | {fmt_time(base_totals[r])}{errs}"
+                   f" | {ratio} | {fmt_time(eo) if eo is not None else MISSING} | {eo_ratio} |")
 
     doc.append("")
+    doc.append("## Вариации аргументов и остальные экспорты")
+    doc.append("")
+    doc.append("Справочные строки: остальные экспорты модулей, отладочные пробы "
+               "и остальные конфигурации аргументов. Методика и колонки те же.")
+    doc.append("")
+    emit_table(var_rows)
+    doc.append("")
+
     # Correctness without extra columns: a time cell that reads
     # `**✗ …**` is a runtime that disagreed with the documented baseline.
     # The tally is per runtime, so one fragile engine does not hide that the
@@ -621,7 +777,7 @@ def main() -> int:
                    " остаются в таблице, их результат не проверяется.")
 
     doc.append("")
-    doc.append("## Итого")
+    doc.append("## Итого (весь набор: основные + вариации)")
     doc.append("")
     with_ratio = "wasm3" in wanted and totals.get("wasm3", 0.0) > 0
     doc.append("| runtime | суммарное время | × к wasm3 C | старт (`fixtures/add`) | без старта (оценка) | × к wasm3 C без старта |")
@@ -640,7 +796,8 @@ def main() -> int:
         doc.append(f"| {md(RUNTIME_SHORT[r])} | {fmt_time(totals[r])}{errs}"
                    f" | {ratio} | {st} | {eo_cell} | {eo_ratio} |")
     doc.append("")
-    doc.append("Старт это полное время строки `fixtures/add` (исполнения там нет), "
+    doc.append("Старт это минимальное полное время среди строк без исполнения "
+               "(`add`, `hash_f32`, `hash_f64`), "
                "«без старта» это сумма минус старт на каждую засчитанную строку: "
                "оценка рядом с честным полным временем, не вместо него.")
 

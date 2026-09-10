@@ -46,9 +46,9 @@ def private check_function_array_and_stride() {
     check(Module_GetFunction(modulePtr, 3u) == null, "index numFunctions rejected")
     check(Module_GetFunction(modulePtr, 4u) == null, "capacity does not extend logical bound")
 
-    let stride = intptr(middle) - intptr(first)
+    let stride = int(intptr(middle) - intptr(first))
     check(stride == typeinfo sizeof(type<M3Function>), "function stride equals sizeof M3Function")
-    check(intptr(last) - intptr(middle) == stride, "function array stride is stable")
+    check(int(intptr(last) - intptr(middle)) == stride, "function array stride is stable")
 }
 
 

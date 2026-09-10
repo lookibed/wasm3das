@@ -37,7 +37,7 @@ like Wasm3 and is verified with Wasm3's own test suite.
 - No imported memories, imported tables or host globals, the same as Wasm3.
 - Speed: run through `scripts/wasm3` the port is interpreted by Daslang and
   is tens of times slower than the C build; the native AOT build
-  (`scripts/build_native.sh`, below) closes most of that gap. Numbers for
+  (`scripts/build_port.sh`, below) closes most of that gap. Numbers for
   every engine are in `notes/benchmark_2026-09-07.md`.
 - Every run compiles the Daslang sources first (about 2 s), in both the
   interpreted and the native build.
@@ -68,11 +68,12 @@ Embed the interpreter in your own Daslang program: `tests/host_test/` holds
 the Daslang counterparts of the C host programs in `wasm3c/host_test`
 (`smoke`, `min`, `min2`, `main`), which drive a module through the public
 API (`m3_ParseModule`, `m3_LoadModule`, `m3_FindFunction`, `m3_CallV`,
-`m3_GetResultsV`, `m3_GetMemory`):
+`m3_GetResultsV`, `m3_GetMemory`); `DASLANG_ROOT` is the daslang checkout
+set up under "Install and run" below:
 
 ```sh
-$ tmp/daslang/bin/daslang tests/host_test/smoke.das
-$ tmp/daslang/bin/daslang tests/host_test/main.das -- tests/manual/real-world-h264bsd-mp4/generated/h264mp4.wasm clip.mp4 outdir 12
+$ $DASLANG_ROOT/bin/daslang tests/host_test/smoke.das
+$ $DASLANG_ROOT/bin/daslang tests/host_test/main.das -- tests/manual/real-world-h264bsd-mp4/generated/h264mp4.wasm clip.mp4 outdir 12
 ```
 
 Interactive session, the same protocol the spec-test driver speaks:
@@ -91,7 +92,7 @@ corpus into its working directory on first use):
 ```sh
 $ mkdir -p tmp/spec/run && cd tmp/spec/run
 $ ln -sfn ../../../wasm3c/test/run-spec-test.py .
-$ ln -sfn ../../../wasm3c/extra ../extra
+$ ln -sfn ../../wasm3c/extra ../extra    # resolved relative to tmp/spec/, where the link lives
 $ python3 run-spec-test.py --exec "$PWD/../../../scripts/wasm3 --repl"
 ...
  17863/17863 tests OK
@@ -103,8 +104,8 @@ $ python3 run-spec-test.py --exec "$PWD/../../../scripts/wasm3 --repl"
 
 Each [release](https://github.com/lookibed/wasm3das/releases) ships a
 self-contained bundle for Linux x86_64, Linux arm64 and Windows x64: the
-Daslang interpreter of the pinned daslang release, the port and the example
-modules. Unpack it and run:
+Daslang interpreter built from the pinned daslang commit, the port and the
+example modules. Unpack it and run:
 
 ```sh
 tar -xzf wasm3das-v0.1.0-linux-x86_64.tar.gz
@@ -117,10 +118,10 @@ wasm3das\wasm3.cmd wasm3das\examples\fib32.wasm --func fib 25
 
 ### From the repository
 
-Requirements: Linux (x86_64 or arm64) or macOS (arm64), `bash`, `curl`,
-`unzip`, and Python 3 for the spec-test driver. daslang is never built here:
-the project uses one official prebuilt daslang release bundle, pinned by tag
-and sha256 in `scripts/daslang_release.env`.
+Requirements: a C++17 toolchain (gcc or clang), `cmake`, `git`, the OpenSSL
+development headers (`libssl-dev` on Debian, for the dasHV module the
+editor tooling needs) and Python 3 for the spec-test driver. daslang is an
+external project: this repository neither downloads nor ships a compiler.
 
 1. Clone the repository:
 
@@ -129,39 +130,70 @@ and sha256 in `scripts/daslang_release.env`.
    cd wasm3das
    ```
 
-2. Install the pinned daslang release into `tmp/daslang` (downloads
-   `daslang-bundle-<platform>.zip` from the
-   [daScript releases](https://github.com/GaijinEntertainment/daScript/releases),
-   verifies the checksum and unpacks it):
+2. Clone, check out and build the daslang the port is pinned against
+   (the commit in `scripts/daslang_pin`). The checkout lives beside this
+   repository, never inside it (a `daScript/` directory in the working tree
+   would be an untracked stranger to every `git status`); a git worktree of
+   an existing daScript clone works the same way:
 
    ```sh
-   scripts/install_daslang.sh
+   git clone https://github.com/GaijinEntertainment/daScript.git ../daScript
+   git -C ../daScript checkout "$(sed -n 's/^\([0-9a-f]\{40\}\)$/\1/p' scripts/daslang_pin | head -n 1)"
+   scripts/build-daslang.sh ../daScript
    ```
 
-   Every script, the gate, CI and the editor tooling read that one tree;
-   `scripts/gate.sh` refuses any other compiler.
+   The build is Release with the headless module set (no LLVM/GUI/media)
+   plus the dasHV dynamic module the daslang MCP server requires; it needs
+   the OpenSSL development headers (`libssl-dev` on Debian). That is the
+   exact set every gate, launcher and editor tool expects. The result lives
+   inside the checkout itself: `bin/daslang`, `lib/`, `include/`, `daslib/`,
+   `modules/dasHV/dasModuleHV.shared_module`.
 
-3. Run:
+3. Point the repository at your daslang and run:
 
    ```sh
+   export DASLANG_ROOT="$(cd .. && pwd)/daScript"
+   scripts/verify_daslang.sh          # the pin and the built layout are checked
    scripts/wasm3 wasm3c/test/lang/fib32.wasm --func fib 25
    ```
 
+   Every script, the gate, CI and the editor tooling read `DASLANG_ROOT`;
+   put the `export` into your shell profile, because the pre-push hook and
+   the MCP/LSP servers of `.mcp.json` read it from the environment too.
+   `scripts/gate.sh` refuses to run against any other daslang (set
+   `DASLANG_ALLOW_UNPINNED=1` for a local experiment off the pin).
+
 The port is plain Daslang source; nothing needs building for the interpreted
-run above.
+run above. Note: because daslang is built locally, the resulting binary runs
+on the local libc — no bundles of someone else's build, no `GLIBC` version
+mismatch, no chroot gymnastics.
 
 ### Native build
 
-`scripts/build_native.sh` compiles the port ahead of time: daslang's AOT
+`scripts/build_port.sh` compiles the port ahead of time: daslang's AOT
 turns every module into C++, which is linked with the static `libDaScript`
-shipped in the release bundle and the host in `native/` into
+of your DASLANG_ROOT checkout and the host in `native/` into
 `tmp/native/bin/wasm3das`. It needs clang++ or g++. `scripts/wasm3-native`
 is the drop-in counterpart of `scripts/wasm3`:
 
 ```sh
-scripts/build_native.sh
+scripts/build_port.sh
 scripts/wasm3-native wasm3c/test/lang/fib32.wasm --func fib 35
 ```
 
-Development rules, the verification gate and the review process are in
-`docs/development-pipeline.md` and `AGENTS.md`.
+### Standalone-context build (zero startup)
+
+`scripts/build_port.sh ctx` goes one layer further: daslang's `-ctx` emitter
+bakes the compiled program into one C++ translation unit
+(`tmp/native-ctx/ctx/`), linked with the host stub `native/standalone_main.cpp`
+into a binary that runs with no daslang front end at startup
+(`scripts/wasm3-ctx` is its launcher):
+
+```sh
+scripts/build_port.sh ctx
+scripts/wasm3-ctx wasm3c/test/lang/fib32.wasm --func fib 35   # ~50 ms total
+```
+
+The measured column in `tests/manual/fixture_report.md` is
+`wasm3das(aot_ctx)`. Development rules, the verification gate and the review
+process are in `docs/development-pipeline.md` and `AGENTS.md`.

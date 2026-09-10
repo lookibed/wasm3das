@@ -2,17 +2,16 @@
 set -euo pipefail
 
 # Local form of the CI quality gate. The gate is defined once in
-# scripts/gate.sh; this hook locates the installed daslang release bundle
-# (scripts/install_daslang.sh) and runs the gate when the pushed commits touch
-# any of its inputs. The path filter is the one CI applies
+# scripts/gate.sh; this hook runs it when the pushed commits touch any of its
+# inputs. The path filter is the one CI applies
 # (.github/workflows/daslang-quality.yml, "Decide whether the gate has
 # anything to check"), so a docs-only push is not held for ten minutes
-# locally only to be skipped in CI, and a branch deletion runs nothing.
+# locally only to be skipped in CI, and a branch deletion runs nothing. The
+# gate needs DASLANG_ROOT (the daslang checkout at the commit pinned in
+# scripts/daslang_pin, built in place; see README, Install and run); a push
+# that touches gate inputs without it is refused with the instruction.
 hook_dir="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)"
 repo_root="$(cd "$hook_dir/.." && pwd)"
-
-export DASLANG_ROOT="${DASLANG_ROOT:-$repo_root/tmp/daslang}"
-export DASLANG="${DASLANG:-$DASLANG_ROOT/bin/daslang}"
 
 gate_inputs='^(source/|tests/integration/|tests/host_test/|app/|scripts/|\.githooks/|\.github/workflows/|\.lint_config$|PORTING_MANIFEST\.md$)'
 zero='0000000000000000000000000000000000000000'
@@ -50,6 +49,16 @@ done
 if (( pushes == 0 || needs_gate == 0 )); then
     exit 0
 fi
+
+if [[ -z "${DASLANG_ROOT:-}" ]]; then
+    echo "pre-push: DASLANG_ROOT is not set and the pushed commits touch gate inputs." >&2
+    echo "  Point it at the daslang checkout of the commit pinned in scripts/daslang_pin," >&2
+    echo "  built in place (README, Install and run), and push again:" >&2
+    echo "    export DASLANG_ROOT=/path/to/your/daScript" >&2
+    exit 1
+fi
+export DASLANG_ROOT
+export DASLANG="${DASLANG:-$DASLANG_ROOT/bin/daslang}"
 
 echo "pre-push: running scripts/gate.sh"
 "$repo_root/scripts/gate.sh"

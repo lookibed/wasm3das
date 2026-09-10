@@ -8,16 +8,19 @@
 # editing .das) is unchanged for agents.
 #
 # Environment (same as scripts/gate.sh):
-#   DASLANG        compiler binary of the installed release bundle
-#   DASLANG_ROOT   the bundle root with utils/das-fmt/ (default: tmp/daslang)
-# Usage: scripts/check_repo_invariants.sh [repo_root]
+#   DASLANG        compiler binary (default: $DASLANG_ROOT/bin/daslang)
+#   DASLANG_ROOT   required: the daslang checkout with utils/das-fmt/
 set -uo pipefail
 
 repo_root="${1:-$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")/.." && pwd)}"
 cd "$repo_root"
 
-DASLANG_ROOT="${DASLANG_ROOT:-$repo_root/tmp/daslang}"
-DASLANG="${DASLANG:-$DASLANG_ROOT/bin/daslang}"
+DASLANG_ROOT="${DASLANG_ROOT:-}"
+DASLANG="${DASLANG:-${DASLANG_ROOT:+$DASLANG_ROOT/bin/daslang}}"
+if [[ -z "${DASLANG_ROOT:-}" || ! -x "$DASLANG" ]]; then
+    echo "invariant: DASLANG_ROOT is required (the daslang checkout at the pinned commit; see scripts/verify_daslang.sh)" >&2
+    exit 2
+fi
 
 failures=0
 fail() {

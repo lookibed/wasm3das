@@ -1,9 +1,9 @@
 name: Release bundles
 
-# Builds self-contained wasm3das bundles (the daslang interpreter of the
-# release bundle pinned in scripts/daslang_release.env + the port) for Linux
-# x86_64, Linux arm64 and Windows x64, smoke-tests each one, and attaches
-# them to the GitHub release of the given tag.
+# Builds self-contained wasm3das bundles (the daslang binary and runtime of
+# the commit pinned in scripts/daslang_pin, built from upstream source + the
+# port) for Linux x86_64, Linux arm64 and Windows x64, smoke-tests each one,
+# and attaches them to the GitHub release of the given tag.
 #
 # Triggers:
 #   * push of a tag v*: builds the tagged commit and uploads to its release
@@ -45,15 +45,12 @@ jobs:
           - name: linux-x86_64
             runner: ubuntu-24.04
             ext: tar.gz
-            daslang: linux-x86_64
           - name: linux-arm64
             runner: ubuntu-24.04-arm
             ext: tar.gz
-            daslang: linux-arm64
           - name: windows-x64
             runner: windows-2022
             ext: zip
-            daslang: windows-x86_64
 
     steps:
       - name: Check out wasm3das
@@ -65,8 +62,15 @@ jobs:
         with:
           arch: x64
 
-      - name: Install the pinned daslang release
-        run: scripts/install_daslang.sh ${{ matrix.daslang }}
+      - name: Build the pinned daslang from upstream source
+        run: |
+          set -euo pipefail
+          pin="$(sed -n 's/^\([0-9a-f]\{40\}\)$/\1/p' scripts/daslang_pin | head -n 1)"
+          git clone https://github.com/GaijinEntertainment/daScript.git daslang-src
+          git -C daslang-src checkout "$pin"
+          # The bundle ships no modules; dasHV is the MCP server's need, not
+          # the interpreter's, and on MSVC it builds OpenSSL from source.
+          DASLANG_HV_DISABLED=ON scripts/build-daslang.sh daslang-src
 
       - name: Locate the daslang binary
         id: bin
@@ -75,12 +79,14 @@ jobs:
           bin=""
           # .exe candidates first: on Windows, Git bash's `-f` also accepts the
           # extension-less name, and the bundle keys the launcher on the suffix.
-          for candidate in tmp/daslang/bin/daslang.exe tmp/daslang/bin/daslang; do
+          for candidate in daslang-src/bin/daslang.exe \
+                           daslang-src/bin/Release/daslang.exe \
+                           daslang-src/bin/daslang; do
             if [[ -f "$candidate" ]]; then bin="$candidate"; break; fi
           done
           test -n "$bin"
           echo "path=$bin" >> "$GITHUB_OUTPUT"
-          cat tmp/daslang/.wasm3das-release
+          cat daslang-src/.daslang-commit
           "$bin" --version
 
       - name: Reserve a large native stack (Windows)
@@ -92,7 +98,7 @@ jobs:
         run: editbin -NOLOGO -STACK:268435456 "$(cygpath -w "${{ steps.bin.outputs.path }}")"
 
       - name: Assemble bundle
-        run: scripts/make_release_bundle.sh tmp/daslang "${{ steps.bin.outputs.path }}" dist/wasm3das
+        run: scripts/make_release_bundle.sh daslang-src "${{ steps.bin.outputs.path }}" dist/wasm3das
 
       - name: Smoke test
         run: |

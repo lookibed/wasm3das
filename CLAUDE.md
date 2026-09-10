@@ -45,7 +45,7 @@ sign-off). End-to-end execution works: `scripts/wasm3` runs every
 passes its whole default list (`notes/spec_test_status.md`) and
 `wasm3c/test/run-wasi-test.py` passes 12/12 (`notes/wasi_test_status.md`).
 The executor dispatches through `RunLoop` instead of nested calls
-(`notes/exec_trampoline_design.md`), and `scripts/build_native.sh` produces
+(`notes/exec_trampoline_design.md`), and `scripts/build_port.sh` produces
 an AOT-compiled native binary that passes the same suites
 (`notes/native_aot_status.md`); `notes/benchmark_2026-09-07.md` and
 `tests/manual/fixture_report.md` hold the measurements against wasmtime and
@@ -62,12 +62,13 @@ handoff is `notes/handoff_claude_code_2026-09-07.md`.
 | `tests/manual/` | Manual fixture sets and the `run_fixtures.py` benchmark harness with its `fixture_report.md`; never run by the gate |
 | `tests/host_test/` | Daslang counterparts of `wasm3c/host_test` (embedding through the public API); compiled and linted by the gate, not dastest files |
 | `app/` | Port of `platforms/app/main.c` (REPL and `--func` runner), run through `scripts/wasm3` |
-| `native/` | C++ host for the AOT build (`scripts/build_native.sh`, `scripts/wasm3-native`); the port itself stays Daslang |
+| `native/` | C++ host for the AOT build (`scripts/build_port.sh`, `scripts/wasm3-native`); the port itself stays Daslang |
 | `wasm3c/` | Reference Wasm3 C sources |
 | `docs/` | Design decisions that outlive a single session |
 | `notes/` | Dated working notes and handoffs |
 | `.lint_config` | Repo lint policy; exported as `DAS_LINT_CONFIG_PATH` by CI, the hook and the MCP server |
 | `scripts/gate.sh` | The verification gate, shared by CI and the pre-push hook |
+| `scripts/daslang_pin`, `scripts/verify_daslang.sh` | The pinned daslang source commit; the checkout/build verifier every authoritative run goes through |
 | `.githooks/` | Pre-push hook that runs the gate (`git config core.hooksPath .githooks`) |
-| `tmp/` | Local toolchain, ignored by Git |
+| `tmp/` | Machine-local build artifacts (`tmp/native/`, scratch), ignored by Git; daslang itself lives in its own checkout, not here |
 | `tools/` | Local development tools, ignored by Git |
