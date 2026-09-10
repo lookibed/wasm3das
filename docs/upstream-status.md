@@ -16,7 +16,7 @@ Checked against the pin: 2026-09-09, commit `46c4715`; issue #3991 added
 | #3969 LLVM JIT: function ↔ int `reinterpret` invalid bitcast | the port's code-page dispatch writes function handles as bits (`EmitWord`) | PR #3974 | same as #3968 |
 | #3970 interpreter: `reinterpret<uint64>(@@fn)` yields 0 in store contexts | the interpreter dropped the bits exactly like #3969 | PR #3974 | the spec suite (`17863/17863` through `scripts/wasm3 --repl`) covers this pattern; re-run after every bump |
 | `ast_gen.inc` / `debugapi_gen.inc` missing from the release bundles | `scripts/build_port.sh` failed to compile its AOT output against a shipped SDK (found on a fresh machine) | commit `29e2a1208` (2026-09-08) installs both generated headers and adds `ci/smoke_test_bundle.sh` | `scripts/verify_daslang.sh` requires `include/daScript/builtin/ast_gen.inc` to exist in the build |
-| [#3991](https://github.com/GaijinEntertainment/daScript/issues/3991) LLVM JIT: a `const` pointer/reference parameter the callee writes through gets LLVM `readonly`, so `--jit-opt-level >= 1` folds the caller's read | under `-jit` at the default O3 the port returned stale memory wherever a callee wrote through a `void?` out-parameter or a `const` pointer after `reinterpret`/`intptr`: six spec assertions (`elem`, `memory`, `memory_trap`) and 67 of 86 manual fixtures wrong; O0 correct | none yet (filed 2026-09-10; reproduces on the pin and on master `388691eb1`) — the port carries the `var` workaround instead (see the limitation bullet below) | the reusable case is `notes/upstream_cases/tests/jit_tests/test_const_arg_readonly.das`, run it under `-jit` at O3 after every bump: 8/8 means fixed. The port itself is verified at O3 by the spec suite (`17863/17863`), `run-wasi-test.py` (12/12) and the manual fixture parity run (86/86) |
+| [#3991](https://github.com/GaijinEntertainment/daScript/issues/3991) LLVM JIT: a `const` pointer/reference parameter the callee writes through gets LLVM `readonly`, so `--jit-opt-level >= 1` folds the caller's read | under `-jit` at the default O3 the port returned stale memory wherever a callee wrote through a `void?` out-parameter or a `const` pointer after `reinterpret`/`intptr`: six spec assertions (`elem`, `memory`, `memory_trap`) and 67 of 86 manual fixtures wrong; O0 correct | none yet (filed 2026-09-10; reproduces on the pin and on master `388691eb1`) — the port carries the `var` workaround instead (see the limitation bullet below) | the reusable case is `notes/upstream_cases/tests/jit_tests/test_const_arg_readonly.das`, run it under `-jit` at O3 after every bump: 8/8 means fixed (still 6 failed on master `388691eb1`, 2026-09-10). The port itself is verified at O3 by the spec suite (`17863/17863`), `run-wasi-test.py` (12/12) and the manual fixture parity run (86/86) |
 
 ## Known upstream limitations still live (not blockers)
 
@@ -33,11 +33,37 @@ Checked against the pin: 2026-09-09, commit `46c4715`; issue #3991 added
   attribute from its spelling alone, while daslang lets the callee write
   through it after an `unsafe` `reinterpret` or `intptr`; from O1 the
   optimizer trusts the attribute and folds the caller's read of that memory
-  to its pre-call value. Until upstream answers, `-jit` runs at
-  `--jit-opt-level=0` (`WASM3DAS_JIT_OPTS`, the fixture harness default) and
-  stays opt-in and off the gate. The port-side workaround, if O3 is wanted
-  before the fix, is to declare such out-parameters `var` (the JIT then
-  emits no `readonly`); not applied.
+  to its pre-call value. The upstream defect is still open (the reusable case
+  still fails 6 of its 10 checks under `-jit --jit-opt-level=3` on master
+  `388691eb1`).
+
+  **The port-side workaround is applied.** Every parameter the callee writes
+  through is declared `var`, which is also what C declares it, so the JIT
+  emits no `readonly` for it: the `M3RawCall` typedef (`_sp`, `_mem`) and
+  every raw function of `m3_api_libc.das`, `m3_api_wasi.das` and
+  `m3_api_wasi_fd.das`; `m3ApiReturn_*` and `m3ApiWriteMem*`
+  (`m3_api_defs.das`); `libc_memset`/`libc_memcpy`/`libc_memmove`;
+  `wasi_fd_seek_common`; `m3_zero_bytes`/`m3_copy_bytes` (`m3_core.das`);
+  `EvaluateExpression` (`m3_env.das`); `c_memmove` and the `ResizeMemory` /
+  `CompileFunction` hook bridges (`m3_exec.das`). Read-only pointer
+  parameters keep their `const` spelling, because `readonly` is accurate for
+  them. Each site carries a comment naming #3991.
+
+  With the workaround the port is correct at O3. Measured 2026-09-10 on the
+  stand (Ryzen 7 7435HS, 16 logical CPUs) against upstream master
+  `388691eb1` built with dasLLVM, `WASM3DAS_JIT=1
+  WASM3DAS_JIT_OPTS=--jit-opt-level=3`: the spec suite `17863/17863`
+  (16.4 s), `run-wasi-test.py` 12/12 (2m52s, through a wrapper that strips
+  the JIT's own `[I] ` lines from the stdout the driver hashes), and the
+  manual fixture parity run 86/86 with the whole set in 1m02.8s — 8.7 s
+  without process start, against 1m25.2s for the interpreter, 4.7 s for the
+  standalone `ctx` binary and 2.9 s for the C wasm3. JIT start is 3.5 s of
+  codegen cold, 0.15 s from the DLL cache (0.67 s of total process time).
+
+  The `jit` runtime of `tests/manual/run_fixtures.py` still defaults to
+  `--jit-opt-level=0` and `-jit` stays opt-in and off the gate: the default
+  moves once #3991 is fixed upstream, so that a JIT run needs no port-side
+  precaution at all.
 - Deep wasm recursion without `M3_MUSTTAIL` costs native frames: the
   launchers raise `ulimit -s` for the spec suite's `assert_exhaustion`
   cases. Trampoline/tail-call architecture remains the future port task.
