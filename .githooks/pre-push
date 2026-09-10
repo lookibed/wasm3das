@@ -10,8 +10,10 @@ set -euo pipefail
 # gate needs DASLANG_ROOT (the daslang checkout at the commit pinned in
 # scripts/daslang_pin, built in place; see README, Install and run); a push
 # that touches gate inputs without it is refused with the instruction.
-hook_dir="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)"
-repo_root="$(cd "$hook_dir/.." && pwd)"
+# The tree being pushed, not the tree the hook file lives in: core.hooksPath
+# is absolute, so from a git worktree the hook's own directory names the
+# main checkout, while git runs the hook at the top of the worktree.
+repo_root="$(git rev-parse --show-toplevel)"
 
 gate_inputs='^(source/|tests/integration/|tests/host_test/|app/|scripts/|\.githooks/|\.github/workflows/|\.lint_config$|PORTING_MANIFEST\.md$)'
 zero='0000000000000000000000000000000000000000'

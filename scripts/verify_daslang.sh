@@ -26,6 +26,11 @@
 # Environment: DASLANG_ROOT (required), DASLANG_ALLOW_UNPINNED (optional).
 set -euo pipefail
 
+# This script asks git about another repository (the daslang checkout). A
+# git hook exports GIT_DIR / GIT_WORK_TREE / GIT_INDEX_FILE for its own
+# repository, and `git -C <other>` would keep answering about this one.
+unset GIT_DIR GIT_WORK_TREE GIT_INDEX_FILE
+
 repo_root="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")/.." && pwd)"
 pin="$(sed -n 's/^\([0-9a-f]\{40\}\)$/\1/p' "$repo_root/scripts/daslang_pin" | head -n 1)"
 if [[ -z "$pin" ]]; then
@@ -81,9 +86,20 @@ fi
 # paths that tell a daScript tree from any other directory; the generated
 # headers such as include/daScript/builtin/ast_gen.inc are tracked upstream.
 missing=()
-for f in bin/daslang lib/liblibDaScript.a lib/liblibDaScript_runtime.a \
-         lib/liblibUriParser.a modules/dasHV/dasModuleHV.shared_module \
-         utils/aot/main.das include/daScript/builtin/ast_gen.inc; do
+required=(bin/daslang lib/liblibDaScript.a lib/liblibDaScript_runtime.a
+          lib/liblibUriParser.a utils/aot/main.das include/daScript/builtin/ast_gen.inc)
+# The dasHV module serves the MCP server; a tree built with
+# DASLANG_HV_DISABLED=ON (release.yml, where the bundles ship no modules) is
+# complete without it.
+if [[ "${DASLANG_HV_DISABLED:-OFF}" != "ON" ]]; then
+    required+=(modules/dasHV/dasModuleHV.shared_module)
+fi
+# Multi-config generators (MSVC) put the outputs under Release/.
+if [[ -f "$root/bin/Release/daslang.exe" ]]; then
+    required=(bin/Release/daslang.exe lib/Release/libDaScript.lib lib/Release/libDaScript_runtime.lib
+              lib/Release/libUriParser.lib utils/aot/main.das include/daScript/builtin/ast_gen.inc)
+fi
+for f in "${required[@]}"; do
     if [[ ! -e "$root/$f" ]]; then
         missing+=("$root/$f")
     fi

@@ -1,9 +1,11 @@
 name: Release bundles
 
-# Builds self-contained wasm3das bundles (the daslang binary and runtime of
-# the commit pinned in scripts/daslang_pin, built from upstream source + the
-# port) for Linux x86_64, Linux arm64 and Windows x64, smoke-tests each one,
-# and attaches them to the GitHub release of the given tag.
+# Builds self-contained wasm3das bundles for Linux x86_64, Linux arm64 and
+# Windows x64, two per platform: the interpreter bundle (the daslang binary
+# and runtime of the commit pinned in scripts/daslang_pin, built from
+# upstream source, plus the port) and the standalone bundle (the port
+# compiled into one native binary through daslang's -ctx emitter), smoke-
+# tests each one, and attaches them to the GitHub release of the given tag.
 #
 # Triggers:
 #   * push of a tag v*: builds the tagged commit and uploads to its release
@@ -62,10 +64,28 @@ jobs:
         with:
           arch: x64
 
-      - name: Build the pinned daslang from upstream source
+      - name: Read the pinned daslang commit
+        id: pin
         run: |
           set -euo pipefail
           pin="$(sed -n 's/^\([0-9a-f]\{40\}\)$/\1/p' scripts/daslang_pin | head -n 1)"
+          test -n "$pin"
+          echo "commit=$pin" >> "$GITHUB_OUTPUT"
+
+      # The same cache the gate uses, keyed by the pin and the build script, so
+      # a release costs one cold daslang build per platform, not one per tag.
+      - name: Cache the built daslang checkout
+        id: cache-daslang
+        uses: actions/cache@v4
+        with:
+          path: daslang-src
+          key: daslang-release-${{ steps.pin.outputs.commit }}-${{ hashFiles('scripts/build-daslang.sh') }}-${{ runner.os }}-${{ runner.arch }}
+
+      - name: Build the pinned daslang from upstream source
+        if: steps.cache-daslang.outputs.cache-hit != 'true'
+        run: |
+          set -euo pipefail
+          pin="${{ steps.pin.outputs.commit }}"
           git clone https://github.com/GaijinEntertainment/daScript.git daslang-src
           git -C daslang-src checkout "$pin"
           # Linux builds use clang, as daScript's own CI does: at the pinned
@@ -128,17 +148,73 @@ jobs:
             echo "$repl" | grep -q 'Result: 6765:i64'
           fi
 
+      # The standalone tier: the whole port compiled into one binary through
+      # daslang's -ctx emitter (scripts/build_port.sh ctx), no compiler inside,
+      # no compile at startup, its own 256 MiB stack. Linux builds it with the
+      # runner's clang++/g++; Windows through the MSVC arm of the script.
+      - name: Build the standalone binary
+        id: ctx
+        env:
+          DASLANG_ROOT: ${{ github.workspace }}/daslang-src
+          DASLANG_HV_DISABLED: "ON"
+          JOBS: "4"
+        run: |
+          set -euo pipefail
+          scripts/build_port.sh ctx
+          bin=""
+          for candidate in tmp/native-ctx/bin/wasm3das.exe tmp/native-ctx/bin/wasm3das; do
+            if [[ -f "$candidate" ]]; then bin="$candidate"; break; fi
+          done
+          test -n "$bin"
+          echo "path=$bin" >> "$GITHUB_OUTPUT"
+
+      - name: Assemble the standalone bundle
+        run: scripts/make_standalone_bundle.sh "${{ steps.ctx.outputs.path }}" dist/wasm3das-standalone "$RELEASE_TAG" daslang-src
+
+      - name: Smoke test the standalone binary
+        run: |
+          set -euo pipefail
+          cd dist/wasm3das-standalone
+          if [[ "${{ runner.os }}" == "Windows" ]]; then
+            out="$(./wasm3.exe examples/fib32.wasm --func fib 25 2>&1 | tr -d '\r')"
+          else
+            out="$(./wasm3 examples/fib32.wasm --func fib 25 2>&1)"
+          fi
+          echo "$out"
+          test "$out" = "Result: 75025"
+          if [[ "${{ runner.os }}" != "Windows" ]]; then
+            repl="$(printf ':load examples/fib64.wasm\n:invoke fib 20\n:exit\n' | ./wasm3 --repl 2>&1)"
+            echo "$repl"
+            echo "$repl" | grep -q 'Result: 6765:i64'
+          fi
+
+      # The whole core spec suite on the bare standalone binary: no launcher,
+      # no ulimit, so this also proves the binary's own stack reservation
+      # (assert_exhaustion cases). About 20 s on x86_64.
+      - name: Spec suite on the standalone binary (Linux)
+        if: runner.os == 'Linux'
+        run: |
+          set -euo pipefail
+          mkdir -p tmp/spec/run
+          ln -sfn ../../../wasm3c/test/run-spec-test.py tmp/spec/run/run-spec-test.py
+          ln -sfn ../../wasm3c/extra tmp/spec/extra
+          cd tmp/spec/run
+          python3 run-spec-test.py --exec "$GITHUB_WORKSPACE/dist/wasm3das-standalone/wasm3 --repl" 2>&1 | tail -5 | tee spec.out
+          grep -q '17863/17863 tests OK' spec.out
+
       - name: Package
         run: |
           set -euo pipefail
           mkdir -p artifacts
-          asset="wasm3das-${RELEASE_TAG}-${{ matrix.name }}.${{ matrix.ext }}"
-          if [[ "${{ matrix.ext }}" == "zip" ]]; then
-            (cd dist && 7z a "../artifacts/$asset" wasm3das >/dev/null)
-          else
-            tar -czf "artifacts/$asset" -C dist wasm3das
-          fi
-          (cd artifacts && sha256sum "$asset" > "$asset.sha256")
+          for kind in "" "-standalone"; do
+            asset="wasm3das-${RELEASE_TAG}-${{ matrix.name }}${kind}.${{ matrix.ext }}"
+            if [[ "${{ matrix.ext }}" == "zip" ]]; then
+              (cd dist && 7z a "../artifacts/$asset" "wasm3das${kind}" >/dev/null)
+            else
+              tar -czf "artifacts/$asset" -C dist "wasm3das${kind}"
+            fi
+            (cd artifacts && sha256sum "$asset" > "$asset.sha256")
+          done
           ls -l artifacts
 
       - name: Upload workflow artifact
