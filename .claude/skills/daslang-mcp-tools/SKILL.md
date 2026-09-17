@@ -8,15 +8,15 @@ description: Reference for the daslang MCP server tools (compile_check, lint, gr
 Read the full tool table and notes first:
 `$DASLANG_ROOT/skills/mcp_tools.md`.
 
-How the server is wired in this project (`.mcp.json`): the `daslang` server is
-`$DASLANG_ROOT/bin/daslang -ignore-manifest $DASLANG_ROOT/utils/mcp/main.das`, run
-with cwd = wasm3das root (no supervisor: the pin has no Python one and upstream's
-watchdog front needs the `stddlg` module the headless build leaves out).
-`DASLANG_ROOT` is the daslang checkout at the commit of `scripts/daslang_pin`, built
-by `scripts/build-daslang.sh` (README "Install and run"); the server needs the dasHV
-module of that build, which is why the build set keeps dasHV enabled. The variable
-must be visible to the Claude Code process: `.claude/settings.local.json` (untracked)
-sets it through its `env` block.
+How the server is wired in this project (`.mcp.json`): the `daslang` server is the
+`/root/daScript/bin/watchdog` stdio front, which spawns
+`/root/daScript/bin/daslang -ignore-manifest /root/daScript/utils/mcp/main.das` with
+cwd = wasm3das root on the first tool call and respawns it after a kill or a rebuild;
+`DAS_LINT_CONFIG_PATH` points it at this repository's `.lint_config`. The `daslang-dap`
+server is the same front over `utils/dap/main.das`, and the LSP plugin
+(`.claude/skills/daslang-lsp`) runs `watchdog --lsp` from the same checkout. That
+checkout is built with the `stddlg` module the watchdog requires and the dasHV module
+the server requires; `$DASLANG_ROOT` in this file names the same checkout.
 
 Path conventions that follow from that:
 
