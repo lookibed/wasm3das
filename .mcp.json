@@ -1,28 +1,41 @@
 {
   "mcpServers": {
     "daslang": {
-      "command": "python3",
+      "command": "/root/daScript/bin/watchdog",
       "args": [
-        "${DASLANG_ROOT}/utils/mcp/mcp_supervisor.py",
-        "--repo-root",
-        ".",
-        "--stderr-log",
-        "logs/claude-mcp-daslang-child.log"
+        "--stdio",
+        "--name",
+        "daslang-mcp",
+        "--cwd",
+        "/root/wasm3das",
+        "--program",
+        "/root/daScript/bin/daslang",
+        "--",
+        "-ignore-manifest",
+        "/root/daScript/utils/mcp/main.das"
       ],
       "env": {
-        "DASLANG_MCP_BIN": "${DASLANG_ROOT}/bin/daslang",
-        "DAS_LINT_CONFIG_PATH": ".lint_config"
+        "DAS_LINT_CONFIG_PATH": "/root/wasm3das/.lint_config"
       },
       "defer_loading": false
     },
     "daslang-dap": {
-      "command": "python3",
+      "command": "/root/daScript/bin/watchdog",
       "args": [
-        "${DASLANG_ROOT}/utils/dap/mcp_bridge.py",
+        "--stdio",
+        "--name",
+        "daslang-dap",
+        "--cwd",
+        "/root/wasm3das",
+        "--program",
+        "/root/daScript/bin/daslang",
+        "--",
+        "/root/daScript/utils/dap/main.das",
+        "--",
         "--repo-root",
-        ".",
+        "/root/wasm3das",
         "--executable",
-        "${DASLANG_ROOT}/bin/daslang"
+        "/root/daScript/bin/daslang"
       ]
     }
   }
