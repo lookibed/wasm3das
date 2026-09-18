@@ -44,12 +44,12 @@ saved report is Markdown.
 
 Usage, from the repository root:
   python3 tests/manual/run_fixtures.py [--filter substr]
-                                       [--runtimes wasmtime,wasm3,das,native,aot_ctx,jit]
+                                       [--runtimes wasmtime,wasm3,das,native,aot_ctx,jit,exe]
                                        [--slow]
 
 Paths can be overridden via env: WASMTIME, WASM3C, WASM3DAS, WASM3DAS_NATIVE,
-WASM3DAS_CTX, DASLANG_JIT, and the JIT options via WASM3DAS_JIT_OPTS;
-DASLANG_ROOT is required.
+WASM3DAS_CTX, WASM3DAS_EXE, DASLANG_JIT, and the JIT options via
+WASM3DAS_JIT_OPTS; DASLANG_ROOT is required.
 """
 import argparse
 import datetime
@@ -95,6 +95,12 @@ WASM3DAS_NATIVE = os.environ.get(
 WASM3DAS_CTX = os.environ.get(
     "WASM3DAS_CTX",
     os.path.join(REPO_ROOT, "tmp", "native-ctx", "bin", "wasm3das.exe" if os.name == "nt" else "wasm3das"))
+# The exe runtime is scripts/wasm3-exe over the executable `daslang -exe`
+# links ahead of time (scripts/build_port.sh exe, tmp/native-exe/bin/
+# wasm3das.exe): the LLVM-compiled program with no front end and no JIT
+# codegen at start. The launcher places the arguments after the `--` the app
+# expects, the way the standalone-context stub does.
+WASM3DAS_EXE = os.environ.get("WASM3DAS_EXE", os.path.join(REPO_ROOT, "scripts", "wasm3-exe"))
 # The JIT runtime drives the same scripts/wasm3 front end with -jit; daslang
 # ships the LLVM JIT when the checkout is built without -DDAS_LLVM_DISABLED,
 # so by default this is the binary of $DASLANG_ROOT.
@@ -415,6 +421,12 @@ def cmd_ctx(wasm, func, args):
     return [WASM3DAS_CTX, wasm, "--func", func] + args
 
 
+def cmd_exe(wasm, func, args):
+    # scripts/wasm3-exe forwards its arguments unchanged after the `--` the
+    # app expects; same CLI as every other front end.
+    return [WASM3DAS_EXE, wasm, "--func", func] + args
+
+
 RUNTIMES = {
     "wasmtime": ("wasmtime", cmd_wasmtime, 300),
     "wasm3": ("wasm3 (original C)", cmd_wasm3c, 600),
@@ -422,6 +434,7 @@ RUNTIMES = {
     "native": ("wasm3das (native AOT)", cmd_native, 2400),
     "aot_ctx": ("wasm3das (ctx)", cmd_ctx, 2400),
     "jit": ("wasm3das (JIT)", cmd_das, 2400),
+    "exe": ("wasm3das (exe)", cmd_exe, 2400),
 }
 
 # Short labels, used for the report's column headers and its totals table.
@@ -432,6 +445,7 @@ RUNTIME_SHORT = {
     "native": "wasm3das(aot)",
     "aot_ctx": "wasm3das(aot_ctx)",
     "jit": "wasm3das(jit)",
+    "exe": "wasm3das(exe)",
 }
 
 # Extra environment per runtime, merged over os.environ before the spawn.
@@ -451,7 +465,8 @@ RUNTIME_CAP = {"jit": 180}
 # Executable behind each runtime; used only to print the paths and to ask
 # each engine for its version in the report header.
 RUNTIME_BIN = {"wasmtime": WASMTIME, "wasm3": WASM3C, "das": WASM3DAS,
-               "native": WASM3DAS_NATIVE, "aot_ctx": WASM3DAS_CTX, "jit": WASM3DAS}
+               "native": WASM3DAS_NATIVE, "aot_ctx": WASM3DAS_CTX, "jit": WASM3DAS,
+               "exe": WASM3DAS_EXE}
 VERSION_TIMEOUT = 60
 
 
