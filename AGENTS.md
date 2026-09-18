@@ -143,21 +143,30 @@ Three servers are required, whichever client is used:
   smoke checklist: `notes/claude_code_tooling_setup_2026-09-04.md`.
 - **Codex** uses a project-local `.codex/config.toml` that is not tracked
   here; `notes/codex_tooling_smoke_test.md` describes its smoke test.
-- All three servers use the daslang checkout pointed to by the `DASLANG_ROOT`
-  environment variable, at the commit pinned in `scripts/daslang_pin` and
-  built in place (README "Install and run"). `.mcp.json` runs the server
-  directly, `$DASLANG_ROOT/bin/daslang -ignore-manifest
-  $DASLANG_ROOT/utils/mcp/main.das` (the pin no longer carries the Python
-  supervisor; upstream's watchdog front needs the `stddlg` module the
-  headless build leaves out, so the server runs without a respawn wrapper);
-  the LSP plugin runs `$DASLANG_ROOT/utils/lsp/lsp_supervisor.py`. Claude
-  Code expands `${DASLANG_ROOT}` from its own environment, so the variable
-  has to be set where the client starts: `.claude/settings.local.json`
-  (untracked, per machine) carries `"env": {"DASLANG_ROOT": ...}` for that.
-  Restart the client after changing `DASLANG_ROOT`.
-- The `daslang-dap` server runs the bridge `utils/dap/mcp_bridge.py` from the
-  same `$DASLANG_ROOT` checkout — the DAP bridge and `utils/dap` are merged
-  upstream (PR #3937) and the pin commit carries them.
+- All three servers use the daslang checkout at `/root/daScript`, built in
+  place with the `stddlg` and `dasHV` modules (README "Install and run").
+  `.mcp.json` runs the MCP server through that checkout's `bin/watchdog`
+  stdio front (`--cwd` = this repository, so relative tool paths resolve
+  here; the child respawns after a crash or the `shutdown` tool) and the
+  `daslang-dap` server the same way over `utils/dap/main.das`; the LSP
+  plugin (`.claude/skills/daslang-lsp/.claude-plugin/plugin.json`) runs
+  `bin/watchdog --lsp`. All three carry `DAS_LINT_CONFIG_PATH` pointing at
+  `.lint_config`. The shell side (`scripts/`, the gate, the hook) reads
+  `DASLANG_ROOT` from the environment: `.env` (untracked) holds it for the
+  shell profile and `.claude/settings.local.json` (untracked) carries the
+  same `"env"` block for Claude Code. Restart the client after changing
+  `.mcp.json` or the plugin manifest.
+- `sgconfig.yml` in the repository root (untracked, machine-local like
+  `.mcp.json`) maps `*.h`, `*.hpp` and `*.c` to ast-grep's C++ grammar; without
+  it the `cpp_*` MCP tools skip every header and every `.c` file of `wasm3c/`.
+- Tool scope in this repository: `list_functions`, `aot`, `program_log` and
+  `find_symbol` with `file=` see only the main module of the program they
+  compile, so for a `module m3_* shared public` source pass the integration
+  test that requires it (`tests/integration/test_m3_<name>.das`) as the
+  file; `describe_type` cannot name a project file as its module, use
+  `list_types` on the file instead. `find_dupe`/`judge_duplicates` need the
+  `anthropic/anthropic` daspkg and an API key; `live_*` need a GLFW window;
+  neither is used here.
 - daslang is built from the pinned upstream source and never hand-patched
   for this project: a compiler bug is reported upstream with a reproducer,
   and the pin moves only through a deliberate bump recorded in

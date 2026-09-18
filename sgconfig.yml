@@ -1,0 +1,8 @@
+ruleDirs: []
+languageGlobs:
+  cpp: ["*.h", "*.hpp", "*.c"]
+customLanguages:
+  daslang:
+    libraryPath: /root/daScript/tree-sitter-daslang/daslang.so
+    extensions: [das]
+    expandoChar: "#"
