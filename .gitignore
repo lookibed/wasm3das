@@ -27,6 +27,9 @@ Thumbs.db
 
 # Diagnostic and benchmark scratch data
 /logs/
+# libhv (the daslang MCP server's HTTP client) logs failed daslang-live
+# connections into the working directory
+/libhv.*.log
 /benchmarks/tmp/
 __pycache__/
 
