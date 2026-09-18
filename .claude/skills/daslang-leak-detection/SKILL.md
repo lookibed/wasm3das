@@ -12,6 +12,6 @@ wasm3das context: every `M3*` object is a host allocation (`m3_Malloc_Impl` /
 `m3_Free_Impl`), never `new`/`delete` (AGENTS.md, "Allocation and pointer semantics",
 `docs/memory-ownership.md`). A `free(): invalid pointer` or SIGSEGV in teardown almost
 always means an object was released through the wrong allocator, or a Daslang `delete`
-walked the pointer fields of a host-allocated struct. See
-`notes/dap_tooling_update_2026-09-04.md` for the recorded teardown investigation and use
-the `daslang-dap-debugging` skill to step through it.
+walked the pointer fields of a host-allocated struct. `docs/memory-ownership.md` records
+how the teardown SIGSEGV was located with the DAP bridge; use the `daslang-dap-debugging`
+skill to step through a new one.

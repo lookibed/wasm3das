@@ -91,7 +91,7 @@ done
 # passes the spec suite 17863/17863 and fib32; the timings are the aot_ctx
 # "Итого" of tests/manual/run_fixtures.py (98 checks), four runs per variant,
 # baseline 7.41 s total / 29 ms start. See
-# notes/release_squeeze_plan_2026-09-10.md, B1-B3. gcc/clang only; the MSVC
+# docs/native-build.md, section 4. gcc/clang only; the MSVC
 # arm keeps cl's own set (the equivalents were not measured there).
 if (( msvc )); then variant_flags=skip; else variant_flags="$variant"; fi
 case "$variant_flags" in
