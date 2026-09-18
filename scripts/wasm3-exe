@@ -1,0 +1,38 @@
+#!/usr/bin/env bash
+# wasm3 command line front end for the `-exe` build of the Daslang port: the
+# same drop-in replacement for the C `wasm3` binary that scripts/wasm3,
+# scripts/wasm3-native and scripts/wasm3-ctx provide, backed by the
+# executable daslang's LLVM pipeline links ahead of time
+# (scripts/build_port.sh exe): the whole program is machine code, no daslang
+# front end and no JIT codegen run at start.
+#
+# Usage is identical to scripts/wasm3, so the front ends can be swapped in a
+# runner invocation:
+#   wasm3c/test/run-spec-test.py --exec "<repo>/scripts/wasm3-exe --repl"
+#   wasm3c/test/run-wasi-test.py --exec "<repo>/scripts/wasm3-exe"
+#
+# Environment:
+#   WASM3DAS_EXE   the executable (default: tmp/native-exe/bin/wasm3das.exe;
+#                  daslang -exe names its output with the suffix on every
+#                  platform, an ELF binary on Linux despite the name)
+set -euo pipefail
+
+repo_root="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")/.." && pwd)"
+
+EXE="${WASM3DAS_EXE:-$repo_root/tmp/native-exe/bin/wasm3das.exe}"
+
+if [[ ! -x "$EXE" ]]; then
+    echo "wasm3-exe: missing executable at $EXE (run scripts/build_port.sh exe)" >&2
+    exit 1
+fi
+
+# The generated code keeps daslang's calling convention, so like the
+# interpreter and the aot tier it spends native stack per Daslang frame and a
+# runaway wasm recursion must reach op_Entry's `[trap] stack overflow` before
+# the thread stack ends: the same limit scripts/wasm3 raises.
+ulimit -s 262144 2>/dev/null || true
+
+# No daslang CLI runs in front of the app, so nothing steals --help/-h; the
+# arguments go after the literal `--` the app's argument reader expects, the
+# way the standalone-context stub places them.
+exec "$EXE" -- "$@"
