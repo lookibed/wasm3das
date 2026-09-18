@@ -265,9 +265,7 @@ def repl_load(fn : string) : M3Result {
     }
     fclose(f)
 
-    unsafe {
-        result = m3_ParseModule(env, _module, addr(wasm[0]), fsize)
-    }
+    result = m3_ParseModule(env, _module, unsafe(addr(wasm[0])), fsize)
     if (result != m3Err_none) {
         // C on_error: m3_FreeModule(module) then free(wasm).
         m3_FreeModule(_module)
@@ -350,9 +348,7 @@ def repl_load_hex(fsize : u32) : M3Result {
     let bin_idx = length(wasm_bins) - 1
 
     var _module : IM3Module
-    unsafe {
-        result = m3_ParseModule(env, _module, addr(wasm_bins[bin_idx][0]), fsize)
-    }
+    result = m3_ParseModule(env, _module, unsafe(addr(wasm_bins[bin_idx][0])), fsize)
     if (result != m3Err_none) { return result }
 
     result = m3_LoadModule(runtime, _module)
@@ -433,10 +429,8 @@ def repl_call(name : string; argc : int; argv : array<string>) : M3Result {
     valbuff |> resize(128)
     var valptrs : array<void?>
     valptrs |> reserve(ret_count)
-    unsafe {
-        for (i in 0 .. ret_count) {
-            valptrs |> push(addr<void?>(valbuff[i]))
-        }
+    for (i in 0 .. ret_count) {
+        valptrs |> push(unsafe(addr<void?>(valbuff[i])))
     }
     result = m3_GetResults(func, u32(ret_count), valptrs)
     if (result != m3Err_none) { return result }
@@ -514,10 +508,8 @@ def repl_invoke(name : string; argc : int; argv : array<string>) : M3Result {
     for (i in 0 .. length(valbuff)) { valbuff[i] = 0ul }
     var retptrs : array<void?>
     retptrs |> reserve(ret_count)
-    unsafe {
-        for (i in 0 .. ret_count) {
-            retptrs |> push(addr<void?>(valbuff[i]))
-        }
+    for (i in 0 .. ret_count) {
+        retptrs |> push(unsafe(addr<void?>(valbuff[i])))
     }
     result = m3_GetResults(func, u32(ret_count), retptrs)
     if (result != m3Err_none) { return result }
@@ -619,9 +611,7 @@ def repl_dump() : M3Result {
         }
         var bytes : array<u8>
         bytes |> resize(int(len))
-        unsafe {
-            for (i in 0 .. int(len)) { bytes[i] = mem[i] }
-        }
+        for (i in 0 .. int(len)) { bytes[i] = unsafe(mem[i]) }
         if (fwrite(f, bytes) != int(len)) {
             fclose(f)
             return "cannot write file"

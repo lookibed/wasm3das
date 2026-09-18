@@ -237,9 +237,7 @@ var private g_lastUserdata : void? = null
 // reads one slot off _sp; _ctx->userdata is the m3_LinkRawFunctionEx payload.
 def private recording_print_i32(runtime : IM3Runtime; _ctx : IM3ImportContext; var _sp : u64?; var _mem : void?) : M3Result {
     g_calls++
-    unsafe {
-        g_lastArg = *reinterpret<i32?>(_sp)
-    }
+    g_lastArg = *unsafe(reinterpret<i32?>(_sp))
     g_lastUserdata = _ctx != null ? _ctx.userdata : null
     return m3Err_none
 }

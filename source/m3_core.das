@@ -564,15 +564,13 @@ def private m3_copy_bytes(var i_to : void?; i_from : void?; i_size : u64) {
 
 
 def public m3_Malloc_Impl(i_size : u64) : void? {
-    unsafe {
-        var ptr = malloc(i_size)
+    var ptr = unsafe(malloc(i_size))
 
-        if (ptr != null) {
-            m3_zero_bytes(ptr, i_size)
-        }
-
-        return ptr
+    if (ptr != null) {
+        m3_zero_bytes(ptr, i_size)
     }
+
+    return ptr
 }
 
 
@@ -596,9 +594,7 @@ def public m3_Free_Impl(i_ptr : void?) {
         return
     }
 
-    unsafe {
-        free(i_ptr)
-    }
+    unsafe(free(i_ptr))
 }
 
 
@@ -669,23 +665,19 @@ var private stack_end : u64 = 0ul
 def public m3StackCheckInit() {
     var stack : u8 = 0u8
 
-    unsafe {
-        let addr_value = intptr(addr(stack))
-        stack_start = addr_value
-        stack_end = addr_value
-    }
+    let addr_value = intptr(unsafe(addr(stack)))
+    stack_start = addr_value
+    stack_end = addr_value
 }
 
 
 def public m3StackCheck() {
     var stack : u8 = 0u8
 
-    unsafe {
-        let addr_value = intptr(addr(stack))
+    let addr_value = intptr(unsafe(addr(stack)))
 
-        if (addr_value < stack_end) {
-            stack_end = addr_value
-        }
+    if (addr_value < stack_end) {
+        stack_end = addr_value
     }
 }
 
@@ -778,9 +770,7 @@ def public m3_ptr_addr(ptr : cbytes_t) : u64 {
         return 0ul
     }
 
-    unsafe {
-        return intptr(ptr)
-    }
+    return intptr(ptr)
 }
 
 
@@ -893,9 +883,7 @@ def public Read_f64(
         return result
     }
 
-    unsafe {
-        o_value = reinterpret<f64>(bits)
-    }
+    o_value = unsafe(reinterpret<f64>(bits))
 
     return m3Err_none
 }
@@ -913,9 +901,7 @@ def public Read_f32(
         return result
     }
 
-    unsafe {
-        o_value = reinterpret<f32>(bits)
-    }
+    o_value = unsafe(reinterpret<f32>(bits))
 
     return m3Err_none
 }
@@ -932,10 +918,8 @@ def public Read_u8(
         return result
     }
 
-    unsafe {
-        o_value = *io_bytes
-        io_bytes += 1
-    }
+    o_value = *io_bytes
+    io_bytes = unsafe(io_bytes + 1)
 
     return m3Err_none
 }
@@ -991,10 +975,8 @@ def public ReadLebUnsigned(
     while (m3_ptr_addr(ptr) < end_addr) {
         var byte : u64 = 0ul
 
-        unsafe {
-            byte = u64(*ptr)
-            ptr += 1
-        }
+        byte = u64(*ptr)
+        ptr = unsafe(ptr + 1)
 
         value |= (byte & 0x7ful) << u64(shift)
         shift += 7u
@@ -1043,10 +1025,8 @@ def public ReadLebSigned(
     while (m3_ptr_addr(ptr) < end_addr) {
         var byte : u64 = 0ul
 
-        unsafe {
-            byte = u64(*ptr)
-            ptr += 1
-        }
+        byte = u64(*ptr)
+        ptr = unsafe(ptr + 1)
 
         value_bits |= (byte & 0x7ful) << u64(shift)
         shift += 7u
@@ -1067,9 +1047,7 @@ def public ReadLebSigned(
         }
     }
 
-    unsafe {
-        o_value = reinterpret<i64>(value_bits)
-    }
+    o_value = unsafe(reinterpret<i64>(value_bits))
 
     io_bytes = ptr
     return result

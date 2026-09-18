@@ -215,11 +215,9 @@ let private c_rintToIntD : f64 = 4503599627370496.0lf
 def rintf(arg : f32) : f32 {
     var e : int
     var s : bool
-    unsafe {
-        let i = reinterpret<u32>(arg)
-        e = int((i >> 23u) & 0xffu)
-        s = (i >> 31u) != 0u
-    }
+    let i = unsafe(reinterpret<u32>(arg))
+    e = int((i >> 23u) & 0xffu)
+    s = (i >> 31u) != 0u
     if (e >= int(0x7f) + 23) {
         return arg
     }
@@ -239,11 +237,9 @@ def rintf(arg : f32) : f32 {
 def rint(arg : f64) : f64 {
     var e : int
     var s : bool
-    unsafe {
-        let i = reinterpret<u64>(arg)
-        e = int((i >> 52ul) & 0x7fful)
-        s = (i >> 63ul) != 0ul
-    }
+    let i = unsafe(reinterpret<u64>(arg))
+    e = int((i >> 52ul) & 0x7fful)
+    s = (i >> 63ul) != 0ul
     if (e >= int(0x3ff) + 52) {
         return arg
     }

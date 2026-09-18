@@ -369,34 +369,32 @@ def test_libc_memmove_copies_linear_memory(t : T?) {
         free_fixture(fx)
         return
     }
-    unsafe {
-        for (i in 0 .. 8) { mem[16 + i] = u8(i + 1) }
-    }
+    for (i in 0 .. 8) { unsafe(mem[16 + i]) = u8(i + 1) }
 
     var ret = 0
     // disjoint ranges
     t |> equal(call_i32x3(t, fx, "do_memmove", 40, 16, 8, ret), m3Err_none, "do_memmove(40, 16, 8)")
     t |> equal(ret, 40, "memmove returns the destination offset")
-    unsafe {
+    {
         var ok = true
-        for (i in 0 .. 8) { ok = ok && mem[40 + i] == u8(i + 1) }
+        for (i in 0 .. 8) { ok = ok && unsafe(mem[40 + i]) == u8(i + 1) }
         t |> success(ok, "disjoint memmove copied 1..8")
     }
 
     // overlapping, destination above the source: a naive forward copy would
     // smear the first byte over the whole region.
     t |> equal(call_i32x3(t, fx, "do_memmove", 18, 16, 8, ret), m3Err_none, "do_memmove(18, 16, 8)")
-    unsafe {
+    {
         var ok = true
-        for (i in 0 .. 8) { ok = ok && mem[18 + i] == u8(i + 1) }
+        for (i in 0 .. 8) { ok = ok && unsafe(mem[18 + i]) == u8(i + 1) }
         t |> success(ok, "overlapping memmove up copied 1..8")
     }
 
     // overlapping, destination below the source
     t |> equal(call_i32x3(t, fx, "do_memmove", 16, 18, 8, ret), m3Err_none, "do_memmove(16, 18, 8)")
-    unsafe {
+    {
         var ok = true
-        for (i in 0 .. 8) { ok = ok && mem[16 + i] == u8(i + 1) }
+        for (i in 0 .. 8) { ok = ok && unsafe(mem[16 + i]) == u8(i + 1) }
         t |> success(ok, "overlapping memmove down copied 1..8")
     }
 
