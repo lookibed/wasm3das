@@ -75,8 +75,14 @@ unchanged). Issue #3991 reproduces on both commits.
 
 ## Historical record
 
-`notes/upstream_daslang_issues_2026-09-07.md` (issue drafts, reproducer
-tests under `notes/upstream_cases/`) and
+The reproducer tests under `notes/upstream_cases/` (in the layout of the
+upstream daScript test suite, with `RESULTS.md` as their run log) and
 `notes/daslang_jit_fixes_2026-09-07.patch` (daslang-side fixes written before
-PR #3974 landed) are kept as provenance; their content is superseded by this
-table and the pin.
+PR #3974 landed) are kept as provenance; the issue texts were filed upstream
+on 2026-09-08 (#3967, #3968, #3969, #3970) and 2026-09-10 (#3991) from the
+owner's account, and PR #3974 (twelve files) fixes the three JIT/interpreter
+defects plus the AOT `das_cast` of a `Func` that `docs/native-build.md`
+section 2 works around. Checklist when the pin moves: rebuild, run
+`scripts/gate.sh`, the spec and WASI drivers through `scripts/wasm3` and
+`scripts/wasm3-native` (`docs/test-suites.md`), then
+`tests/manual/run_fixtures.py`, and re-verify every row of the table above.

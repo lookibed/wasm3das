@@ -18,7 +18,7 @@ require ./m3_exec_expand.das
 // memory checks, and immediate layout are intentionally kept close to wasm3.
 //
 // One architectural deviation, documented in full in m3_exec_defs.das and
-// notes/exec_trampoline_design.md: Daslang has no M3_MUSTTAIL, so an operation
+// docs/execution-design.md: Daslang has no M3_MUSTTAIL, so an operation
 // does not call its successor. Every operation takes the five interpreter
 // registers (_pc, _sp, _mem, _r0, _fp0) BY REFERENCE and updates them in place -
 // which is what C's "pass the updated values to the next operation" means - and
