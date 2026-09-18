@@ -311,9 +311,7 @@ var private g_lastI32 = 0
 // reads one 32-bit slot off _sp and advances it.
 def private counting_print_i32(runtime : IM3Runtime; _ctx : IM3ImportContext; var _sp : u64?; var _mem : void?) : M3Result {
     g_rawCalls++
-    unsafe {
-        g_lastI32 = *reinterpret<i32?>(_sp)
-    }
+    g_lastI32 = *unsafe(reinterpret<i32?>(_sp))
     return m3Err_none
 }
 

@@ -767,7 +767,7 @@ def PatchBranches(var o : IM3Compilation) {
         while (patches != null) {
                         var patch = reinterpret<pc_t?>(patches)
             let next = patch[0]
-            unsafe { patch[0] = pc }
+            patch[0] = pc
             patches = unsafe(reinterpret<pc_t>(next))
         }
     }
@@ -1208,7 +1208,7 @@ def Compile_Branch(var o : IM3Compilation; i_opcode : m3opcode_t) : M3Result {
                 result = EmitOp(o, @@op_ContinueLoop)
                 if (result != m3Err_none) { return result }
                 EmitPointer(o, scope.pc)
-                unsafe { jumpTo[0] = GetPC(o) }
+                unsafe(jumpTo[0]) = GetPC(o)
             } else {
                 result = CopyStackTopToRegister(o, false)
                 if (result != m3Err_none) { return result }
@@ -1265,7 +1265,7 @@ def Compile_Branch(var o : IM3Compilation; i_opcode : m3opcode_t) : M3Result {
         if (result != m3Err_none) { return result }
     }
 
-    if (jumpTo != null) { unsafe { jumpTo[0] = GetPC(o) } }
+    if (jumpTo != null) { unsafe(jumpTo[0]) = GetPC(o) }
     if (i_opcode == c_waOp_branch) { return SetStackPolymorphic(o) }
     return m3Err_none
 }
@@ -1413,8 +1413,7 @@ def Compile_CallIndirect(var o : IM3Compilation; i_opcode : m3opcode_t) : M3Resu
     }
     let tableIndexSlot = GetStackTopSlotNumber(o)
     var execTop : int
-    var _type : IM3FuncType
-    unsafe { _type = o._module.funcTypes[int(typeIndex)] }
+    var _type : IM3FuncType = unsafe(o._module.funcTypes[int(typeIndex)])
     result = CompileCallArgsAndReturn(o, execTop, _type, true)
     if (result != m3Err_none) { return result }
     result = EmitOp(o, @@op_CallIndirect)
@@ -1490,7 +1489,7 @@ def ReadBlockType(var o : IM3Compilation; var o_blockType : IM3FuncType&) : M3Re
                 o_blockType = o._module.environment.retFuncTypes[int(valueType)]
     } else {
         if (u64(_type) >= u64(o._module.numFuncTypes)) { return "func type out of bounds" }
-        unsafe { o_blockType = o._module.funcTypes[int(_type)] }
+        o_blockType = unsafe(o._module.funcTypes[int(_type)])
             }
     return m3Err_none
 }
@@ -1603,16 +1602,16 @@ def Compile_If(var o : IM3Compilation; i_opcode : m3opcode_t) : M3Result {
         var startPC : pc_t
         result = CompileElseBlock(o, startPC, blockType)
         if (result != m3Err_none) { return result }
-        unsafe { pc[0] = startPC }
+        unsafe(pc[0]) = startPC
     } elif (int(GetFuncTypeNumResults(blockType)) != 0) {
-        unsafe { o.wasm = o.wasm - 1 }
+        o.wasm = unsafe(o.wasm - 1)
         o.stackIndex = stackIndex
         var startPC : pc_t
         result = CompileElseBlock(o, startPC, blockType)
         if (result != m3Err_none) { return result }
-        unsafe { pc[0] = startPC }
+        unsafe(pc[0]) = startPC
     } else {
-        unsafe { pc[0] = GetPC(o) }
+        unsafe(pc[0]) = GetPC(o)
     }
     return m3Err_none
 }
@@ -2322,9 +2321,8 @@ def ReserveConstants(var o : IM3Compilation) : M3Result {
     var numConstantSlots : int = 0
     var wa = o.wasm
     while (m3_ptr_addr(wa) < m3_ptr_addr(o.wasmEnd)) {
-        var code : m3opcode_t
-        unsafe { code = m3opcode_t(wa[0]) }
-        unsafe { wa = wa + 1 }
+        let code : m3opcode_t = m3opcode_t(unsafe(wa[0]))
+        wa = unsafe(wa + 1)
         var addSlots : int = 0
         if (code == c_waOp_i32_const || code == c_waOp_f32_const) {
             addSlots = 1
@@ -2432,8 +2430,7 @@ def CompileFunction(var io_function : IM3Function) : M3Result {
 
             io_function.numConstantBytes = u16(numConstantSlots * (typeinfo sizeof(type<m3slot_t>)))
             if (numConstantSlots != 0) {
-                var constantsPtr : void?
-                unsafe { constantsPtr = addr<void?>(o.constants[0]) }
+                var constantsPtr : void? = unsafe(addr<void?>(o.constants[0]))
                 io_function.constants = m3_CopyMem(constantsPtr, u64(io_function.numConstantBytes))
                 if (io_function.constants == null) {
                     result = m3Err_mallocFailed

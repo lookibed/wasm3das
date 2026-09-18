@@ -89,9 +89,7 @@ def private new_fixture(var bytes : array<u8>) : WasiFdFixture {
     }
     var size = 0u
     let mem = m3_GetMemory(fx.runtime, size, 0u)
-    unsafe {
-        fx.mem = reinterpret<void?>(mem)
-    }
+    fx.mem = unsafe(reinterpret<void?>(mem))
     return fx
 }
 

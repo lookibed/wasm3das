@@ -39,67 +39,50 @@ def m3_value_type(i_type : u8) : M3ValueType {
 
 
 def tagged_get_i32(i_value : M3TaggedValue) : i32 {
-    unsafe {
-        let p = addr<i32 const?>(i_value.valueBits)
-        return *p
-    }
+    let p = unsafe(addr<i32 const?>(i_value.valueBits))
+    return *p
 }
 
 def tagged_get_i64(i_value : M3TaggedValue) : i64 {
-    unsafe {
-        let p = addr<i64 const?>(i_value.valueBits)
-        return *p
-    }
+    let p = unsafe(addr<i64 const?>(i_value.valueBits))
+    return *p
 }
 
 def tagged_get_f32(i_value : M3TaggedValue) : f32 {
-    unsafe {
-        let p = addr<f32 const?>(i_value.valueBits)
-        return *p
-    }
+    let p = unsafe(addr<f32 const?>(i_value.valueBits))
+    return *p
 }
 
 def tagged_get_f64(i_value : M3TaggedValue) : f64 {
-    unsafe {
-        let p = addr<f64 const?>(i_value.valueBits)
-        return *p
-    }
+    let p = unsafe(addr<f64 const?>(i_value.valueBits))
+    return *p
 }
 
 def tagged_set_i32(var io_value : M3TaggedValue&; i_value : i32) {
-    unsafe {
-        var p = addr<i32?>(io_value.valueBits)
-        *p = i_value
-    }
+    var p = unsafe(addr<i32?>(io_value.valueBits))
+    *p = i_value
 }
 
 def tagged_set_i64(var io_value : M3TaggedValue&; i_value : i64) {
-    unsafe {
-        var p = addr<i64?>(io_value.valueBits)
-        *p = i_value
-    }
+    var p = unsafe(addr<i64?>(io_value.valueBits))
+    *p = i_value
 }
 
 def tagged_set_f32(var io_value : M3TaggedValue&; i_value : f32) {
-    unsafe {
-        var p = addr<f32?>(io_value.valueBits)
-        *p = i_value
-    }
+    var p = unsafe(addr<f32?>(io_value.valueBits))
+    *p = i_value
 }
 
 def tagged_set_f64(var io_value : M3TaggedValue&; i_value : f64) {
-    unsafe {
-        var p = addr<f64?>(io_value.valueBits)
-        *p = i_value
-    }
+    var p = unsafe(addr<f64?>(io_value.valueBits))
+    *p = i_value
 }
 
 
 // C: m3_ReallocArray (IM3Function, io_module->table0, endElement, io_module->table0Size)
 // in InitElements - the macro's sizeof(IM3Function) scaling, expanded once here.
 def m3_ReallocFunctionTable(var i_table : IM3Function?; i_newCount, i_oldCount : u32) : IM3Function? {
-    var raw : void?
-    unsafe { raw = reinterpret<void?>(i_table) }
+    var raw : void? = unsafe(reinterpret<void?>(i_table))
     let elemSize = u64(typeinfo sizeof(type<IM3Function>))
     let resized = m3_Realloc_Impl(raw, u64(i_newCount) * elemSize, u64(i_oldCount) * elemSize)
     unsafe { return reinterpret<IM3Function?>(resized) }
@@ -114,8 +97,7 @@ def m3_ReallocFunctionTable(var i_table : IM3Function?; i_newCount, i_oldCount :
 def RunFunctionCode(var i_function : IM3Function) : M3Result {
     var runtime = i_function._module.runtime
     var pc = i_function.compiled
-    var sp : m3stack_t
-    unsafe { sp = reinterpret<m3stack_t>(runtime.stack) }
+    var sp : m3stack_t = unsafe(reinterpret<m3stack_t>(runtime.stack))
     var mem = runtime.memory.mallocated
     let r0 : m3reg_t = 0l
     let fp0 : f64 = 0.0lf
@@ -146,10 +128,7 @@ def m3_NewEnvironment() : IM3Environment {
 
     // C: m3_AllocStruct (M3Environment) - zeroed host allocation; released
     // with m3_Free_Impl in m3_FreeEnvironment (docs/memory-ownership.md).
-    var env : IM3Environment
-    unsafe {
-        env = reinterpret<IM3Environment>(m3_Malloc_Impl(u64(typeinfo sizeof(type<M3Environment>))))
-    }
+    var env : IM3Environment = unsafe(reinterpret<IM3Environment>(m3_Malloc_Impl(u64(typeinfo sizeof(type<M3Environment>)))))
 
     if (env != null) {
         var result : M3Result = m3Err_none
@@ -245,10 +224,7 @@ def Environment_AddFuncType(var i_environment : IM3Environment; var io_funcType 
 def m3_NewRuntime(var i_environment : IM3Environment; i_stackSizeInBytes : u32; i_userdata : void?) : IM3Runtime {
     // C: m3_AllocStruct (M3Runtime) - zeroed host allocation; released with
     // m3_Free_Impl in m3_FreeRuntime (docs/memory-ownership.md).
-    var runtime : IM3Runtime
-    unsafe {
-        runtime = reinterpret<IM3Runtime>(m3_Malloc_Impl(u64(typeinfo sizeof(type<M3Runtime>))))
-    }
+    var runtime : IM3Runtime = unsafe(reinterpret<IM3Runtime>(m3_Malloc_Impl(u64(typeinfo sizeof(type<M3Runtime>)))))
 
     if (runtime != null) {
         m3_ResetErrorInfo(runtime)
@@ -349,7 +325,7 @@ def EvaluateExpression(var i_module : IM3Module; var o_expressed : void?; i_type
     o.runtime = unsafe(addr(runtime))
     o._module = i_module
     o.wasm = io_bytes
-    unsafe { o.wasmEnd = reinterpret<bytes_t>(i_end) }
+    o.wasmEnd = unsafe(reinterpret<bytes_t>(i_end))
     o.lastOpcodeStart = o.wasm
     o._block.depth = -1
 
@@ -434,8 +410,7 @@ def ResizeMemory(var io_runtime : IM3Runtime; i_numPages : u32) : M3Result {
             numPreviousBytes += u64(typeinfo sizeof(type<M3MemoryHeader>))
         }
 
-        var oldMem : void?
-        unsafe { oldMem = reinterpret<void?>(memory.mallocated) }
+        var oldMem : void? = unsafe(reinterpret<void?>(memory.mallocated))
         let newMem = m3_Realloc_Impl(oldMem, numBytes, numPreviousBytes)
         if (newMem == null) {
             return m3Err_mallocFailed
@@ -471,10 +446,8 @@ def InitGlobals(var io_module : IM3Module) : M3Result {
 
             if (g.initExpr != null) {
                 var start = g.initExpr
-                var globalEnd : bytes_t
-                unsafe { globalEnd = g.initExpr + int(g.initExprSize) }
-                var valuePtr : void?
-                unsafe { valuePtr = addr<void?>(g.valueBits) }
+                var globalEnd : bytes_t = unsafe(g.initExpr + int(g.initExprSize))
+                var valuePtr : void? = unsafe(addr<void?>(g.valueBits))
                 result = EvaluateExpression(io_module, valuePtr, g._type, start, globalEnd)
                 if (result != m3Err_none) {
                     break
@@ -500,10 +473,8 @@ def InitDataSegments(var io_memory : M3Memory&; var io_module : IM3Module) : M3R
         unsafe { segment = addr(io_module.dataSegments[int(i)]) }
         var segmentOffset : i32 = 0
         var start = segment.initExpr
-        var segmentEnd : bytes_t
-        unsafe { segmentEnd = segment.initExpr + int(segment.initExprSize) }
-        var offsetPtr : void?
-        unsafe { offsetPtr = addr<void?>(segmentOffset) }
+        var segmentEnd : bytes_t = unsafe(segment.initExpr + int(segment.initExprSize))
+        var offsetPtr : void? = unsafe(addr<void?>(segmentOffset))
         let result = EvaluateExpression(io_module, offsetPtr, c_m3Type_i32, start, segmentEnd)
         if (result != m3Err_none) {
             return result
@@ -514,7 +485,7 @@ def InitDataSegments(var io_memory : M3Memory&; var io_module : IM3Module) : M3R
         if (segmentOffset >= 0 && u64(segmentOffset) + u64(segment.size) <= io_memory.mallocated.length) {
             unsafe {
                 let dest = m3MemData(io_memory.mallocated) + segmentOffset
-                unsafe { memcpy(dest, segment.data, segment.size) }
+                memcpy(dest, segment.data, segment.size)
             }
         } else {
             return "data segment out of bounds"
@@ -580,7 +551,7 @@ def InitElements(var io_module : IM3Module) : M3Result {
                 var _function : IM3Function
                 unsafe { _function = addr(io_module.functions[int(functionIndex)]) }
                 d_m3Assert(_function != null)
-                unsafe { io_module.table0[int(e + u32(offset))] = _function }
+                unsafe(io_module.table0[int(e + u32(offset))]) = _function
             }
         } else {
             return "element table index must be zero for MVP"
@@ -731,10 +702,8 @@ def m3_GetGlobalType(var i_global : IM3Global) : M3ValueType {
 
 def v_FindFunction(var i_module : IM3Module; i_info : void?) : void? {
     var i_name : string
-    unsafe {
-        let namePtr = reinterpret<string const?>(i_info)
-        i_name = *namePtr
-    }
+    let namePtr = unsafe(reinterpret<string const?>(i_info))
+    i_name = *namePtr
 
     for (ii in 0..int(i_module.numFunctions)) {
         let i = u32(ii)
@@ -801,8 +770,7 @@ def m3_GetTableFunction(var o_function : IM3Function&; var i_module : IM3Module;
         return "function index out of range"
     }
 
-    var _function : IM3Function
-    unsafe { _function = i_module.table0[int(i_index)] }
+    var _function : IM3Function = unsafe(i_module.table0[int(i_index)])
     if (_function != null && _function.compiled == null) {
         let result = CompileFunction(_function)
         if (result != m3Err_none) {

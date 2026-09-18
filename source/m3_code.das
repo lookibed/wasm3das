@@ -85,17 +85,15 @@ def public NewCodePage(
         return null
     }
 
-    unsafe {
-        var page = reinterpret<IM3CodePage>(memory)
+    var page = unsafe(reinterpret<IM3CodePage>(memory))
 
-        ++i_runtime.newCodePageSequence
-        page.info.sequence = i_runtime.newCodePageSequence
-        page.info.numLines = u32((pageSize - headerSize) / codeSize)
+    ++i_runtime.newCodePageSequence
+    page.info.sequence = i_runtime.newCodePageSequence
+    page.info.numLines = u32((pageSize - headerSize) / codeSize)
 
-        // lineIndex, usageCount and next are already zero/null because
-        // m3_Malloc_Impl preserves wasm3's zero-initialized allocation contract.
-        return page
-    }
+    // lineIndex, usageCount and next are already zero/null because
+    // m3_Malloc_Impl preserves wasm3's zero-initialized allocation contract.
+    return page
 }
 
 
@@ -109,9 +107,7 @@ def public FreeCodePages(var io_list : IM3CodePage&) {
 
     while (page != null) {
         var next = page.info.next
-        unsafe {
-            m3_Free_Impl(reinterpret<void?>(page))
-        }
+        m3_Free_Impl(unsafe(reinterpret<void?>(page)))
         page = next
     }
 
@@ -157,10 +153,8 @@ def public EmitWord_impl(var i_page : IM3CodePage; i_word : void?) {
         "EmitWord_impl: code page overflow"
     )
 
-    unsafe {
-        var code = GetPageStartPC(i_page)
-        code[i_page.info.lineIndex] = i_word
-    }
+    var code = GetPageStartPC(i_page)
+    unsafe(code[i_page.info.lineIndex]) = i_word
     ++i_page.info.lineIndex
 }
 
@@ -176,10 +170,8 @@ def public EmitWord32(var i_page : IM3CodePage; i_word : u32) {
         "EmitWord32: code page overflow"
     )
 
-    unsafe {
-        var dst = reinterpret<u32?>(GetPagePC(i_page))
-        *dst = i_word
-    }
+    var dst = unsafe(reinterpret<u32?>(GetPagePC(i_page)))
+    *dst = i_word
     ++i_page.info.lineIndex
 }
 
@@ -198,10 +190,8 @@ def public EmitWord64(var i_page : IM3CodePage; i_word : u64) {
         "EmitWord64: code page overflow"
     )
 
-    unsafe {
-        var dst = reinterpret<u64?>(GetPagePC(i_page))
-        *dst = i_word
-    }
+    var dst = unsafe(reinterpret<u64?>(GetPagePC(i_page)))
+    *dst = i_word
     i_page.info.lineIndex += slots
 }
 
@@ -228,11 +218,9 @@ def public GetPagePC(var i_page : IM3CodePage) : pc_t {
         return null
     }
 
-    unsafe {
-        var pc = GetPageStartPC(i_page)
-        pc += int(i_page.info.lineIndex)
-        return pc
-    }
+    var pc = GetPageStartPC(i_page)
+    pc = unsafe(pc + int(i_page.info.lineIndex))
+    return pc
 }
 
 

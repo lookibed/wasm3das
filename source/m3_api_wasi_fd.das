@@ -664,9 +664,7 @@ def public m3_wasi_generic_fd_read(runtime : IM3Runtime; _ctx : IM3ImportContext
             return m3Err_none
         }
         var ret = 0
-        unsafe {
-            ret = _builtin_read(f, reinterpret<u8?>(buf_addr), int(len))
-        }
+        ret = _builtin_read(f, unsafe(reinterpret<u8?>(buf_addr)), int(len))
         if (ret < 0) {
             m3ApiReturn_u32(raw_return, u32(errno_to_wasi(EIO)))
             return m3Err_none
@@ -707,9 +705,7 @@ def public m3_wasi_generic_fd_write(runtime : IM3Runtime; _ctx : IM3ImportContex
             return m3Err_none
         }
         var ret = 0
-        unsafe {
-            ret = _builtin_write(f, reinterpret<u8?>(buf_addr), int(len))
-        }
+        ret = _builtin_write(f, unsafe(reinterpret<u8?>(buf_addr)), int(len))
         if (ret < 0) {
             m3ApiReturn_u32(raw_return, u32(errno_to_wasi(EIO)))
             return m3Err_none

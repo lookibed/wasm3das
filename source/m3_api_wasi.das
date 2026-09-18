@@ -293,10 +293,7 @@ def public m3_wasi_generic_args_get(runtime : IM3Runtime; _ctx : IM3ImportContex
         argv_buf = reinterpret<u8?>(m3ApiGetArgMem(sp, _mem))
     }
 
-    var context : m3_wasi_context_t?
-    unsafe {
-        context = reinterpret<m3_wasi_context_t?>(_ctx.userdata)
-    }
+    var context : m3_wasi_context_t? = unsafe(reinterpret<m3_wasi_context_t?>(_ctx.userdata))
 
     if (context == null) {
         m3ApiReturn_u32(raw_return, u32(WASI_ERRNO_INVAL))
@@ -347,10 +344,7 @@ def public m3_wasi_generic_args_sizes_get(runtime : IM3Runtime; _ctx : IM3Import
     check = m3ApiCheckMem(rt, _mem, argv_buf_size, 4ul)
     if (check != m3Err_none) { return check }
 
-    var context : m3_wasi_context_t?
-    unsafe {
-        context = reinterpret<m3_wasi_context_t?>(_ctx.userdata)
-    }
+    var context : m3_wasi_context_t? = unsafe(reinterpret<m3_wasi_context_t?>(_ctx.userdata))
 
     if (context == null) {
         m3ApiReturn_u32(raw_return, u32(WASI_ERRNO_INVAL))
@@ -550,10 +544,7 @@ def public m3_wasi_generic_proc_exit(runtime : IM3Runtime; _ctx : IM3ImportConte
     var sp = unsafe(reinterpret<u64?>(_sp))
     let code = m3ApiGetArg_u32(sp)                           // m3ApiGetArg (uint32_t, code)
 
-    var context : m3_wasi_context_t?
-    unsafe {
-        context = reinterpret<m3_wasi_context_t?>(_ctx.userdata)
-    }
+    var context : m3_wasi_context_t? = unsafe(reinterpret<m3_wasi_context_t?>(_ctx.userdata))
 
     if (context != null) {
         context.exit_code = i32(code)
@@ -602,9 +593,7 @@ def public m3_LinkWASI(var _module : IM3Module) : M3Result {
     wasi_fd_open_preopens()
 
     if (wasi_context == null) {
-        unsafe {
-            wasi_context = reinterpret<m3_wasi_context_t?>(m3_Malloc_Impl(u64(typeinfo sizeof(type<m3_wasi_context_t>))))
-        }
+        wasi_context = unsafe(reinterpret<m3_wasi_context_t?>(m3_Malloc_Impl(u64(typeinfo sizeof(type<m3_wasi_context_t>)))))
         wasi_context.exit_code = 0
         wasi_context.argc = 0u
         // C: wasi_context->argv = 0. The port's argv is a Daslang array and
