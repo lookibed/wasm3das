@@ -46,6 +46,40 @@ require ./m3_types.das
     and op_CallIndirect, op_Entry and op_Loop - keep calling nextOpImpl, so a
     nested wasm call still nests a bounded number of Daslang frames per wasm
     frame instead of per executed operation.
+
+    Direct-dispatch deviation. C stores the IM3Operation function pointer itself
+    in the code page and reaches it through an indirect call. The port stores an
+    operation INDEX instead - a plain int in 0..m3_OpCount()-1 over the op_*
+    functions of m3_exec sorted by name - and RunLoop turns it back into the
+    operation with m3_DispatchOp, a generated balanced `if (idx < mid)` tree
+    whose leaves are DIRECT calls to op_<name>. The reason is inlining: no C++
+    compiler and no LLVM pass can inline through an indirect call, so in the
+    native tiers (ctx, exe, jit) every wasm operation paid a call/return and
+    moved the five interpreter registers through memory. With the tree spliced
+    into RunLoop ([inline] on m3_DispatchOp) the backends see ordinary direct
+    calls and can inline the operation bodies into the dispatcher.
+
+    Consequently RunLoop, nextOpImpl, jumpOpImpl and RunCode live in m3_exec.das,
+    not here: only there is every op_* visible for a direct call. What stays in
+    this file is the ABI itself - IM3Operation, the m3Ret_nextOp sentinel and the
+    two [inline] tail-position helpers - because the 509 operation bodies and the
+    compile tables of m3_compile.das keep the C form: `IM3Operation` VALUES live
+    in c_setSetOps, the M3OP(...) rows, c_opNull and IsNoOp exactly as in C, and
+    only the code-page word is an index. m3_OpIndex (m3_exec.das) is the reverse
+    map the emitters use, m3_OpAt the forward one it is built from.
+
+    Measured, 2026-09-21, and the premise does not hold on this toolchain, so
+    this is an experiment on record rather than a win. The daslang AOT does not
+    lower a named daslang call to a C++ call at all: every call site becomes
+    `das_invoke_function(..., Func(__context__->fnByMangledName(<hash>)), ...)`,
+    a Context lookup plus the same indirect invoke the code-page word already
+    was. The generated tree therefore costs the ctx tier nine comparisons and a
+    mangled-name lookup ON TOP of the indirect call it was meant to remove:
+    fib 35 went from 2.38 s to 2.92 s (median of seven, alternating runs). In
+    the plain interpreter the cost is the tree itself - nine evaluated nodes per
+    operation against one indirect-call node - and fib 30 went from 2.54 s to
+    4.66 s. Making this pay would need the AOT to emit a real C++ call for a
+    statically known callee, which is a daslang backend change, not a port one.
 */
 
 
@@ -108,38 +142,9 @@ typedef public IM3Operation = function<(var _pc : pc_t&; var _sp : m3stack_t&; v
 var public m3Ret_nextOp : M3Result = "m3: dispatch the operation at _pc"
 
 
-// The trampoline that stands in for C's M3_MUSTTAIL threading: it owns the five
-// interpreter registers and every operation updates them in place.
-// The sentinel test is the loop condition rather than an `if`/`break` pair in
-// the body: one operation costs one iteration, so two fewer nodes per executed
-// wasm operation. `r` starts at the sentinel, which is the state "the word at
-// _pc still has to be dispatched"; C's threaded form has the same shape,
-// because there the first operation is entered unconditionally.
-def public RunLoop(var _pc : pc_t; var _sp : m3stack_t; var _mem : M3MemoryHeader?; var _r0 : m3reg_t; var _fp0 : f64) : M3Result {
-    var r : M3Result = m3Ret_nextOp
-    unsafe {
-        let nextOpId = reinterpret<void?>(m3Ret_nextOp)
-        while (reinterpret<void?>(r) == nextOpId) {
-            let operation = reinterpret<IM3Operation>(_pc[0])
-            _pc = _pc + 1
-            r = operation(_pc, _sp, _mem, _r0, _fp0)
-        }
-    }
-    return r
-}
-
-// C: #define nextOpImpl() ((IM3Operation)(* _pc))(_pc + 1, d_m3OpArgs)
-// Deliberately not [inline], unlike the operand readers: the five parameters
-// are by value, so an inline splice replaces one call node by five
-// argument-copy nodes plus the result temporary, which measures slower.
-def public nextOpImpl(var _pc : pc_t; var _sp : m3stack_t; var _mem : M3MemoryHeader?; var _r0 : m3reg_t; var _fp0 : f64) : M3Result {
-    return RunLoop(_pc, _sp, _mem, _r0, _fp0)
-}
-
-// C: #define jumpOpImpl(PC) ((IM3Operation)(* PC))( PC + 1, d_m3OpArgs)
-def public jumpOpImpl(var pc : pc_t; var _sp : m3stack_t; var _mem : M3MemoryHeader?; var _r0 : m3reg_t; var _fp0 : f64) : M3Result {
-    return RunLoop(pc, _sp, _mem, _r0, _fp0)
-}
+// RunLoop, nextOpImpl and jumpOpImpl - the trampoline that stands in for C's
+// M3_MUSTTAIL threading - live in m3_exec.das, next to the operations they
+// dispatch directly. See the direct-dispatch paragraph above.
 
 // C: #define nextOpDirect() M3_MUSTTAIL return nextOpImpl()
 // The operation has already written _pc/_sp/_mem/_r0/_fp0 back through its
@@ -164,7 +169,5 @@ def public jumpOpDirect(var _pc : pc_t&; var PC : pc_t) : M3Result {
 // ============================================================================
 
 
-// C: d_m3RetSig RunCode (d_m3OpSig) { nextOpDirect(); }
-def public RunCode(var _pc : pc_t; var _sp : m3stack_t; var _mem : M3MemoryHeader?; var _r0 : m3reg_t; var _fp0 : f64) : M3Result {
-    return RunLoop(_pc, _sp, _mem, _r0, _fp0)
-}
+// C: d_m3RetSig RunCode (d_m3OpSig) { nextOpDirect(); } - in m3_exec.das, with
+// RunLoop and the generated dispatch tree it needs.
