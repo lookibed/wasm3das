@@ -21,6 +21,7 @@
 // no memory until touched.
 
 #include "wasm3.das.h"
+#include <cstdio>
 #include <vector>
 
 #ifdef _WIN32
@@ -44,8 +45,24 @@ void run_main() {
         args.push_back(g_argv[i]);
     }
     das::setCommandLineArguments(int(args.size()), args.data());
-    das::wasm3::Standalone ctx;
-    g_rc = ctx.main();
+    // The emitter's C entry points (daslang 0.6.4 after the pin): an instance
+    // is created with its global initializers run, the exported `main` is
+    // called on it, and an exception in either shows up as a non-NULL
+    // wasm3_last_error instead of a C++ throw.
+    wasm3_ctx * ctx = wasm3_create();
+    if (ctx == nullptr) {
+        const char * err = wasm3_last_error(nullptr);
+        std::fprintf(stderr, "wasm3: %s\n", err != nullptr ? err : "context creation failed");
+        g_rc = 1;
+        return;
+    }
+    g_rc = int(wasm3_main(ctx));
+    const char * err = wasm3_last_error(ctx);
+    if (err != nullptr) {
+        std::fprintf(stderr, "wasm3: %s\n", err);
+        g_rc = 1;
+    }
+    wasm3_destroy(ctx);
 }
 
 #ifdef _WIN32
