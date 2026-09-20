@@ -162,6 +162,21 @@ dropped by a link flag: without `liblibDaScript.a` the link fails only on
 the port requires `ast`; an empty stub gives 37.7 MB / 26.4 MB stripped and
 still passes the spec suite (item B9).
 
+The C++ compiler is not a lever either. `build_port.sh` takes `clang++` when
+it exists and `g++` otherwise; on the stand only `clang++-18` is installed,
+so the shipped ctx and aot binaries are gcc 11.4 builds, whereas c2das
+compiles its AOT objects with `clang++-18`. Measured 2026-09-21, the same
+emitted context built both ways, two interleaved fixture runs each
+(`--runtimes wasm3,aot_ctx`, execution without start): gcc 11.4 4.15 s and
+4.26 s, clang++-18 4.42 s and 4.49 s, the binaries 45.7 MB and 45.4 MB. gcc
+stays the default. The gap to C wasm3 (1.7x on the corpus, 4x on fib) is
+the program, not the build: every threaded-interpreter hop is an indirect
+call through the code page that no compiler inlines, the five interpreter
+registers travel by reference, and C wasm3 tail-jumps between operations
+where the port returns to `RunLoop`. c2das gets 0.97–1.24x of `clang -O2` on
+the same daslang because its translated decoders are straight-line code
+with no dispatch loop to pay for.
+
 ## 5. JIT
 
 `WASM3DAS_JIT=1` appends `-jit` to the daslang command line, `WASM3DAS_JIT_OPTS`
