@@ -160,7 +160,13 @@ daslang archives are not built with IPO). The compiler archive cannot be
 dropped by a link flag: without `liblibDaScript.a` the link fails only on
 `register_Module_Ast`, which the emitted module table lists although nothing in
 the port requires `ast`; an empty stub gives 37.7 MB / 26.4 MB stripped and
-still passes the spec suite (item B9).
+still passes the spec suite (item B9). The link flags above are what a
+scratch build must repeat when the context is emitted by hand (section 7,
+E1): the emission `daslang -dasroot <root> utils/aot/main.das -- -ctx
+app/wasm3.das <out>/ctx`, then the compile of `native/standalone_main.cpp`
+(`-I<out>/ctx`) and of `<out>/ctx/wasm3.das.cpp` with the flag set of
+`build_port.sh ctx`, then the link against `liblibDaScript.a`,
+`liblibDaScript_runtime.a`, `liblibUriParser.a`, `-lpthread -ldl -lm`.
 
 The C++ compiler is not a lever either. `build_port.sh` takes `clang++` when
 it exists and `g++` otherwise; on the stand only `clang++-18` is installed,
@@ -270,13 +276,40 @@ Skipped: `test_pure/render_frame` (hours in an interpreter-in-interpreter),
 the i64 debug probes, host-adapter paths that need a memory-adapter driver,
 `real-world-smollm2` (no wasm module built).
 
-## 7. Open items, in order
+## 7. The plan to beat C wasm3, and the experiments so far (2026-09-21)
+
+Where the ctx tier's time goes is one fact: between wasm operations the port
+returns to `RunLoop` and passes the five interpreter registers through
+memory, where C wasm3 tail-jumps with the registers in machine registers. The
+compilers are not the lever (section 4, gcc against clang), and neither is
+PGO (below). Three experiments, run in sequence on a quiet stand, each on
+the same emitted program and the same 98-check corpus:
+
+| experiment | what it changed | fib 35, ctx, wall | corpus, ctx, without start | verdict |
+|---|---|---|---|---|
+| baseline (section 6) | — | 1.65 s | 4.15–4.26 s | |
+| **E1 direct calls in the emitted context** | daslang's `-ctx` emitter routes every call into a required module through `Context::fnByMangledName` + `das_invoke_function` (`daslib/aot_cpp.das`, `isHybridCall`: `func._module != program.getThisModule`), 1734 sites in the port's context, `RunLoop`, `nextOpImpl` and every `op_*` helper call included; only the entry module's own calls are direct. A three-line patch calls the foreign functions the context emits directly (`notes/upstream_cases/ctx_direct_calls.patch`, issue draft `ctx_direct_calls.md`): 310 lookup sites remain (the `@@fn` addresses of the compile tables) | **1.15 s** | **3.69–3.87 s** | keep: −30 % on calls, −8 % on the corpus, spec 17863/17863, fixtures 86/86; needs the patch in the daslang fork, the port changes nothing |
+| E2 direct-dispatch tree | code-page words carry an operation index and a generated balanced `if` tree of direct calls replaces the indirect call in `RunLoop` (branch `perf/direct-dispatch`, kept for the record) | 2.10 s stock emitter, 1.30 s with E1 | — | rejected: the tree costs nine comparisons per operation, the compilers do not inline 510 bodies into the loop, and the interpreter tier pays 1.8x |
+| E3 PGO on the ctx build | `-fprofile-generate`, the corpus as the training run, `-fprofile-use -fprofile-correction`, on top of E1 | 1.13 s against 1.12 s | 3.76–3.87 s against 3.69–3.74 s | rejected: inside the noise; one translation unit already gives gcc the whole program |
+
+What remains is structural, and the next experiment tests it: C's form of the
+operation ABI (registers by value, `return nextOpImpl(...)`), which with E1's
+direct emission may let gcc turn the tail position into a jump, i.e. the
+`M3_MUSTTAIL` chain without a language feature. If it does, the trampoline is a
+per-tier choice (the interpreter keeps it, the native builds drop it); if it
+does not, the ask to daslang is a `musttail` emission for `return f(args)` in
+the JIT and the AOT. Beyond parity with C wasm3 lies a different product, a
+wasm-to-daslang translator that hands the JIT straight-line code, which is
+where c2das gets its 1.0x of C.
+
+## 8. Open items, in order
 
 From the release squeeze tracker of 2026-09-10 (A1–A3, A6, A7, B1, B3, B6, B7
-are done; B2 closed as no gain):
+are done; B2 closed as no gain), plus the emitter patch from section 7:
 
 | # | item | gain | cost |
 |---|---|---|---|
+| E1 | apply `notes/upstream_cases/ctx_direct_calls.patch` in the daslang fork and rebuild; until then the local ctx builds keep the lookups | fib −30 %, corpus −8 % on the ctx tier, nothing in the port | the owner's daScript branch; the per-module `-aot` tier would need external declarations for the same win |
 | A4 | the `aot` tier misses its AOT link on two ops (section 3) | an honest column, or one fewer variant | the one-line address workaround plus `-aot-strict` in `build_port.sh`, or retire the variant from scripts, harness and report |
 | A5 | the interpreter bundle carries `lib/*.so` and an `LD_LIBRARY_PATH` launcher (absolute RUNPATH of the source-built daslang) | one binary | a static `daslang` for the bundle, if daScript's CMake offers it |
 | B4 | interpreter start is the compile of `app/` + `source/`; `-module-cache` was parked because it printed `deser: clean` to stdout | start several times lower | re-test on the pin, check stdout hygiene with the WASI driver |
