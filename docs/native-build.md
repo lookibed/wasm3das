@@ -9,14 +9,31 @@ authoritative current measurement is `tests/manual/fixture_report.md`
 
 ## 1. The tiers
 
-| tier | launcher | how it runs | start | speed vs C wasm3 (98 fixtures, without start) |
-|---|---|---|---|---|
-| interpreter | `scripts/wasm3` | `daslang app/wasm3.das`, sources compiled at every start | 0.2 s | 29x |
-| aot | `scripts/wasm3-native` (`tmp/native/bin/wasm3das`) | `daslang -aot` turns every module into C++, linked with the static `libDaScript` and the host `native/wasm3das_main.cpp`; the front end still compiles the sources at start and swaps in the native bodies | 0.65 s | 19x (two ops miss their AOT link, item A4) |
-| aot_ctx | `scripts/wasm3-ctx` (`tmp/native-ctx/bin/wasm3das`) | daslang's `-ctx` emitter bakes the compiled program into one translation unit, linked with `native/standalone_main.cpp`; no front end at start | 25–29 ms | 1.6x |
-| jit | `WASM3DAS_JIT=1 scripts/wasm3` | dasLLVM JIT of the interpreter program; needs a daslang built with LLVM | 0.55 s warm, 3.5 s cold codegen | 3.0x at O3 |
+Measured 2026-09-20 on the stand (Ryzen 7 7435HS, WSL2) with the current
+daslang (`lookibed/mcp-served-tree-paths`, master of 2026-09-17 plus one
+commit), all 86 documented fixture results matching on every tier
+(`tests/manual/fixture_report.md`):
 
-Build: `scripts/build_port.sh` (aot) and `scripts/build_port.sh ctx`. The AOT
+| tier | launcher | how it runs | start | whole set, without start, vs C wasm3 |
+|---|---|---|---|---|
+| interpreter | `scripts/wasm3` | `daslang app/wasm3.das`, sources compiled at every start | 0.16 s | 30x |
+| aot | `scripts/wasm3-native` (`tmp/native/bin/wasm3das`) | `daslang -aot` turns every module into C++, linked with the static `libDaScript` and the host `native/wasm3das_main.cpp`; the front end still compiles the sources at start and swaps in the native bodies | 0.77 s | 21x (two ops miss their AOT link, item A4) |
+| aot_ctx | `scripts/wasm3-ctx` (`tmp/native-ctx/bin/wasm3das`) | daslang's `-ctx` emitter bakes the compiled program into one translation unit, linked with `native/standalone_main.cpp`; no front end at start | 27 ms | 1.7x |
+| jit | `WASM3DAS_JIT=1 scripts/wasm3` | dasLLVM JIT of the interpreter program at O3; needs a daslang built with LLVM | 0.42 s warm (DLL cache), 7.8 s cold codegen | 3.3x |
+| exe | `scripts/wasm3-exe` (`tmp/native-exe/bin/wasm3das.exe`) | `daslang -exe`: the same LLVM pipeline once, ahead of time, linked against the shared daslang runtime; no front end, no codegen at start, no C++ compiler in the build | 23 ms | 2.7x |
+
+The whole set, 98 checks: wasm3 C 2.93 s, wasmtime 3.40 s, interpreter
+1m38.0 s, aot 2m14.6 s, ctx 7.26 s, jit 50.0 s, exe 9.62 s. ctx stays the
+fastest tier on execution; exe starts fastest, needs no C++ toolchain and
+sits between ctx and jit on execution, because the JIT keeps daslang's
+calling convention on every threaded-interpreter hop where the ctx build's
+C++ compiler inlines across them. For comparison, c2das (a C-to-daslang
+translation of pl_mpeg and h264bsd, straight-line code with no dispatch
+loop) measured its jit and exe tiers at 0.97–1.24x of `clang -O2` on the
+same machine; an interpreter inside the JIT does not get that close.
+
+Build: `scripts/build_port.sh` (aot), `scripts/build_port.sh ctx` and
+`scripts/build_port.sh exe`. The AOT
 step is content-cached; a full build is a few minutes. `JOBS=2` limits the
 parallel C++ compiles; `EXTRA_CXXFLAGS`/`EXTRA_LDFLAGS` add flags (an ASan
 variant: `-g -O1 -fsanitize=address -fno-omit-frame-pointer`). Host options
@@ -97,11 +114,21 @@ silently.
 `scripts/build_port.sh ctx` -> `tmp/native-ctx/bin/wasm3das`, launcher
 `scripts/wasm3-ctx`. The pinned daslang carries the `-ctx` fixes (upstream
 #3967, PR #3838: emission of a required module's initialized global, the
-`InitGlobalVar` link signature, `[init]` run order). Limitation still live:
+`InitGlobalVar` link signature, `[init]` run order). Limitation on the pin:
 `[init]` functions of required modules cannot run in a standalone context, so
 `m3_compile::init_compile_operation_tables` is an explicit, idempotent call
 from `m3_NewEnvironment`; a new required-module `[init]` fails the `-ctx`
-build with `error[50503]` naming it.
+build with `error[50503]` naming it. Upstream `7a9ae1077` (after the pin, "a
+required module's [init] runs from the generated constructor") lifts that;
+the explicit call stays because it is harmless on both.
+
+The emitter after the pin generates a C API instead of the C++ class
+`das::wasm3::Standalone`: `wasm3_create()` runs the global initializers and
+the `[init]` functions, `wasm3_main(ctx)` is the exported `main`,
+`wasm3_last_error(ctx)` carries an exception text instead of a C++ throw,
+`wasm3_destroy(ctx)` frees the instance, `wasm3_shutdown_runtime()` drains
+the process. `native/standalone_main.cpp` uses that API (2026-09-20); a host
+written against the old class does not compile on the current daslang.
 
 The binary runs `main` on a thread with an explicit 256 MiB stack
 (`pthread_attr_setstacksize`, `CreateThread dwStackSize`), so the bare release
@@ -161,36 +188,45 @@ column disagrees with the baseline.
 
 ## 6. Measurements
 
-### fib32 across engines (`scripts/bench.sh`, 2026-09-06, i5-6200U, 4 threads)
+### fib32 across engines (`scripts/bench.sh`, 2026-09-20, Ryzen 7 7435HS, WSL2)
 
-Median of 3, wall clock from process start to exit, seconds:
+Median of 3, wall clock from process start to exit, seconds, current daslang:
 
 | engine | fib 1 (start-up) | fib 25 | fib 30 | fib 35 |
 |---|---:|---:|---:|---:|
-| wasmtime 48 | 0.009 | 0.009 | 0.017 | 0.109 |
-| wasm3, C reference | 0.004 | 0.009 | 0.060 | 0.656 |
-| wasm3das, daslang interpreter (RunLoop) | 2.364 | 2.967 | 9.437 | 71.494 |
-| wasm3das, daslang `-jit` (cached DLL, before #3974) | 9.693 | 9.819 | 12.566 | 16.878 |
-| wasm3das, native build (aot) | 2.182 | 2.239 | 2.532 | 5.646 |
+| wasmtime 48 | 0.009 | 0.010 | 0.014 | 0.059 |
+| wasm3, C reference | 0.003 | 0.006 | 0.037 | 0.405 |
+| wasm3das, daslang interpreter | 0.153 | 0.360 | 2.492 | 29.988 |
+| wasm3das, daslang `-jit` (cached DLL, O3) | 0.439 | 0.455 | 0.613 | 2.421 |
+| wasm3das, daslang `-jit -jit-no-cache` | 7.828 | — | — | — |
+| wasm3das, native build (aot) | 0.893 | 1.005 | 2.419 | 22.119 |
+| wasm3das, standalone context (ctx) | 0.033 | 0.047 | 0.180 | 1.684 |
+| wasm3das, LLVM executable (exe) | 0.025 | 0.042 | 0.204 | 2.124 |
 
 Execution only (minus each engine's own start-up) and the ratio to C on fib(35):
 
 | engine | fib 25 | fib 30 | fib 35 | vs C |
 |---|---:|---:|---:|---:|
-| wasmtime 48 | 0.000 | 0.008 | 0.100 | 0.2x |
-| wasm3, C reference | 0.005 | 0.056 | 0.652 | 1.0x |
-| wasm3das interpreter (RunLoop) | 0.603 | 7.073 | 69.130 | 106x |
-| wasm3das `-jit` | 0.126 | 2.873 | 7.185 | 11.0x |
-| wasm3das native (aot) | 0.057 | 0.350 | 3.464 | 5.3x |
+| wasmtime 48 | 0.001 | 0.005 | 0.050 | 0.1x |
+| wasm3, C reference | 0.003 | 0.034 | 0.402 | 1.0x |
+| wasm3das interpreter | 0.207 | 2.339 | 29.835 | 74x |
+| wasm3das `-jit` | 0.016 | 0.174 | 1.982 | 4.9x |
+| wasm3das native (aot) | 0.112 | 1.526 | 21.226 | 53x |
+| wasm3das ctx | 0.014 | 0.147 | 1.651 | 4.1x |
+| wasm3das exe | 0.017 | 0.179 | 2.099 | 5.2x |
 
-Every engine returned the C reference's values. The remaining gap of the aot
-tier to C is the daslang calling convention that survives AOT (`Context *`,
-`das_invoke_function` through the function table for every threaded hop) plus
-the missing `M3_MUSTTAIL`. `scripts/bench.sh` takes `RUNS`, `NS`, `ENGINES`,
-`BASELINE`, `WASM`, `FUNC`, per-engine binary overrides and `JIT_APP`; it
-warms every engine once, skips a missing or failing engine and checks every
-answer against the C reference. Measure on a quiet machine: a parallel gate or
-build ruins the numbers.
+Every engine returned the C reference's values. The aot tier's 53x is the
+AOT link miss of section 3 (`op_Return` and `op_i32_Equal_rs` run
+interpreted, and fib is nothing but calls and compares); the earlier
+measurement of 2026-09-06 on another machine (i5-6200U, daslang at the
+previous pin) had it at 5.3x before that miss appeared. The remaining gap of
+the compiled tiers to C is the daslang calling convention that survives
+(`Context *`, `das_invoke_function` through the function table for every
+threaded hop) plus the missing `M3_MUSTTAIL`. `scripts/bench.sh` takes
+`RUNS`, `NS`, `ENGINES`, `BASELINE`, `WASM`, `FUNC`, per-engine binary
+overrides and `JIT_APP`; it warms every engine once, skips a missing or
+failing engine and checks every answer against the C reference. Measure on a
+quiet machine: a parallel gate or build ruins the numbers.
 
 ### The suites on the aot tier (2026-09-06, idle 4-core machine)
 
@@ -205,12 +241,16 @@ and its assertions are tiny calls; the WASI list is real compute. Per test
 2.844, smallpt 2.983 / 22.318, smallpt-mv 4.294 / 47.182, mal 2.260 / 4.385,
 Brotli 3.726 / 50.894; C wasm3 0.839 s for the whole list.
 
-### The fixture corpus (2026-09-10, Ryzen 7 7435HS, 98 checks x 6 runtimes)
+### The fixture corpus (2026-09-20, Ryzen 7 7435HS, 98 checks x 7 runtimes)
 
-From `tests/manual/fixture_report.md`, whole set, total / start / without start:
-wasm3 C 3.139 s; wasmtime 3.587 s; interpreter 1m47.0 s / 0.197 s / 29x;
-aot 2m02.6 s / 0.677 s / 19x; aot_ctx 7.729 s / 0.031 s / 1.6x; jit
-1m03.6 s / 0.544 s / 3.5x. All 86 documented results match on every runtime.
+From `tests/manual/fixture_report.md`, whole set, total / start / without
+start / x C without start: wasm3 C 2.925 s; wasmtime 3.400 s; interpreter
+1m38.0 s / 0.157 s / 30x; aot 2m14.6 s / 0.770 s / 21x; aot_ctx 7.255 s /
+0.027 s / 1.7x; jit 50.0 s / 0.416 s / 3.3x; exe 9.617 s / 0.023 s / 2.7x.
+All 86 documented results match on every runtime. The previous run
+(2026-09-10, daslang at the pin, no exe tier) had the interpreter at 29x,
+aot 19x, ctx 1.6x and jit 3.5x; the interpreter start fell from 0.197 s to
+0.157 s and the JIT's from 0.544 s to 0.416 s with the newer daslang.
 Skipped: `test_pure/render_frame` (hours in an interpreter-in-interpreter),
 the i64 debug probes, host-adapter paths that need a memory-adapter driver,
 `real-world-smollm2` (no wasm module built).
@@ -226,6 +266,6 @@ are done; B2 closed as no gain):
 | A5 | the interpreter bundle carries `lib/*.so` and an `LD_LIBRARY_PATH` launcher (absolute RUNPATH of the source-built daslang) | one binary | a static `daslang` for the bundle, if daScript's CMake offers it |
 | B4 | interpreter start is the compile of `app/` + `source/`; `-module-cache` was parked because it printed `deser: clean` to stdout | start several times lower | re-test on the pin, check stdout hygiene with the WASI driver |
 | B5 | second expansion layer (`OP_*` helpers of `m3_math_utils`, `m3MemData` in load/store ops) | 5–15 % on heavy rows | extend `m3_exec_expand.das`; gate, spec, fixtures |
-| B8 | `-exe`: the JIT's standalone executable, no compiler at start | potentially the fastest tier on every platform | `daslang -exe -output <out> app/wasm3.das`, then spec, WASI, fixtures |
+| B8 | `-exe`: the JIT's standalone executable, no compiler at start | done 2026-09-20 (`scripts/build_port.sh exe`, `scripts/wasm3-exe`, the `exe` runtime of the harness): spec 17863/17863, WASI 7/7, fixtures 86/86; 23 ms start, 2.7x C on execution, so ctx keeps the execution crown and exe wins where no C++ toolchain is wanted | packaging it into the release bundles is open |
 | B9 | stub `register_Module_Ast` in the host (section 4) | −15 MB, faster load | measure spec, WASI, fixtures, or an upstream change so a standalone program registers only the modules it uses |
 | C | no numbers from Windows or arm64 beyond "fib works" | per-platform confidence | a per-platform fixture run in the release checklist |
