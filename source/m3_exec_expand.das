@@ -115,13 +115,17 @@ require strings
     m3_exec.das (see dispatch_shape below for why it is that file and not the
     entry file, and for the leading underscore):
 
-        "tree"      (the default) a balanced `if (idx < mid)` tree, so an index
-                    costs ceil(log2(N)) comparisons and every arm is a `jmp`;
-        "chain"     a linear `if (idx == k) return op_k (...)` per operation,
-                    which LLVM folds into a switch with a jump table;
+        "chain"     (the measured default) a linear `if (idx == k) return
+                    op_k (...)` per operation, which LLVM folds into a switch
+                    with a jump table - one indirect jump instead of nine
+                    comparisons;
+        "tree"      a balanced `if (idx < mid)` tree, so an index costs
+                    ceil(log2(N)) comparisons and every arm is a `jmp`;
         "noinline"  the tree, with `[hint(noinline)]` added to every operation
                     so LLVM cannot inline a small one into the dispatch and
                     grow its prologue with the hoisted constants.
+
+    The three are measured in docs/native-build.md section 6, E9.
 
     Hand-built AST again, for the reason at the top: daslib/ast only, no qmacro.
 */
@@ -564,7 +568,8 @@ def private dispatch_shape(prog : ProgramPtr) : string {
     for (a in prog._options) {
         if (a.name == "_m3_dispatch" && a.basicType == Type.tString) return string(a.sValue)
     }
-    return "tree"
+    // the measured default, docs/native-build.md section 6, E9
+    return "chain"
 }
 
 // C's d_m3OpAllArgs, spelled from the function being generated: the names bind

@@ -382,9 +382,9 @@ The shape of the dispatch is an empirical question, so it is an option,
 file's; the leading underscore is what makes daslang accept an unregistered
 option):
 
-- `"tree"` (the default) — a balanced `if (idx < mid)` tree;
-- `"chain"` — one `if (idx == k) return op_k(...)` per operation, which LLVM
-  folds into a switch with a jump table;
+- `"chain"` (the measured default) — one `if (idx == k) return op_k(...)` per
+  operation, which LLVM folds into a switch with a jump table;
+- `"tree"` — a balanced `if (idx < mid)` tree;
 - `"noinline"` — the tree, with `[hint(noinline)]` added by the pass to every
   operation, so LLVM cannot inline a small one into the dispatch.
 
@@ -395,8 +395,12 @@ operations. The one thing that differs between the shapes is the dispatch's own
 prologue: with `"tree"` and `"chain"` LLVM inlines roughly half the operations
 into it and hoists their constants, so the dispatch pushes six registers,
 allocates a frame and loads four SSE constants before the first comparison (91
-bytes); with `"noinline"` the dispatch starts with `mov (%rdi),%eax` and is 11
-bytes from entry to the first branch.
+and 79 bytes); with `"noinline"` the dispatch starts with `mov (%rdi),%eax` and
+is 11 bytes from entry to the first branch. That `"noinline"` still does not
+win says the prologue is not the dominant term — the comparisons are — which is
+why `"chain"`, whose jump table costs one indirect jump instead of nine
+compares, is the default; `"tree"` is the one shape that is not worth having,
+since it loses fib 35 against the plain C form.
 
 ## 8. Open
 

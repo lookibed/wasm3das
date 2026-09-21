@@ -353,6 +353,75 @@ Skipped: `test_pure/render_frame` (hours in an interpreter-in-interpreter),
 the i64 debug probes, host-adapter paths that need a memory-adapter driver,
 `real-world-smollm2` (no wasm module built).
 
+### E9, the JIT tier's dispatch shapes (2026-09-22, `perf/jit-dispatch-v2`)
+
+Five interleaved rounds — every engine runs each workload once per round, so a
+load change hits them all the same way — on a stand whose own load was 1.9
+before the first round and 2.8–3.4 during (another agent's JIT job held one
+core throughout, so these are ratios, not absolute records). Median of 5,
+seconds, wall clock from process start to exit:
+
+| engine | fib 35 | x C | coremark | x C | mandel 32 4e5 | x C |
+|---|---:|---:|---:|---:|---:|---:|
+| wasm3, C reference | 0.41 | 1.00 | 19.10 | 1.00 | 0.03 | 1.00 |
+| ctx, as it stands on the branch point | 0.56 | 1.37 | 23.99 | 1.26 | 0.05 | 1.67 |
+| ctx, rebuilt from this branch | 0.60 | 1.46 | 24.83 | 1.30 | 0.05 | 1.67 |
+| exe, C form (the branch point) | 1.22 | 2.98 | 24.44 | 1.28 | 0.13 | 4.33 |
+| exe, dispatch `"tree"` | 1.29 | 3.15 | 21.04 | 1.10 | 0.09 | 3.00 |
+| **exe, dispatch `"chain"`** | **0.89** | **2.17** | **19.03** | **1.00** | **0.08** | **2.67** |
+| exe, dispatch `"noinline"` | 0.95 | 2.32 | 19.47 | 1.02 | 0.09 | 3.00 |
+
+`mandel 32 4e5` is 30 ms of execution, so its column is mostly the process
+start (C 1 ms, ctx 14 ms, exe 23 ms) and is here only as the start control.
+The ctx rows are the same binary's recipe before and after the branch: the
+3–7 % between them is inside the spread (fib 35 min/max 0.54–0.62 against
+0.56–0.62) and the emitted C++ proves no operation body changed — a
+function-by-function comparison of `ctx/wasm3.das.cpp` finds `m3_OpWord` added
+and eleven bodies different, of which four are the `m3_OpWord` routing
+(`EmitOp`, `EnsureCodePageNumLines`, `CompileRawFunction`, `op_Compile`), one
+is `EmitWord`'s generic instantiation now taking `u64` instead of a function
+value, one is `RunCode` calling `nextOpImpl` instead of having it inlined (once
+per host call, not per operation), and four differ only in the emitter's
+generated temporary numbering.
+
+The manual fixture corpus through the same four binaries (98 checks, one run
+each, the C reference re-measured inside every run, `--runtimes wasm3,exe`);
+all four matched the documented baseline 86/86:
+
+| exe build | corpus total | exec only | x C exec only | x C end to end |
+|---|---:|---:|---:|---:|
+| C form (the branch point) | 7.381 s | 4.702 s | 1.69x | 2.52x |
+| dispatch `"tree"` | 5.926 s | 3.449 s | 1.23x | 2.03x |
+| dispatch `"chain"` | 6.208 s | 3.806 s | 1.28x | 2.01x |
+| dispatch `"noinline"` | 6.040 s | 3.490 s | 1.20x | 1.98x |
+
+The corpus is 98 short runs, so half of its end-to-end total is the exe tier's
+23 ms start and the three shapes tie there (1.98–2.03x) while all three beat
+the C form's 2.52x. On execution alone the corpus mildly prefers `"noinline"`
+and the two long-running workloads above prefer `"chain"`; the corpus is one
+run per shape and the table above is a median of five, so `"chain"` is the
+default.
+
+objdump of the cached JIT DLL, all three shapes: an operation is six
+instructions ending in `jmp m3_DispatchOp` (`op_SetRegister_i32`: `mov
+(%rdi),%eax; add $0x8,%rdi; shl $0x2,%eax; cltq; movslq (%rsi,%rax,1),%rcx; jmp
+…`), `nextOpImpl` is a single five-byte `jmp` into the dispatch, and the
+dispatch's arms are `jmp`s back into the operations — no frame anywhere in the
+chain. What differs is the dispatch's own prologue and size:
+
+| shape | `m3_DispatchOp` size | entry to first branch | inner shape | exe `.text` |
+|---|---:|---:|---|---:|
+| `"tree"` | 0x3e3a | 91 bytes (6 pushes, a frame, 4 SSE constants, 2 globals) | 276 `jmp`s, no indirect | 416 758 |
+| `"chain"` | 0x2f0a | 79 bytes, same hoisting | 7 indirect `jmp *` (jump tables) | 412 038 |
+| `"noinline"` | 0x19d8 | **11 bytes** (`mov (%rdi),%eax; add $0x8,%rdi; cmp`) | 250 `jmp`s, no indirect | 382 998 |
+
+The fat prologue of `"tree"` and `"chain"` is LLVM inlining the small
+operations into the dispatch and hoisting their constant loads to its entry,
+where every dispatched operation pays for them; `[hint(noinline)]` removes it
+entirely. That it still does not win says the prologue is not the dominant
+term — the comparisons are — which is why `"chain"`, whose jump table is one
+indirect jump instead of nine compares, is the default.
+
 ## 7. The plan to beat C wasm3, and the experiments so far (2026-09-21)
 
 Where the ctx tier's time goes is one fact: between wasm operations the port
@@ -375,6 +444,7 @@ the same emitted program and the same 98-check corpus:
 
 | **E7 the JIT tiers** (`-jit`, `-exe`) | objdump of the cached DLL split one operation's 30 instructions: (a) `_pc++` in every operand reader is a runtime call to `$::i_das_ptr_inc` with `_pc` by reference (the JIT intrinsifies `+=`, not `++`), so `_pc` lives in memory and its escaped address forbids the tail call; (b) three null tests per operation (`_pc`, the slot pointer, the advanced `_pc`); (c) `return operation(...)` through a function value is never a tail call in LLVM (the generic wrapper ABI), so frames nest per executed operation - 209 ns per step in a micro-model (`notes/upstream_cases/tests/jit_tests/dispatch.das`) against 4 ns for the invoke itself. Port side: the readers spell `_pc += 1`, and the `m3_exec_expand` pass sets the `unsafeDeref` flag on every function of `m3_exec` (C dereferences unchecked) | exe fib 35 2.1 s -> **1.2 s** on the loaded stand, the operation body 6 instructions and `jmp nextOpImpl`; jit the same code, plus its start | exe corpus without start 2.7x -> **1.7x** of C (4.84 s), 8 rows faster than C end to end; jit 3.9x | keep both (one source, every tier gains); (c) is the third ask to daslang (`notes/upstream_cases/jit_invoke_musttail.md`): the native entry `jitImpl` on `SimFunction` and `musttail` for an invoke in return position |
 | E8 the dispatch tree for the LLVM tiers (branch `perf/jit-dispatch-tree`) | index words in the code page and a generated tree of direct calls in `nextOpImpl`, so LLVM tail-jumps op -> tree -> op (503 `jmp` in the DLL's tree) | exe 1.9 s, jit no better; **ctx 1.7x slower** (1.22-1.36 s against 0.74 s, a central tree against replicated indirect jumps) and the interpreter pays nine comparisons per operation | | rejected as a merge, kept for the record: it proves LLVM's tail jumps and bounds what the tree can give (the tree's own prologue and nine comparisons); the daslang-side fix keeps the C form |
+| **E9 the same dispatch, for the JIT tier alone** (branch `perf/jit-dispatch-v2`) | E8's index word and generated dispatch, but produced by an infer pass gated on `prog.policies.jit_enabled`, so only `-jit` and `-exe` get it and the interpreter, `-aot` and `-ctx` compile C's form unchanged (`docs/execution-design.md` section 7). Three shapes behind `options _m3_dispatch` in `m3_exec.das`: `"tree"`, `"chain"` (LLVM folds it into a jump table) and `"noinline"` (the tree, with `[hint(noinline)]` added to every operation so LLVM stops inlining them into the dispatch and growing its prologue) | see the E9 table below | | keep, with `"chain"` as the default: the exe tier goes from 1.28x to **1.00x** of C wasm3 on coremark and from 2.98x to **2.17x** on fib 35, the ctx tier is untouched (the emitted C++ differs only in `m3_OpWord` and the four sites that call it), spec 17863/17863 per shape, gate green. `"tree"` alone is not enough - it loses fib 35 against the plain C form - which is the same central-dispatch cost E8 measured |
 
 One discrepancy stays open: the E4 measurement had ctx fib 35 at 0.438 s
 and the corpus at 1.60-1.63 s without start, the final run has 0.538 s
