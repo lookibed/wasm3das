@@ -43,11 +43,14 @@ WASI) and the app are in revision (reviewed against C, awaiting code-owner
 sign-off). End-to-end execution works: `scripts/wasm3` runs every
 `wasm3c/test/lang` fixture, the original `wasm3c/test/run-spec-test.py`
 passes its whole default list and `wasm3c/test/run-wasi-test.py` passes
-12/12 (`docs/test-suites.md`). The executor dispatches through `RunLoop`
-instead of nested calls (`docs/execution-design.md`), and
-`scripts/build_port.sh` produces the AOT and standalone-context native
-binaries that pass the same suites (`docs/native-build.md`, measurements in
-`tests/manual/fixture_report.md`). `m3_info`, the tracer and the full public
+12/12 (`docs/test-suites.md`). The executor keeps C's form of the operation
+ABI, every operation returning the direct call of the next one
+(`docs/execution-design.md`, section 6), and `scripts/build_port.sh`
+produces the AOT, standalone-context and LLVM-executable native binaries
+that pass the same suites (`docs/native-build.md`, measurements in
+`tests/manual/fixture_report.md`); the standalone-context tier depends on
+two emitter patches the daslang fork has not accepted yet, applied by the
+build to an overlay (`docs/upstream-status.md`). `m3_info`, the tracer and the full public
 `wasm3.h` API are not started. `wasm3c/` is the reference C source tree. The
 current session handoff is `notes/handoff_2026-09-18.md`; the documentation
 set is exactly the files named in the `AGENTS.md` "Key files" table.
