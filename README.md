@@ -197,3 +197,9 @@ scripts/wasm3-ctx wasm3c/test/lang/fib32.wasm --func fib 35   # ~50 ms total
 The measured column in `tests/manual/fixture_report.md` is
 `wasm3das(aot_ctx)`. Development rules, the verification gate and the review
 process are in `docs/development-pipeline.md` and `AGENTS.md`.
+
+## License
+
+MIT (`LICENSE`). The vendored Wasm3 sources under `wasm3c/` keep their own MIT
+license (`wasm3c/LICENSE`); the fixture modules under `tests/manual/` carry
+the upstream licenses listed in `tests/manual/ATTRIBUTION.md`.

@@ -72,7 +72,11 @@ unchanged). Issue #3991 reproduces on both commits.
   interpreted and aot launchers raise `ulimit -s` for the spec suite's
   `assert_exhaustion` cases; the standalone binary reserves a 256 MiB
   thread stack itself (`native/standalone_main.cpp`) and needs no launcher.
-  Trampoline/tail-call architecture remains the future port task.
+  With the emitter patch of the table above and the C form of the operation
+  ABI (PR #54) the ctx tier runs C's tail-jump chain; the LLVM JIT does not
+  emit a tail call for `return f(args)` even with matching signatures, so the
+  exe tier keeps its frames (`docs/execution-design.md`, section 6): the
+  second ask to daslang.
 
 ## Historical record
 

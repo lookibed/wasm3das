@@ -292,14 +292,16 @@ the same emitted program and the same 98-check corpus:
 | E2 direct-dispatch tree | code-page words carry an operation index and a generated balanced `if` tree of direct calls replaces the indirect call in `RunLoop` (branch `perf/direct-dispatch`, kept for the record) | 2.10 s stock emitter, 1.30 s with E1 | — | rejected: the tree costs nine comparisons per operation, the compilers do not inline 510 bodies into the loop, and the interpreter tier pays 1.8x |
 | E3 PGO on the ctx build | `-fprofile-generate`, the corpus as the training run, `-fprofile-use -fprofile-correction`, on top of E1 | 1.13 s against 1.12 s | 3.76–3.87 s against 3.69–3.74 s | rejected: inside the noise; one translation unit already gives gcc the whole program |
 
-What remains is structural, and the next experiment tests it: C's form of the
-operation ABI (registers by value, `return nextOpImpl(...)`), which with E1's
-direct emission may let gcc turn the tail position into a jump, i.e. the
-`M3_MUSTTAIL` chain without a language feature. If it does, the trampoline is a
-per-tier choice (the interpreter keeps it, the native builds drop it); if it
-does not, the ask to daslang is a `musttail` emission for `return f(args)` in
-the JIT and the AOT. Beyond parity with C wasm3 lies a different product, a
-wasm-to-daslang translator that hands the JIT straight-line code, which is
+| **E4 C's form of the operation ABI** | registers by value, `return nextOpImpl(...)` in every operation, no `RunLoop` (PR #54, `docs/execution-design.md` section 6) | 1.26 s stock emitter, **0.438 s with E1** | **1.60–1.63 s with E1** (C wasm3: 2.68–2.72 s) | keep, together with E1: gcc sibling-calls the direct tail call (`jmp *%r9` at the end of every operation), the ctx tier runs the corpus at 0.6x of C wasm3 and fib at 1.18x; spec 17863/17863, fixtures 86/86; the exe tier gains nothing (the JIT emits no tail call), the interpreter pays 1.3–1.6x |
+
+The plan's target is reached on the ctx tier by E1 + E4 together; neither
+alone moves it. Both are pending the owner's daslang fork carrying the emitter
+patch, and the interpreter tier's cost is the price of one source for all
+tiers. The asks to daslang, in order: the emitter patch; tail-call emission in
+the LLVM JIT for `return f(args)` with matching signatures (the exe tier would
+then match ctx with a 25 ms start and no C++ toolchain); direct calls across
+units for the per-module `-aot` tier. Beyond parity lies a different product,
+a wasm-to-daslang translator that hands the JIT straight-line code, which is
 where c2das gets its 1.0x of C.
 
 ## 8. Open items, in order

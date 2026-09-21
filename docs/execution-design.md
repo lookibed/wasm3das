@@ -289,12 +289,55 @@ expansion pass another 1.22–1.29x on top, `-no-dynamic-modules` 0.13 s and
 `run-spec-test.py` (17 863/17 863) and `run-wasi-test.py` (12/12), see
 `docs/test-suites.md`.
 
-## 6. Open
+## 6. The C form restored (2026-09-21, PR #54, pending the emitter patch)
+
+The trampoline of section 2 exists because a daslang call in tail position
+nests a frame. On the ctx tier that turned out to be a property of daslang's
+`-ctx` emitter, not of the language: the emitter routed every call into a
+required module through `Context::fnByMangledName` + `das_invoke_function`
+(`docs/native-build.md`, section 7, E1), a shape gcc cannot sibling-call. With
+the three-line emitter patch that calls the emitted foreign functions directly,
+gcc turns C's own form of the operation ABI into C's own machine code:
+
+- `IM3Operation` takes the five registers **by value** (`d_m3OpSig`);
+- `nextOpImpl`/`jumpOpImpl` are `((IM3Operation)(* _pc))(_pc + 1, d_m3OpArgs)`;
+- `nextOpDirect`/`jumpOpDirect` are `return nextOpImpl(...)` /
+  `return jumpOpImpl(...)`; `RunLoop` and the sentinel are gone; the 509
+  operation bodies are untouched (their signatures drop the `&`).
+
+objdump of `op_i32_Add_ss` in the resulting binary ends with the epilogue and
+`jmp *%r9`: the operation chain is a chain of jumps with the registers in
+machine registers, which is what `M3_MUSTTAIL` produces for C. Measured on the
+same corpus and machine as the tables above (quiet stand, gcc 11.4):
+
+| tier | fib 35, wall | corpus, execution without start | vs C wasm3 |
+|---|---:|---:|---|
+| C wasm3 | 0.371 s | 2.68–2.72 s | 1.0x |
+| ctx, trampoline, stock emitter | 1.65 s | 4.15–4.26 s | 4.4x / 1.6x |
+| ctx, trampoline, patched emitter | 1.15 s | 3.69–3.87 s | 3.1x / 1.4x |
+| ctx, C form, stock emitter | 1.26 s | — | 3.4x |
+| **ctx, C form, patched emitter** | **0.438 s** | **1.60–1.63 s** | **1.18x / 0.6x** |
+| exe, C form | 2.25 s (unchanged) | — | the LLVM JIT emits no tail call for `return f(...)` |
+| interpreter, C form | fib 30: 3.2–4.0 s against 2.49 s | — | 1.3–1.6x slower than the trampoline |
+
+Correctness of the C-form + patch binary: spec 17863/17863, WASI fast 7/7,
+fixtures 86/86 twice; the interpreter tier passes dastest (119, 4 skipped),
+lint and the spec's runaway recursions (`call`, `call_indirect`, `i32`:
+568/568) on the 64 MiB context stack as it did before the trampoline.
+
+So the trampoline is a per-tier trade: it is the right dispatcher for the
+daslang interpreter and the wrong one for a native build once the emitter calls
+directly. The port keeps one source (the C form, PR #54) and pays 1.3–1.6x on
+the interpreter tier, whose users are the gate and development; the shipped
+tier is ctx. Two asks to daslang remain: the emitter patch itself
+(`notes/upstream_cases/ctx_direct_calls.patch`), and tail-call emission in the
+LLVM JIT for `return f(args)` with matching signatures, which would carry the
+same win to the exe tier (25 ms start).
+
+## 7. Open
 
 - A second expansion layer for the `OP_*` helpers of `m3_math_utils` and
   `m3MemData` in load/store ops through the same pre-infer macro, estimated
   5–15 % on heavy rows (`docs/native-build.md`, item B5).
 - The `_pc++`-as-value defect above, to be reduced and filed upstream.
-- Trampoline-free native dispatch (`M3_MUSTTAIL` proper) stays out of reach of
-  the language; the native tiers in `docs/native-build.md` are the answer to
-  speed.
+- The two daslang asks of section 6.
