@@ -386,7 +386,13 @@ option):
   operation, which LLVM folds into a switch with a jump table;
 - `"tree"` — a balanced `if (idx < mid)` tree;
 - `"noinline"` — the tree, with `[hint(noinline)]` added by the pass to every
-  operation, so LLVM cannot inline a small one into the dispatch.
+  operation, so LLVM cannot inline a small one into the dispatch;
+- `"chain_noinline"` — the jump table and that hint together, so the dispatch
+  keeps no callee-saved register and no frame at all (8 instructions from
+  entry to the indirect jump, 0xad8 bytes against 0x2f0a). Measured and
+  rejected in `docs/native-build.md`, section 6, E10: the prologue is paid
+  only by the operations LLVM did not inline, and taking the inlining away
+  costs the hot ones two jumps each.
 
 What objdump shows on the cached DLL is in `docs/native-build.md`, section 6,
 E9, with the measurements. In one line: before, the operation already ended in
