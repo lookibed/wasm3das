@@ -9,9 +9,10 @@
 // app.das -- <args>`), so the stub prepends a "--" to the process arguments.
 //
 // The program runs on a thread with its own 256 MiB stack. The port has no
-// M3_MUSTTAIL: ops return to the RunLoop dispatcher, but every wasm call
-// still nests native frames, and the app's daslang context stack (`options
-// stack`) sits on top. With the default 8 MiB main-thread stack an unbounded
+// M3_MUSTTAIL: the emitted `return operation(...)` at the end of every
+// operation is a tail jump only where the C++ compiler makes it one, every
+// wasm call still nests native frames, and the app's daslang context stack
+// (`options stack`) sits on top. With the default 8 MiB main-thread stack an unbounded
 // wasm recursion kills the process with SIGSEGV before op_Entry can report
 // `[trap] stack overflow`, which the spec suite's assert_exhaustion cases
 // expect. The launchers raise `ulimit -s` for that; a shipped standalone
@@ -22,12 +23,18 @@
 
 #include "wasm3.das.h"
 #include <cstdio>
+#include <cstdlib>
 #include <vector>
 
 #ifdef _WIN32
 #include <windows.h>
+#include <process.h>   // _exit
 #else
 #include <pthread.h>
+#include <unistd.h>    // _exit
+#endif
+#ifdef __GLIBC__
+#include <malloc.h>
 #endif
 
 namespace {
@@ -62,6 +69,17 @@ void run_main() {
         std::fprintf(stderr, "wasm3: %s\n", err);
         g_rc = 1;
     }
+    // The teardown (the context's destructor and the module registry's
+    // shutdown behind it) costs about a fifth of a start and frees memory
+    // the process is about to give back anyway; the C wasm3 has nothing to
+    // tear down at this point. The default is to leave through _exit with
+    // the streams flushed. WASM3DAS_TEARDOWN=1 runs the full teardown: for
+    // the ASan and leak-check builds, which need every destructor.
+    if (std::getenv("WASM3DAS_TEARDOWN") == nullptr) {
+        std::fflush(stdout);
+        std::fflush(stderr);
+        _exit(g_rc);
+    }
     wasm3_destroy(ctx);
 }
 
@@ -82,6 +100,15 @@ void * thread_entry(void *) {
 int main(int argc, char * argv[]) {
     g_argc = argc;
     g_argv = argv;
+#ifdef __GLIBC__
+    // The program runs on a second thread, so glibc would serve its
+    // allocations from a per-thread arena that grows by mprotect'ing one
+    // page group at a time: about 3100 mprotect calls during the module
+    // registration of a start (strace -c). One arena keeps every allocation
+    // on the brk heap, which grows in the larger steps M_TOP_PAD asks for.
+    mallopt(M_ARENA_MAX, 1);
+    mallopt(M_TOP_PAD, 64 * 1024 * 1024);
+#endif
 #ifdef _WIN32
     HANDLE h = CreateThread(nullptr, kStackBytes, thread_entry, nullptr,
                             STACK_SIZE_PARAM_IS_A_RESERVATION, nullptr);

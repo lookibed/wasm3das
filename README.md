@@ -195,7 +195,16 @@ scripts/wasm3-ctx wasm3c/test/lang/fib32.wasm --func fib 35   # ~50 ms total
 ```
 
 The measured column in `tests/manual/fixture_report.md` is
-`wasm3das(aot_ctx)`.
+`wasm3das(aot_ctx)`. This tier is the fast one: it runs the fixture corpus
+at 0.6x of the C wasm3 on execution and within 6 % of it end to end,
+process start included (`docs/native-build.md`, sections 1 and 7). It gets
+there with two changes to daslang's `-ctx` emitter, neither upstream: the
+daslang fork took the first on 2026-09-21 (direct calls into required
+modules, `notes/upstream_cases/ctx_direct_calls.patch`) and the second is
+pending (`ctx_used_modules.patch`); `build_port.sh ctx` applies whichever
+of them your DASLANG_ROOT lacks to a private overlay under
+`tmp/dasroot-ctx`, never to the checkout itself, and
+`WASM3DAS_CTX_EMITTER=stock` builds without them (`docs/upstream-status.md`).
 
 ### LLVM executable (`-exe`)
 
