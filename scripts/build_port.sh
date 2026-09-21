@@ -10,7 +10,11 @@
 #   ctx   the standalone context: daslang emits the compiled program
 #         (<out>/ctx/wasm3.das.cpp + .h), compiled and linked with
 #         native/standalone_main.cpp the same way. The context is baked in
-#         and the daslang front end never runs at startup.
+#         and the daslang front end never runs at startup. The emitter runs
+#         from tmp/dasroot-ctx, an overlay of DASLANG_ROOT with the emitter
+#         patches of notes/upstream_cases/ctx_*.patch that DASLANG_ROOT does
+#         not carry yet applied to a copy of daslib/ (pending in the fork;
+#         WASM3DAS_CTX_EMITTER=stock builds without them).
 #         -> default out: tmp/native-ctx (tmp/native-ctx/bin/wasm3das)
 #
 #   exe   daslang's own standalone executable: `daslang -exe` runs the LLVM
@@ -190,11 +194,67 @@ aot)
     sources=("$repo_root/native/wasm3das_main.cpp" "$out"/aot/*.cpp)
     ;;
 ctx)
+    # 0. The emitter patches (docs/upstream-status.md, the `-ctx` rows;
+    #    docs/native-build.md, section 7). Two changes to daslang's `-ctx`
+    #    emitter the port depends on, each a patch under notes/upstream_cases/
+    #    with a marker string that says whether DASLANG_ROOT already carries it:
+    #      ctx_direct_calls.patch  stock daslang emits every call into a
+    #          required module as a Context::fnByMangledName lookup plus
+    #          das_invoke_function although the context defines the callee
+    #          inline in the same unit; the patch calls it directly
+    #          (marker: directForeign)
+    #      ctx_used_modules.patch  stock daslang registers every default C++
+    #          module the compiler loaded, so the binary pays the constructors
+    #          of rtti_core and ast_core (loaded for a compile-time macro) at
+    #          every start; the patch registers the used modules and their
+    #          dependencies only (marker: the comment line of the patch)
+    #    Neither is accepted in the daslang fork yet (submitted 2026-09-21,
+    #    review pending; the first is applied in the owner's working tree).
+    #    A patch the dasroot lacks is applied to a private overlay under tmp/,
+    #    DASLANG_ROOT itself is never written: every top-level entry of the
+    #    overlay is a symlink into DASLANG_ROOT except daslib/, a copy with the
+    #    patched files. Only the AOT tool reads daslib, so the binary is
+    #    stock. Rollback is one variable: WASM3DAS_CTX_EMITTER=stock emits
+    #    with the unpatched dasroot. A patch the fork has taken is skipped
+    #    automatically through its marker.
+    emit_root="$DASLANG_ROOT"
+    if [[ "${WASM3DAS_CTX_EMITTER:-patched}" == "stock" ]]; then
+        echo "build_port [ctx]: emitter: stock dasroot (WASM3DAS_CTX_EMITTER=stock)"
+    else
+        pending=()
+        grep -q 'directForeign' "$DASLANG_ROOT/daslib/aot_cpp.das" \
+            || pending+=(ctx_direct_calls.patch)
+        grep -q 'a default C++ module the runtime program never reaches' "$DASLANG_ROOT/daslib/aot_cpp.das" \
+            || pending+=(ctx_used_modules.patch)
+        if (( ${#pending[@]} == 0 )); then
+            echo "build_port [ctx]: emitter: dasroot already carries both emitter patches"
+        else
+            emit_root="$repo_root/tmp/dasroot-ctx"
+            echo "build_port [ctx]: emitter: overlay $emit_root with ${pending[*]}"
+            rm -rf "$emit_root"
+            mkdir -p "$emit_root"
+            for entry in "$DASLANG_ROOT"/* "$DASLANG_ROOT"/.[!.]*; do
+                [[ -e "$entry" ]] || continue
+                name="$(basename "$entry")"
+                [[ "$name" == "daslib" ]] && continue
+                ln -s "$entry" "$emit_root/$name"
+            done
+            cp -R "$DASLANG_ROOT/daslib" "$emit_root/daslib"
+            for p in "${pending[@]}"; do
+                if ! patch -p1 -s -d "$emit_root" < "$repo_root/notes/upstream_cases/$p"; then
+                    echo "build_port [ctx]: $p does not apply to $DASLANG_ROOT/daslib; set WASM3DAS_CTX_EMITTER=stock or refresh the patch" >&2
+                    exit 1
+                fi
+            done
+        fi
+    fi
+
     # 1. Emit: the compiled program as one standalone-context translation unit.
     echo "build_port [ctx]: emit the standalone context"
     mkdir -p "$out/ctx"
-    "$DASLANG" "$DASLANG_ROOT/utils/aot/main.das" -- -ctx app/wasm3.das "$out/ctx" \
+    DAS_ROOT="$emit_root" "$DASLANG" -dasroot "$emit_root" "$emit_root/utils/aot/main.das" -- -ctx app/wasm3.das "$out/ctx" \
         | grep -v "shared_module\|failed to load\|^\s*$" || true
+    echo "build_port [ctx]: $(grep -c fnByMangledName "$out/ctx/wasm3.das.cpp" || true) Context lookups in the emitted unit (310 with the patch, 1734 stock)"
     if [[ ! -f "$out/ctx/wasm3.das.cpp" ]]; then
         echo "build_port [ctx]: the emission produced no context" >&2
         exit 1

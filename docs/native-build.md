@@ -18,7 +18,7 @@ commit), all 86 documented fixture results matching on every tier
 |---|---|---|---|---|
 | interpreter | `scripts/wasm3` | `daslang app/wasm3.das`, sources compiled at every start | 0.16 s | 30x |
 | aot | `scripts/wasm3-native` (`tmp/native/bin/wasm3das`) | `daslang -aot` turns every module into C++, linked with the static `libDaScript` and the host `native/wasm3das_main.cpp`; the front end still compiles the sources at start and swaps in the native bodies | 0.77 s | 21x (two ops miss their AOT link, item A4) |
-| aot_ctx | `scripts/wasm3-ctx` (`tmp/native-ctx/bin/wasm3das`) | daslang's `-ctx` emitter bakes the compiled program into one translation unit, linked with `native/standalone_main.cpp`; no front end at start | 27 ms | 1.7x |
+| aot_ctx | `scripts/wasm3-ctx` (`tmp/native-ctx/bin/wasm3das`) | daslang's `-ctx` emitter bakes the compiled program into one translation unit, linked with `native/standalone_main.cpp`; no front end at start | 27 ms, **15 ms** after E5 (section 7) | 1.7x, **0.7x** after E1 + E4 + E5 |
 | jit | `WASM3DAS_JIT=1 scripts/wasm3` | dasLLVM JIT of the interpreter program at O3; needs a daslang built with LLVM | 0.42 s warm (DLL cache), 7.8 s cold codegen | 3.3x |
 | exe | `scripts/wasm3-exe` (`tmp/native-exe/bin/wasm3das.exe`) | `daslang -exe`: the same LLVM pipeline once, ahead of time, linked against the shared daslang runtime; no front end, no codegen at start, no C++ compiler in the build | 23 ms | 2.7x |
 
@@ -31,6 +31,17 @@ C++ compiler inlines across them. For comparison, c2das (a C-to-daslang
 translation of pl_mpeg and h264bsd, straight-line code with no dispatch
 loop) measured its jit and exe tiers at 0.97–1.24x of `clang -O2` on the
 same machine; an interpreter inside the JIT does not get that close.
+
+End to end (2026-09-21, section 7, E1 + E4 + E5, the stand loaded by
+another session at load average 6-14, so every figure is an upper bound):
+the ctx tier runs the same 98 checks in 3.41 s against 2.94 s for the C
+wasm3, 1.16x end to end and 0.7x without start; 30 of the 98 rows are
+faster than C end to end (every decoder row: plmpeg, libjpeg, mjpeg,
+h264bsd, binjgb) and 32 at or below it. What is left of the gap is the
+process start, 15 ms against 1 ms, times 98 processes (1.4 s): the
+constructor of daslang's builtin module (about 8 ms) and `Module::Initialize`
+(2 ms), which a standalone context pays for a compiler it never runs; the
+ask to daslang is in section 8 (E6).
 
 Build: `scripts/build_port.sh` (aot), `scripts/build_port.sh ctx` and
 `scripts/build_port.sh exe`. The AOT
@@ -134,6 +145,20 @@ The binary runs `main` on a thread with an explicit 256 MiB stack
 (`pthread_attr_setstacksize`, `CreateThread dwStackSize`), so the bare release
 asset traps `[trap] stack overflow` under the default 8 MiB shell limit (spec
 17863/17863, WASI 12/12 without any launcher).
+
+The host also owns two start-up details (E5, section 7). Under glibc it
+sets `M_ARENA_MAX` to one arena and a 64 MiB `M_TOP_PAD` before the thread
+starts, because the program thread's own malloc arena grew page group by
+page group: 3108 `mprotect` calls per start (`strace -c`), now 9. And it
+leaves through `_exit` with the streams flushed instead of tearing the
+context and the module registry down (about 3 ms of a 15 ms start, memory
+the process returns anyway); `WASM3DAS_TEARDOWN=1` runs the full teardown,
+which the ASan and leak-check builds need.
+
+The emitter itself runs from an overlay of DASLANG_ROOT (`tmp/dasroot-ctx`)
+that carries the emitter patches of section 7 the checkout lacks, one
+marker string per patch (`build_port.sh`, the `ctx` arm); the checkout is
+never written and `WASM3DAS_CTX_EMITTER=stock` builds without the patches.
 
 Link flags (B1–B3, measured 2026-09-10, gcc 11.4, one build per row, aot_ctx
 total of the 98-check fixture run, mean of four; C wasm3 stayed at 3.02–3.09 s):
@@ -249,6 +274,22 @@ overrides and `JIT_APP`; it warms every engine once, skips a missing or
 failing engine and checks every answer against the C reference. Measure on a
 quiet machine: a parallel gate or build ruins the numbers.
 
+### fib32 after E1 + E4 + E5 (`scripts/bench.sh`, 2026-09-21, the stand loaded, load average 10-14)
+
+Median of 3, wall clock, seconds; the load inflates every start figure (the
+C reference starts in 1 ms on a quiet machine, 12 ms here), so the ratios
+are what to read:
+
+| engine | fib 1 (start-up) | fib 25 | fib 30 | fib 35 | fib 35, execution only, vs C |
+|---|---:|---:|---:|---:|---:|
+| wasm3, C reference | 0.012 | 0.024 | 0.060 | 0.518 | 1.0x |
+| wasm3das ctx | 0.024 | 0.028 | 0.084 | 0.632 | 1.2x |
+| wasm3das exe | 0.033 | 0.047 | 0.242 | 2.846 | 5.5x |
+
+The ctx start on the same loaded stand, 30 processes back to back: 14.6 ms
+(17.2 ms with `WASM3DAS_TEARDOWN=1`), against 29.5 ms for the E1 build
+before E5 and 21.3 ms for exe; C wasm3 1.05 ms.
+
 ### The suites on the aot tier (2026-09-06, idle 4-core machine)
 
 | suite | aot | interpreter |
@@ -294,14 +335,22 @@ the same emitted program and the same 98-check corpus:
 
 | **E4 C's form of the operation ABI** | registers by value, `return nextOpImpl(...)` in every operation, no `RunLoop` (PR #54, `docs/execution-design.md` section 6) | 1.26 s stock emitter, **0.438 s with E1** | **1.60–1.63 s with E1** (C wasm3: 2.68–2.72 s) | keep, together with E1: gcc sibling-calls the direct tail call (`jmp *%r9` at the end of every operation), the ctx tier runs the corpus at 0.6x of C wasm3 and fib at 1.18x; spec 17863/17863, fixtures 86/86; the exe tier gains nothing (the JIT emits no tail call), the interpreter pays 1.3–1.6x |
 
-The plan's target is reached on the ctx tier by E1 + E4 together; neither
-alone moves it. Both are pending the owner's daslang fork carrying the emitter
-patch, and the interpreter tier's cost is the price of one source for all
-tiers. The asks to daslang, in order: the emitter patch; tail-call emission in
-the LLVM JIT for `return f(args)` with matching signatures (the exe tier would
-then match ctx with a 25 ms start and no C++ toolchain); direct calls across
-units for the per-module `-aot` tier. Beyond parity lies a different product,
-a wasm-to-daslang translator that hands the JIT straight-line code, which is
+| **E5 the process start** | a timed copy of the host split a 20 ms start into: module constructors 17 ms (`$` 8, `ast_core` 6, `rtti_core` 2, `math` + `strings` + `fio_core` 2.5), `Module::Initialize` 2, context creation 1, teardown 3. Three changes: (a) `notes/upstream_cases/ctx_used_modules.patch`, the emitter registers the modules the runtime program uses plus their dependencies instead of every default C++ module the compiler loaded (`rtti_core` and `ast_core` were there for the compile-time macro module only; the binary 44.8 -> 31.8 MB); (b) the host pins glibc to one malloc arena with a 64 MiB top pad (3108 `mprotect` calls per start -> 9); (c) the host leaves through `_exit` after flushing, `WASM3DAS_TEARDOWN=1` restores the full teardown | start 29.5 ms -> **14.6 ms** on the loaded stand (17.2 ms with the teardown); fib 35 unchanged | corpus end to end **3.41 s against C 2.94 s** (1.16x; 5.36 s before E5), 30 of 98 rows faster than C | keep: spec 17863/17863, WASI 12/12 (full list) and 7/7 (fast list) on the final binary; the emitter half is the second patch the fork has not accepted (`docs/upstream-status.md`) |
+
+The target of section 1 (a tier at or below the C wasm3 end to end) is
+reached row by row on the ctx tier (30 of 98) and missed on the corpus total
+by the process start alone: 98 starts at 15 ms against 1 ms are 1.4 s of a
+0.5 s deficit. E1 and the emitter half of E5 are applied by `build_port.sh`
+through the overlay of section 4 until the fork takes them; E4 is the port's
+own code (PR #54), and the interpreter tier's 1.3-1.6x on it is the price of
+one source for all tiers. The asks to daslang, in order: the two emitter
+patches; a runtime-only registration of the builtin module for standalone
+contexts (its constructor builds the compiler's function tables, 8 ms of the
+remaining 15 ms start, section 8 E6); tail-call emission in the LLVM JIT for
+`return f(args)` with matching signatures (the exe tier would then match ctx
+on execution with no C++ toolchain); direct calls across units for the
+per-module `-aot` tier. Beyond parity lies a different product, a
+wasm-to-daslang translator that hands the JIT straight-line code, which is
 where c2das gets its 1.0x of C.
 
 ## 8. Open items, in order
@@ -311,7 +360,8 @@ are done; B2 closed as no gain), plus the emitter patch from section 7:
 
 | # | item | gain | cost |
 |---|---|---|---|
-| E1 | apply `notes/upstream_cases/ctx_direct_calls.patch` in the daslang fork and rebuild; until then the local ctx builds keep the lookups | fib −30 %, corpus −8 % on the ctx tier, nothing in the port | the owner's daScript branch; the per-module `-aot` tier would need external declarations for the same win |
+| E1, E5 | the two emitter patches (`notes/upstream_cases/ctx_direct_calls.patch`, `ctx_used_modules.patch`) are applied by `build_port.sh ctx` through the overlay until the fork takes them; the first sits uncommitted in the owner's working tree, neither is accepted | done for the port (section 7); the per-module `-aot` tier would need external declarations for the same win | the fork's review; if it rejects a patch, `WASM3DAS_CTX_EMITTER=stock` and the section 7 numbers go back to their "stock emitter" columns |
+| E6 | the builtin module's constructor (8 ms) and `Module::Initialize` (2 ms) are two thirds of the remaining 15 ms start: a standalone context registers the compiler's function tables it never consults | start 15 -> ~5 ms, the corpus total below the C wasm3 end to end | a daslang change: a runtime-only registration for standalone contexts, or lazy function-table construction in `Module_BuiltIn`; to be measured with the timed host copy of section 7 before it is asked for |
 | A4 | the `aot` tier misses its AOT link on two ops (section 3) | an honest column, or one fewer variant | the one-line address workaround plus `-aot-strict` in `build_port.sh`, or retire the variant from scripts, harness and report |
 | A5 | the interpreter bundle carries `lib/*.so` and an `LD_LIBRARY_PATH` launcher (absolute RUNPATH of the source-built daslang) | one binary | a static `daslang` for the bundle, if daScript's CMake offers it |
 | B4 | interpreter start is the compile of `app/` + `source/`; `-module-cache` was parked because it printed `deser: clean` to stdout | start several times lower | re-test on the pin, check stdout hygiene with the WASI driver |
