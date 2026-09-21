@@ -115,17 +115,22 @@ require strings
     m3_exec.das (see dispatch_shape below for why it is that file and not the
     entry file, and for the leading underscore):
 
-        "chain"     (the measured default) a linear `if (idx == k) return
-                    op_k (...)` per operation, which LLVM folds into a switch
-                    with a jump table - one indirect jump instead of nine
-                    comparisons;
+        "chain"     a linear `if (idx == k) return op_k (...)` per operation,
+                    which LLVM folds into a switch with a jump table - one
+                    indirect jump instead of nine comparisons;
         "tree"      a balanced `if (idx < mid)` tree, so an index costs
                     ceil(log2(N)) comparisons and every arm is a `jmp`;
         "noinline"  the tree, with `[hint(noinline)]` added to every operation
                     so LLVM cannot inline a small one into the dispatch and
-                    grow its prologue with the hoisted constants.
+                    grow its prologue with the hoisted constants;
+        "chain_noinline"
+                    (the measured default) the chain's jump table and the
+                    noinline hint together: with no operation inlined into it
+                    the dispatch needs no callee-saved register and no frame,
+                    so an operation's `jmp` into it no longer re-executes a
+                    six-push prologue and the arm no longer unwinds one.
 
-    The three are measured in docs/native-build.md section 6, E9.
+    The four are measured in docs/native-build.md section 6, E9.
 
     Hand-built AST again, for the reason at the top: daslib/ast only, no qmacro.
 */
@@ -569,7 +574,7 @@ def private dispatch_shape(prog : ProgramPtr) : string {
         if (a.name == "_m3_dispatch" && a.basicType == Type.tString) return string(a.sValue)
     }
     // the measured default, docs/native-build.md section 6, E9
-    return "chain"
+    return "chain_noinline"
 }
 
 // C's d_m3OpAllArgs, spelled from the function being generated: the names bind
@@ -698,8 +703,10 @@ class M3ExecDispatchPass : AstPassMacro {
         if (mod.name != "m3_exec" || generated || !prog.policies.jit_enabled) return false
         generated = true
         let shape = dispatch_shape(prog)
-        let noinline = shape == "noinline"
-        let chain = shape == "chain"
+        // the two properties are orthogonal: the jump table and whether LLVM
+        // may inline an operation into the dispatch
+        let noinline = shape == "noinline" || shape == "chain_noinline"
+        let chain = shape == "chain" || shape == "chain_noinline"
         var names : array<string>
         var anyAt = LineInfo()
         for_each_function(mod, "") $(var fn : FunctionPtr) {
