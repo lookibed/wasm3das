@@ -193,6 +193,7 @@ total of the 98-check fixture run, mean of four; C wasm3 stayed at 3.02–3.09 s
 | combo1 | nopie + gcs + cfnone | 45.78 MB | 30.52 MB | 7.13 s | 25 ms |
 | **combo2** | **combo1 + nsa (shipped)** | **45.79 MB** | **30.53 MB** | **7.06 s** | **25 ms** |
 | combo3 | combo1 + `-march=x86-64-v3` | 45.80 MB | 30.54 MB | 7.13 s | 26 ms |
+| **align** (2026-09-22, shipped) | combo2 + `-falign-functions=64` | 31.8 MB (with the used-modules patch) | | fib 35 0.55-0.58 -> 0.44-0.46 s, C 0.40 (section 7) | |
 
 Run-to-run spread is ±0.1 s, so only the combined set's 0.35 s and 4 ms of
 start are outside the noise; execution proper is flat, the win is image size
@@ -376,9 +377,26 @@ and the corpus at 1.60-1.63 s without start, the final run has 0.538 s
 pre-E7 commit e6311e5 builds to the same 0.51 s), the `+= 1` spelling (the
 `++` readers build to the same 0.51 s) and the fork's spelling of the
 direct-call change (the pre-fork emitter with the port's own patch builds
-to the same time). Not yet separated: the E5 host (one arena, the 64 MiB
-top pad, the reduced module set) and the stand itself; the E4 build was
-made by hand from the recipe of section 4 and is gone.
+to the same time). Separated on 2026-09-22 by an independent agent with
+four builds (the E5 host lines in or out, the used-modules patch in or
+out), pinned to one core, 26 interleaved rounds on fib and 5 on coremark,
+mandelbrot and smallpt: the host lines cost nothing (v1 - v0 = -0.010 s,
+faster in only 10 of 26 rounds; on the start-dominated rows they are a
+small win, as intended); the used-modules patch costs 0.040 s on fib
+(faster without it in 20 of 26 rounds) and nothing on the three heavy
+rows, and the two emitted translation units differ in 18 of 39 071 lines
+(includes, `DECLARE_MODULE` lines and registry rows), so that is the link
+layout of the hot operation chain moving with 13 MB of module code, not a
+semantic change; the rest, about 0.03 s, stays unexplained with the stand
+never idle (the best variant floors at 0.46 s, the C reference at 0.37 s).
+The patch stays: 0.04 s on fib alone against 13 MB and 8 ms of every
+start. **Resolved the same day**: `-falign-functions=64` on the ctx build
+(the threaded chain is 500 small functions reached by tail jumps, their
+placement decides the fetch behaviour of the hot loop) brings fib 35 from
+0.55-0.58 s to 0.44-0.46 s pinned to one core, six interleaved rounds, C
+0.40 s: the E4 figure reproduced, with the used-modules patch and the E5
+host in place. The flag is in `build_port.sh` (the ctx arm) and in the
+flags table of section 4.
 
 The target of section 1 (a tier at or below the C wasm3 end to end) is
 reached row by row on the ctx tier (38 of 98, against 23 for wasmtime) and
