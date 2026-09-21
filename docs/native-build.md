@@ -16,32 +16,50 @@ commit), all 86 documented fixture results matching on every tier
 
 | tier | launcher | how it runs | start | whole set, without start, vs C wasm3 |
 |---|---|---|---|---|
-| interpreter | `scripts/wasm3` | `daslang app/wasm3.das`, sources compiled at every start | 0.16 s | 30x |
-| aot | `scripts/wasm3-native` (`tmp/native/bin/wasm3das`) | `daslang -aot` turns every module into C++, linked with the static `libDaScript` and the host `native/wasm3das_main.cpp`; the front end still compiles the sources at start and swaps in the native bodies | 0.77 s | 21x (two ops miss their AOT link, item A4) |
-| aot_ctx | `scripts/wasm3-ctx` (`tmp/native-ctx/bin/wasm3das`) | daslang's `-ctx` emitter bakes the compiled program into one translation unit, linked with `native/standalone_main.cpp`; no front end at start | 27 ms, **15 ms** after E5 (section 7) | 1.7x, **0.7x** after E1 + E4 + E5 |
-| jit | `WASM3DAS_JIT=1 scripts/wasm3` | dasLLVM JIT of the interpreter program at O3; needs a daslang built with LLVM | 0.42 s warm (DLL cache), 7.8 s cold codegen | 3.3x |
-| exe | `scripts/wasm3-exe` (`tmp/native-exe/bin/wasm3das.exe`) | `daslang -exe`: the same LLVM pipeline once, ahead of time, linked against the shared daslang runtime; no front end, no codegen at start, no C++ compiler in the build | 23 ms | 2.7x |
+| interpreter | `scripts/wasm3` | `daslang app/wasm3.das`, sources compiled at every start | 0.18 s | 44x (30x on the trampoline form, section 7 E4) |
+| aot | `scripts/wasm3-native` (`tmp/native/bin/wasm3das`) | `daslang -aot` turns every module into C++, linked with the static `libDaScript` and the host `native/wasm3das_main.cpp`; the front end still compiles the sources at start and swaps in the native bodies | 0.83 s | 37x (21x on the trampoline form; two ops miss their AOT link, item A4) |
+| aot_ctx | `scripts/wasm3-ctx` (`tmp/native-ctx/bin/wasm3das`) | daslang's `-ctx` emitter bakes the compiled program into one translation unit, linked with `native/standalone_main.cpp`; no front end at start | **14 ms** (27 ms before E5) | **0.6x** (1.7x before E1 + E4 + E5); **1.06x of C end to end** |
+| jit | `WASM3DAS_JIT=1 scripts/wasm3` | dasLLVM JIT of the interpreter program at O3; needs a daslang built with LLVM | 0.44 s warm (DLL cache), 7.8 s cold codegen | 3.9x |
+| exe | `scripts/wasm3-exe` (`tmp/native-exe/bin/wasm3das.exe`) | `daslang -exe`: the same LLVM pipeline once, ahead of time, linked against the shared daslang runtime; no front end, no codegen at start, no C++ compiler in the build | 23 ms | 1.7x (2.7x before E7) |
 
-The whole set, 98 checks: wasm3 C 2.93 s, wasmtime 3.40 s, interpreter
-1m38.0 s, aot 2m14.6 s, ctx 7.26 s, jit 50.0 s, exe 9.62 s. ctx stays the
-fastest tier on execution; exe starts fastest, needs no C++ toolchain and
-sits between ctx and jit on execution, because the JIT keeps daslang's
-calling convention on every threaded-interpreter hop where the ctx build's
-C++ compiler inlines across them. For comparison, c2das (a C-to-daslang
+Measured first on 2026-09-20 on the trampoline form (wasm3 C 2.93 s,
+wasmtime 3.40 s, interpreter 1m38.0 s, aot 2m14.6 s, ctx 7.26 s, jit
+50.0 s, exe 9.62 s) and again at the end of 2026-09-21 on the C form with
+E1, E5 and E7 (the table below). ctx is the fastest tier on execution and
+within 6 % of the C wasm3 end to end; exe starts fastest, needs no C++
+toolchain and sits between ctx and jit on execution, because the JIT never
+tail-calls through a function value where the ctx build's C++ compiler
+emits a sibling-call jump. For comparison, c2das (a C-to-daslang
 translation of pl_mpeg and h264bsd, straight-line code with no dispatch
 loop) measured its jit and exe tiers at 0.97–1.24x of `clang -O2` on the
 same machine; an interpreter inside the JIT does not get that close.
 
-End to end (2026-09-21, section 7, E1 + E4 + E5, the stand loaded by
-another session at load average 6-14, so every figure is an upper bound):
-the ctx tier runs the same 98 checks in 3.41 s against 2.94 s for the C
-wasm3, 1.16x end to end and 0.7x without start; 30 of the 98 rows are
-faster than C end to end (every decoder row: plmpeg, libjpeg, mjpeg,
-h264bsd, binjgb) and 32 at or below it. What is left of the gap is the
-process start, 15 ms against 1 ms, times 98 processes (1.4 s): the
+End to end, every tier re-measured on a quiet stand at the end of the
+session (2026-09-21, load average 0.5-1.2, section 7 E1 + E4 + E5 + E7,
+`tests/manual/fixture_report.md`), 98 checks, total / start / without start
+/ x C without start:
+
+| runtime | total | x C | start | without start | x C |
+|---|---:|---:|---:|---:|---:|
+| wasm3 C | 3.002 s | 1.0x | 0.001 s | 2.876 s | 1.0x |
+| wasmtime | 3.505 s | 1.2x | 0.011 s | 2.427 s | 0.8x |
+| **ctx** | **3.181 s** | **1.06x** | 0.014 s | **1.849 s** | **0.6x** |
+| exe | 7.128 s | 2.4x | 0.023 s | 4.838 s | 1.7x |
+| jit | 54.3 s | 18x | 0.440 s | 11.19 s | 3.9x |
+| interpreter | 2m24.8 s | 48x | 0.181 s | 2m07.0 s | 44x |
+| aot | 3m09.1 s | 63x | 0.830 s | 1m47.7 s | 37x |
+
+All 86 documented results match on every runtime. Rows faster than the C
+wasm3 end to end: ctx 38 of 98 (wasmtime itself: 23), exe 8, jit none.
+The ctx tier is within 6 % of C on the corpus total; what is left is the
+process start, 14 ms against 1 ms, times 98 processes (1.3 s): the
 constructor of daslang's builtin module (about 8 ms) and `Module::Initialize`
 (2 ms), which a standalone context pays for a compiler it never runs; the
-ask to daslang is in section 8 (E6).
+ask to daslang is in section 8 (E6). The exe tier gained 1.6x on execution
+from E7 (2.7x -> 1.7x of C) and stays 2x behind ctx for the missing tail
+call through a function value (section 8, E7). The interpreter and aot tiers
+pay the C form (section 7, E4): 30x -> 44x and 21x -> 37x of C, the price
+of one source for all tiers.
 
 Build: `scripts/build_port.sh` (aot), `scripts/build_port.sh ctx` and
 `scripts/build_port.sh exe`. The AOT
@@ -274,21 +292,29 @@ overrides and `JIT_APP`; it warms every engine once, skips a missing or
 failing engine and checks every answer against the C reference. Measure on a
 quiet machine: a parallel gate or build ruins the numbers.
 
-### fib32 after E1 + E4 + E5 (`scripts/bench.sh`, 2026-09-21, the stand loaded, load average 10-14)
+### fib32 across engines after E1 + E4 + E5 + E7 (`scripts/bench.sh`, 2026-09-21, quiet stand, load average about 1)
 
-Median of 3, wall clock, seconds; the load inflates every start figure (the
-C reference starts in 1 ms on a quiet machine, 12 ms here), so the ratios
-are what to read:
+Median of 3, wall clock from process start to exit, seconds, every engine:
 
 | engine | fib 1 (start-up) | fib 25 | fib 30 | fib 35 | fib 35, execution only, vs C |
 |---|---:|---:|---:|---:|---:|
-| wasm3, C reference | 0.012 | 0.024 | 0.060 | 0.518 | 1.0x |
-| wasm3das ctx | 0.024 | 0.028 | 0.084 | 0.632 | 1.2x |
-| wasm3das exe | 0.033 | 0.047 | 0.242 | 2.846 | 5.5x |
+| wasmtime 48 | 0.009 | 0.009 | 0.014 | 0.059 | 0.1x |
+| wasm3, C reference | 0.003 | 0.006 | 0.037 | 0.374 | 1.0x |
+| wasm3das, daslang interpreter | 0.165 | 0.413 | 2.939 | 32.866 | 88x |
+| wasm3das, daslang `-jit` (cached DLL, O3) | 0.477 | 0.446 | 0.579 | 2.043 | 4.2x |
+| wasm3das, daslang `-jit -jit-no-cache` | 7.391 | — | — | — | |
+| wasm3das, native build (aot) | 0.746 | 0.929 | 3.040 | 29.810 | 78x |
+| wasm3das, standalone context (ctx) | 0.020 | 0.024 | 0.067 | 0.538 | 1.4x |
+| wasm3das, LLVM executable (exe) | 0.026 | 0.035 | 0.125 | 1.101 | 2.9x |
 
-The ctx start on the same loaded stand, 30 processes back to back: 14.6 ms
-(17.2 ms with `WASM3DAS_TEARDOWN=1`), against 29.5 ms for the E1 build
-before E5 and 21.3 ms for exe; C wasm3 1.05 ms.
+Every engine returned the C reference's values. Against the run of
+2026-09-20 (the trampoline form): ctx fib 35 1.684 -> 0.538 s and its start
+33 -> 20 ms, exe 2.124 -> 1.101 s, jit 2.421 -> 2.043 s, the interpreter
+29.988 -> 32.866 s and aot 22.119 -> 29.810 s (the C form's frame per
+operation). The ctx start on the loaded stand of the E5 measurement, 30
+processes back to back: 14.6 ms (17.2 ms with `WASM3DAS_TEARDOWN=1`),
+against 29.5 ms for the build before E5 and 21.3 ms for exe; C wasm3
+1.05 ms.
 
 ### The suites on the aot tier (2026-09-06, idle 4-core machine)
 
@@ -303,16 +329,19 @@ and its assertions are tiny calls; the WASI list is real compute. Per test
 2.844, smallpt 2.983 / 22.318, smallpt-mv 4.294 / 47.182, mal 2.260 / 4.385,
 Brotli 3.726 / 50.894; C wasm3 0.839 s for the whole list.
 
-### The fixture corpus (2026-09-20, Ryzen 7 7435HS, 98 checks x 7 runtimes)
+### The fixture corpus (98 checks x 7 runtimes, Ryzen 7 7435HS)
 
-From `tests/manual/fixture_report.md`, whole set, total / start / without
-start / x C without start: wasm3 C 2.925 s; wasmtime 3.400 s; interpreter
-1m38.0 s / 0.157 s / 30x; aot 2m14.6 s / 0.770 s / 21x; aot_ctx 7.255 s /
-0.027 s / 1.7x; jit 50.0 s / 0.416 s / 3.3x; exe 9.617 s / 0.023 s / 2.7x.
-All 86 documented results match on every runtime. The previous run
-(2026-09-10, daslang at the pin, no exe tier) had the interpreter at 29x,
-aot 19x, ctx 1.6x and jit 3.5x; the interpreter start fell from 0.197 s to
-0.157 s and the JIT's from 0.544 s to 0.416 s with the newer daslang.
+The current run is the table of section 1 (2026-09-21, the C form with E1,
+E5 and E7, `tests/manual/fixture_report.md`): wasm3 C 3.002 s; wasmtime
+3.505 s; interpreter 2m24.8 s / 0.181 s / 44x; aot 3m09.1 s / 0.830 s /
+37x; aot_ctx 3.181 s / 0.014 s / 0.6x (1.06x of C end to end); jit 54.3 s /
+0.440 s / 3.9x; exe 7.128 s / 0.023 s / 1.7x. The run before it
+(2026-09-20, the trampoline form): wasm3 C 2.925 s; wasmtime 3.400 s;
+interpreter 1m38.0 s / 0.157 s / 30x; aot 2m14.6 s / 0.770 s / 21x; aot_ctx
+7.255 s / 0.027 s / 1.7x; jit 50.0 s / 0.416 s / 3.3x; exe 9.617 s /
+0.023 s / 2.7x. All 86 documented results match on every runtime in both.
+The run of 2026-09-10 (daslang at the pin, no exe tier) had the interpreter
+at 29x, aot 19x, ctx 1.6x and jit 3.5x.
 Skipped: `test_pure/render_frame` (hours in an interpreter-in-interpreter),
 the i64 debug probes, host-adapter paths that need a memory-adapter driver,
 `real-world-smollm2` (no wasm module built).
@@ -337,13 +366,24 @@ the same emitted program and the same 98-check corpus:
 
 | **E5 the process start** | a timed copy of the host split a 20 ms start into: module constructors 17 ms (`$` 8, `ast_core` 6, `rtti_core` 2, `math` + `strings` + `fio_core` 2.5), `Module::Initialize` 2, context creation 1, teardown 3. Three changes: (a) `notes/upstream_cases/ctx_used_modules.patch`, the emitter registers the modules the runtime program uses plus their dependencies instead of every default C++ module the compiler loaded (`rtti_core` and `ast_core` were there for the compile-time macro module only; the binary 44.8 -> 31.8 MB); (b) the host pins glibc to one malloc arena with a 64 MiB top pad (3108 `mprotect` calls per start -> 9); (c) the host leaves through `_exit` after flushing, `WASM3DAS_TEARDOWN=1` restores the full teardown | start 29.5 ms -> **14.6 ms** on the loaded stand (17.2 ms with the teardown); fib 35 unchanged | corpus end to end **3.41 s against C 2.94 s** (1.16x; 5.36 s before E5), 30 of 98 rows faster than C | keep: spec 17863/17863, WASI 12/12 (full list) and 7/7 (fast list) on the final binary; the emitter half is the second patch the fork has not accepted (`docs/upstream-status.md`) |
 
-| **E7 the JIT tiers** (`-jit`, `-exe`) | objdump of the cached DLL split one operation's 30 instructions: (a) `_pc++` in every operand reader is a runtime call to `$::i_das_ptr_inc` with `_pc` by reference (the JIT intrinsifies `+=`, not `++`), so `_pc` lives in memory and its escaped address forbids the tail call; (b) three null tests per operation (`_pc`, the slot pointer, the advanced `_pc`); (c) `return operation(...)` through a function value is never a tail call in LLVM (the generic wrapper ABI), so frames nest per executed operation - 209 ns per step in a micro-model (`notes/upstream_cases/tests/jit_tests/dispatch.das`) against 4 ns for the invoke itself. Port side: the readers spell `_pc += 1`, and the `m3_exec_expand` pass sets the `unsafeDeref` flag on every function of `m3_exec` (C dereferences unchecked) | exe fib 35 2.1 s -> **1.2 s** on the loaded stand, the operation body 6 instructions and `jmp nextOpImpl`; jit the same code, plus its start | exe corpus: see section 6 after the re-measurement | keep both (one source, every tier gains); (c) is the third ask to daslang (`notes/upstream_cases/jit_invoke_musttail.md`): the native entry `jitImpl` on `SimFunction` and `musttail` for an invoke in return position |
+| **E7 the JIT tiers** (`-jit`, `-exe`) | objdump of the cached DLL split one operation's 30 instructions: (a) `_pc++` in every operand reader is a runtime call to `$::i_das_ptr_inc` with `_pc` by reference (the JIT intrinsifies `+=`, not `++`), so `_pc` lives in memory and its escaped address forbids the tail call; (b) three null tests per operation (`_pc`, the slot pointer, the advanced `_pc`); (c) `return operation(...)` through a function value is never a tail call in LLVM (the generic wrapper ABI), so frames nest per executed operation - 209 ns per step in a micro-model (`notes/upstream_cases/tests/jit_tests/dispatch.das`) against 4 ns for the invoke itself. Port side: the readers spell `_pc += 1`, and the `m3_exec_expand` pass sets the `unsafeDeref` flag on every function of `m3_exec` (C dereferences unchecked) | exe fib 35 2.1 s -> **1.2 s** on the loaded stand, the operation body 6 instructions and `jmp nextOpImpl`; jit the same code, plus its start | exe corpus without start 2.7x -> **1.7x** of C (4.84 s), 8 rows faster than C end to end; jit 3.9x | keep both (one source, every tier gains); (c) is the third ask to daslang (`notes/upstream_cases/jit_invoke_musttail.md`): the native entry `jitImpl` on `SimFunction` and `musttail` for an invoke in return position |
 | E8 the dispatch tree for the LLVM tiers (branch `perf/jit-dispatch-tree`) | index words in the code page and a generated tree of direct calls in `nextOpImpl`, so LLVM tail-jumps op -> tree -> op (503 `jmp` in the DLL's tree) | exe 1.9 s, jit no better; **ctx 1.7x slower** (1.22-1.36 s against 0.74 s, a central tree against replicated indirect jumps) and the interpreter pays nine comparisons per operation | | rejected as a merge, kept for the record: it proves LLVM's tail jumps and bounds what the tree can give (the tree's own prologue and nine comparisons); the daslang-side fix keeps the C form |
 
+One discrepancy stays open: the E4 measurement had ctx fib 35 at 0.438 s
+and the corpus at 1.60-1.63 s without start, the final run has 0.538 s
+(0.51 s in isolation) and 1.849 s, with the C reference unchanged at
+0.37 s. Excluded by interleaved builds on 2026-09-21: the E7 edits (the
+pre-E7 commit e6311e5 builds to the same 0.51 s), the `+= 1` spelling (the
+`++` readers build to the same 0.51 s) and the fork's spelling of the
+direct-call change (the pre-fork emitter with the port's own patch builds
+to the same time). Not yet separated: the E5 host (one arena, the 64 MiB
+top pad, the reduced module set) and the stand itself; the E4 build was
+made by hand from the recipe of section 4 and is gone.
+
 The target of section 1 (a tier at or below the C wasm3 end to end) is
-reached row by row on the ctx tier (30 of 98) and missed on the corpus total
-by the process start alone: 98 starts at 15 ms against 1 ms are 1.4 s of a
-0.5 s deficit. E1 and the emitter half of E5 are applied by `build_port.sh`
+reached row by row on the ctx tier (38 of 98, against 23 for wasmtime) and
+missed on the corpus total by 6 %, the process start alone: 98 starts at
+14 ms against 1 ms are 1.3 s of a 0.18 s deficit. E1 and the emitter half of E5 are applied by `build_port.sh`
 through the overlay of section 4 until the fork takes them; E4 is the port's
 own code (PR #54), and the interpreter tier's 1.3-1.6x on it is the price of
 one source for all tiers. The asks to daslang, in order: the two emitter
