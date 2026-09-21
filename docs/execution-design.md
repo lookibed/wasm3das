@@ -388,10 +388,13 @@ option):
 - `"noinline"` — the tree, with `[hint(noinline)]` added by the pass to every
   operation, so LLVM cannot inline a small one into the dispatch.
 
-What objdump shows on the cached DLL is in `docs/native-build.md`, section 7,
-E9, with the measurements: every operation ends in `jmp m3_DispatchOp`,
-`nextOpImpl` is a single 5-byte `jmp`, and the dispatch ends in `jmp` into the
-operations. The one thing that differs between the shapes is the dispatch's own
+What objdump shows on the cached DLL is in `docs/native-build.md`, section 6,
+E9, with the measurements. In one line: before, the operation already ended in
+`jmp nextOpImpl` but `nextOpImpl` was 156 bytes that spilled the five registers
+into a 0x50-byte argument buffer, loaded `SimFunction::jitFunction` and
+`call`ed it — a frame per operation; after, `nextOpImpl` is a single 5-byte
+`jmp` into `m3_DispatchOp` and the dispatch's arms are `jmp`s back into the
+operations, so nothing in the chain allocates. The one thing that differs between the shapes is the dispatch's own
 prologue: with `"tree"` and `"chain"` LLVM inlines roughly half the operations
 into it and hoists their constants, so the dispatch pushes six registers,
 allocates a frame and loads four SSE constants before the first comparison (91
