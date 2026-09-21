@@ -473,7 +473,7 @@ def slot_f64(var _pc : pc_t&; _sp : m3stack_t&) : f64 {
     nests one native frame per executed operation. A DIRECT call in return
     position is a tail call for LLVM exactly as it is for gcc. So when
     `prog.policies.jit_enabled` is set, and only then, the infer pass in
-    m3_exec_expand.das rewrites three bodies:
+    m3_exec_expand.das rewrites the placeholder bodies below:
 
         m3_OpWord(op)   -> the operation's INDEX, so a code-page word is an
                            index in 0..m3_OpCount()-1 over the op_* functions
@@ -481,7 +481,10 @@ def slot_f64(var _pc : pc_t&; _sp : m3stack_t&) : f64 {
         nextOpImpl,
         jumpOpImpl      -> `return m3_DispatchOp (...)`;
         m3_DispatchOp   -> the generated dispatch over that index, whose leaves
-                           are DIRECT calls `return op_<name>(...)`.
+                           are DIRECT calls `return op_<name>(...)`;
+        m3_OpAt,
+        m3_OpCount      -> the same tree over the function VALUES, and the
+                           number of operations, for the reverse map.
 
     Nothing else changes: the compile tables of m3_compile.das keep C's
     IM3Operation values (c_setSetOps, the M3OP(...) rows, c_opNull, IsNoOp),
@@ -531,13 +534,13 @@ def public m3_WordIndex(var _pc : pc_t&) : int {
 
 /* Placeholder. Under the JIT the pass replaces this body with the generated
    dispatch: `let idx = m3_WordIndex(_pc)` followed by a balanced `if (idx <
-   mid)` tree (or, with `options _m3_dispatch = "chain"` at the top of this
-   file, a linear equality
-   chain) whose leaves are DIRECT calls `return op_<name>(_pc, _sp, _mem, _r0,
-   _fp0)`. A plain function, not [inline]: every operation tail-calls into it
-   through nextOpImpl and it tail-calls the operation, so the backend sees one
-   chain of sibling calls; an [inline] splice would copy the whole dispatch
-   into each of the 500 tail positions. */
+   mid)` tree - or, with `options _m3_dispatch = "chain"` at the top of this
+   file, a linear equality chain - whose leaves are DIRECT calls
+   `return op_<name>(_pc, _sp, _mem, _r0, _fp0)`. A plain function, not
+   [inline]: every operation tail-calls into it through nextOpImpl and it
+   tail-calls the operation, so the backend sees one chain of sibling calls;
+   an [inline] splice would copy the whole dispatch into each of the 500 tail
+   positions. */
 [unused_argument(_pc, _sp, _mem, _r0, _fp0)]
 def public m3_DispatchOp(var _pc : pc_t; var _sp : m3stack_t; var _mem : M3MemoryHeader?; var _r0 : m3reg_t; var _fp0 : f64) : M3Result {
     return m3Err_none
