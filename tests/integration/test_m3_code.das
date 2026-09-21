@@ -48,11 +48,9 @@ def private alloc_runtime() : M3Runtime? {
 
 
 def private new_page(var runtime : M3Runtime?; min_lines : u32) : IM3CodePage {
-    unsafe {
-        var page = NewCodePage(runtime, min_lines)
-        check(page != null, "NewCodePage({min_lines}) returned null")
-        return page
-    }
+    var page = NewCodePage(runtime, min_lines)
+    check(page != null, "NewCodePage({min_lines}) returned null")
+    return page
 }
 
 
@@ -63,27 +61,21 @@ def private free_page(var page : IM3CodePage) {
 
 
 def private slot_pc(var page : IM3CodePage; index : u32) : pc_t {
-    unsafe {
-        var pc = GetPageStartPC(page)
-        pc += int(index)
-        return pc
-    }
+    var pc = GetPageStartPC(page)
+    pc = unsafe(pc + int(index))
+    return pc
 }
 
 
 def private read_u32_slot(var page : IM3CodePage; index : u32) : u32 {
-    unsafe {
-        let src = reinterpret<u32?>(slot_pc(page, index))
-        return *src
-    }
+    let src = unsafe(reinterpret<u32?>(slot_pc(page, index)))
+    return *src
 }
 
 
 def private read_u64_slot(var page : IM3CodePage; index : u32) : u64 {
-    unsafe {
-        let src = reinterpret<u64?>(slot_pc(page, index))
-        return *src
-    }
+    let src = unsafe(reinterpret<u64?>(slot_pc(page, index)))
+    return *src
 }
 
 
@@ -135,19 +127,15 @@ def test_new_code_page() {
     // Product overflow from the original UINT_MAX / sizeof(code_t) guard.
     let impossible = 0xffffffffu / code_size() + 1u
     let sequence_before = runtime.newCodePageSequence
-    unsafe {
-        let rejected = NewCodePage(runtime, impossible)
-        check(rejected == null, "multiplication-overflow page must be rejected")
-    }
+    let rejected = NewCodePage(runtime, impossible)
+    check(rejected == null, "multiplication-overflow page must be rejected")
     check(runtime.newCodePageSequence == sequence_before,
         "rejected page must not consume a sequence number")
 
     // Raw size fits u32, but rounding it up to 32 KiB crosses UINT_MAX.
     let max_raw_lines = (0xffffffffu - header_size()) / code_size()
-    unsafe {
-        let alignment_overflow = NewCodePage(runtime, max_raw_lines)
-        check(alignment_overflow == null, "alignment-overflow page must be rejected")
-    }
+    let alignment_overflow = NewCodePage(runtime, max_raw_lines)
+    check(alignment_overflow == null, "alignment-overflow page must be rejected")
     check(runtime.newCodePageSequence == sequence_before,
         "alignment-overflow page must not consume a sequence number")
     m3_Free_Impl(unsafe(reinterpret<void?>(runtime)))
@@ -165,17 +153,12 @@ def test_emit_words_and_pc() {
     check(NumFreeLines(page) == page.info.numLines, "all lines must initially be free")
 
     var marker = 0x12345678
-    var marker_word : void?
-    unsafe {
-        marker_word = addr<void?>(marker)
-    }
+    var marker_word : void? = unsafe(addr<void?>(marker))
 
     EmitWord_impl(page, marker_word)
     check(page.info.lineIndex == 1u, "EmitWord_impl must consume one slot")
-    unsafe {
-        var code = GetPageStartPC(page)
-        check(intptr(code[0]) == intptr(marker_word), "EmitWord_impl must preserve pointer bits")
-    }
+    var code = GetPageStartPC(page)
+    check(intptr(unsafe(code[0])) == intptr(marker_word), "EmitWord_impl must preserve pointer bits")
 
     let word32 = 0x89abcdefu
     EmitWord32(page, word32)

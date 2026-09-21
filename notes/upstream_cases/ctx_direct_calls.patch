@@ -1,0 +1,47 @@
+--- a/daslib/aot_cpp.das	2026-09-17 17:54:14.359017954 +0300
++++ b/daslib/aot_cpp.das	2026-09-21 02:31:59.778434557 +0300
+@@ -1440,6 +1440,10 @@
+     cross_platform : bool = false;
+     fastMath : bool = false;
+     aot_filter_function : string;
++    //! wasm3das experiment: the mangled-name hashes of the foreign functions a standalone
++    //! context emits into its own translation unit. A call to one of them is a plain C++ call
++    //! (the callee is an `inline` function declared above), not a Context lookup.
++    directForeign : table<uint64>;
+ 
+     cachedTi = new DebugVarCache()
+ 
+@@ -3847,7 +3851,10 @@
+             return empty(bif.cppName);
+         }
+         if (func.flags.noAot || func.flags.aotHybrid || func.moreFlags.requestJit) return true;
+-        return func._module != program.getThisModule;
++        if (func._module != program.getThisModule) {
++            return !(directForeign |> key_exists(func.getMangledNameHash));
++        }
++        return false;
+     }
+     def needsArgPassType(argType : TypeDeclPtr) {
+         return !argType.flags.constant && !argType.isGoodBlockType;
+--- a/daslib/aot_standalone.das	2026-09-17 17:54:14.359017954 +0300
++++ b/daslib/aot_standalone.das	2026-09-21 02:32:04.591634557 +0300
+@@ -440,6 +440,11 @@
+         }
+         build_string() $(tmp_writer) {
+             var gen = new StandaloneContextGen(program, unsafe(addr(tmp_writer)), coll, cfg.cross_platform);
++            // wasm3das experiment: every foreign function this context emits is called directly
++            var foreign <- foreignUsedFunctions(program, false)
++            for (fn in foreign) {
++                gen.directForeign |> insert(fn.getMangledNameHash)
++            }
+             make_visitor(*gen) $(adapter) {
+                 gen.adapter := adapter
+                 program |> visit_module(adapter, program.getThisModule, true);
+@@ -448,7 +453,6 @@
+                 for (pfun in collectProgramUsedFunctions(program, false, false)) {
+                     emitted |> insert(aotFuncName(pfun))
+                 }
+-                var foreign <- foreignUsedFunctions(program, false)
+                 for (fn in foreign) {
+                     let name = aotFuncName(fn)
+                     if (emitted |> key_exists(name)) continue

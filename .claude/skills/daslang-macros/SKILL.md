@@ -12,6 +12,6 @@ In wasm3das macros are used sparingly. Prefer a literal port of the C construct;
 macro only when Daslang cannot express the C form directly, and document the C line it
 replaces. The one production macro is `source/m3_exec_expand.das`, the pre-infer pass that
 does at the use site what the C preprocessor does for `immediate`/`slot`/`slot_ptr`
-(`notes/interp_node_cost_2026-09-08.md`); it requires `daslib/ast` only, because
+(`docs/execution-design.md`); it requires `daslib/ast` only, because
 `ast_boost` and `templates_boost` cost ~0.65 s of startup, and `macro_error` from a pass
 does not stop compilation on 0.6.4 (`macro_sticky_error` does).

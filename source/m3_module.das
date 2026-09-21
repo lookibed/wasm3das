@@ -69,10 +69,8 @@ def Module_AddGlobal(var io_module : IM3Module; var o_global : IM3Global&; i_typ
     let index = io_module.numGlobals
     io_module.numGlobals++
 
-    unsafe {
-        io_module.globals = reinterpret<M3Global?>(m3_Realloc_Impl(io_module.globals,
-            uint64(typeinfo sizeof(type<M3Global>)) * uint64(io_module.numGlobals), uint64(typeinfo sizeof(type<M3Global>)) * uint64(index)))
-    }
+    io_module.globals = unsafe(reinterpret<M3Global?>(m3_Realloc_Impl(io_module.globals,
+        uint64(typeinfo sizeof(type<M3Global>)) * uint64(io_module.numGlobals), uint64(typeinfo sizeof(type<M3Global>)) * uint64(index))))
     if (io_module.globals == null) {
         return m3Err_mallocFailed
     }
@@ -92,10 +90,8 @@ def Module_AddGlobal(var io_module : IM3Module; var o_global : IM3Global&; i_typ
 
 def Module_PreallocFunctions(var io_module : IM3Module; i_totalFunctions : u32) : M3Result {
     if (i_totalFunctions > io_module.allFunctions) {
-        unsafe {
-            io_module.functions = reinterpret<M3Function?>(m3_Realloc_Impl(io_module.functions,
-                uint64(typeinfo sizeof(type<M3Function>)) * uint64(i_totalFunctions), uint64(typeinfo sizeof(type<M3Function>)) * uint64(io_module.allFunctions)))
-        }
+        io_module.functions = unsafe(reinterpret<M3Function?>(m3_Realloc_Impl(io_module.functions,
+            uint64(typeinfo sizeof(type<M3Function>)) * uint64(i_totalFunctions), uint64(typeinfo sizeof(type<M3Function>)) * uint64(io_module.allFunctions))))
         io_module.allFunctions = i_totalFunctions
 
         if (io_module.functions == null) {

@@ -11,8 +11,9 @@ Daslang. `wasm3c/source/` is the vendored, read-only C reference. The goal is
 **structural and semantic fidelity**: the Daslang tree must mirror the C tree,
 not merely produce similar output.
 
-The WASI layer (`m3_api_wasi.c` and related files) is intentionally out of
-scope.
+The plain WASI host layer (`m3_api_wasi.c`, `extra/wasi_core.h`) is part of
+the port; the uvwasi and meta-WASI variants are excluded
+(`PORTING_MANIFEST.md`).
 
 ## Working principles
 
@@ -36,23 +37,35 @@ Resolve uncertainty with these principles, in order:
    truth for accepted, in-revision, draft, and unstarted coverage. Only a code
    owner may mark work Accepted.
 
-## Runtime recovery context
+## Provenance of `source/`
 
-`source/` carries drafts of the environment, compiler and executor whose
-provenance includes mechanical rewrites; see
-`notes/runtime_recovery_context_2026-09.md` for the history, the checkpoint
-commits on `origin/wip/runtime-layer`, and the fixes verified so far. The
-facts that still drive priorities:
+The environment, compiler and executor layers were first produced in August
+2026 by sessions that applied mechanical C-to-Daslang passes: Python/regex
+rewrites of `m3_parse.das` and `m3_module.das`, an `m3log(...)` stripper that
+once truncated the starts of both files, pointer-typedef rewrites that could
+turn a pointer alias into pointer-to-pointer semantics, generic emulations of
+`m3_Free`/`m3_ReallocArray` (since replaced by explicit macro expansion) and
+function moves between `m3_env` and `m3_module` that briefly produced
+duplicate definitions. Most of that damage was repaired and every layer has
+since been reviewed against C (`PORTING_MANIFEST.md`), so do not assume the
+tree is corrupt; but when a hunk looks strange, establish its provenance
+through Git and the C source before adding a workaround. The checkpoints of
+that recovery live on `origin/wip/runtime-layer` (`7c25b78` magic byte order
+and module deallocation, `9a2058e` hook wiring, `5fb3c38` phase 1 outcome),
+squashed into `main` as `3104b5f`; `7c25b78` is a clean comparison point,
+not semantic truth.
 
-- `tests/integration/test_fib32_regression.das` runs `fib32.wasm` through parse, load,
-  lazy compile, execution (`fib(25) = 75025`) and teardown. It is the
-  regression every runtime change must keep green.
-- The teardown `SIGSEGV` is closed: its cause was Daslang `delete` walking
-  the pointer fields of `new`-allocated runtime objects (see "Allocation and
-  pointer semantics").
-- Priority now: review of the drafts against C (`m3_env`, `m3_compile`,
-  `m3_exec`), then the remaining layers. Trampoline/tail-call architecture
-  (the missing `M3_MUSTTAIL`) is a separate future task.
+Facts that still drive priorities:
+
+- `tests/integration/test_fib32_regression.das` runs `fib32.wasm` through
+  parse, load, lazy compile, execution (`fib(25) = 75025`) and teardown. It is
+  the regression every runtime change must keep green.
+- The teardown `SIGSEGV` is closed (2026-09-06): its cause was Daslang
+  `delete` walking the pointer fields of `new`-allocated runtime objects
+  (`docs/memory-ownership.md`, "Allocation and pointer semantics" below).
+- The missing `M3_MUSTTAIL` is answered by the `RunLoop` dispatcher
+  (`docs/execution-design.md`); speed beyond the interpreter comes from the
+  native tiers (`docs/native-build.md`).
 
 ## Preserve the working tree before source changes
 
@@ -106,15 +119,17 @@ diagnostics and obscures fidelity review.
 
 | Task | Use | Never |
 |---|---|---|
-| Read / edit / create `.das` | `read` / `edit` / `write` tools | shell or Python I/O |
-| Symbol / definition lookup | `daslang_find_symbol`, `daslang_goto_definition`, `daslang_outline` | grep over `source/` |
-| Usages / references | `daslang_grep_usage`, `daslang_find_references` | grep over `source/` |
-| Types / module API | `daslang_describe_type`, `daslang_list_types`, `daslang_list_module_api`, `daslang_list_functions`, `daslang_list_requires` | ad-hoc stdlib reading |
-| Compile check | `daslang_compile_check` | ad-hoc CLI during editing |
-| Lint | `daslang_lint` | manual pattern greps |
-| Format | `daslang_format_file` | any other rewrite |
-| Tests / execution | `daslang_run_test`, `daslang_run_script`, `daslang_eval_expression` | new scratch runners |
-| Introspection | `daslang_program_log`, `daslang_ast_dump`, `daslang_type_of`, `daslang_aot` | guesswork |
+| Read / edit / create any file | `Read` / `Edit` / `Write` tools | `cat`, `sed`, heredocs, Python I/O |
+| Symbol / definition lookup | `mcp__daslang__find_symbol`, `goto_definition`, `outline`; LSP `documentSymbol`, `goToDefinition`, `hover` | grep over `source/` |
+| Usages / references | `mcp__daslang__grep_usage`, `find_references`; LSP `findReferences` | grep over `source/` |
+| Types / module API | `mcp__daslang__list_types`, `describe_type` (daslib types), `list_module_api`, `list_functions`, `list_requires`, `discover` | ad-hoc stdlib reading |
+| Compile check | `mcp__daslang__compile_check`; the LSP diagnostics after every edit | ad-hoc CLI during editing |
+| Lint | `mcp__daslang__lint` | manual pattern greps |
+| Format | `mcp__daslang__format_file` | any other rewrite |
+| Tests / execution | `mcp__daslang__run_test`, `run_script`, `eval_expression` | new scratch runners |
+| Introspection | `mcp__daslang__program_log`, `ast_dump`, `type_of`, `aot` | guesswork |
+| C reference | `mcp__daslang__cpp_grep_usage`, `cpp_outline`, `cpp_find_symbol`, `cpp_goto_definition` over `wasm3c/source` (needs the root `sgconfig.yml`) | rewriting the C |
+| Runtime investigation | the `mcp__daslang-dap__*` tools (contract below) | ad-hoc DAP harnesses |
 
 - Load the `daslang` skill before writing or reviewing `.das`. Load the
   formatting and testing skills when those tasks apply.
@@ -135,14 +150,14 @@ Three servers are required, whichever client is used:
 | `daslang-lsp` | native LSP diagnostics and navigation |
 | `daslang-dap` | stateful DAP client |
 
-- **Claude Code** reads `.mcp.json` (servers `daslang` and `daslang-dap`,
-  paths through `${DASLANG_ROOT}`, `DAS_LINT_CONFIG_PATH=.lint_config`) and the skills under
-  `.claude/skills/`; the LSP plugin lives in `.claude/skills/daslang-lsp/`.
-  Start the client from the repository root and restart it after any change
-  to `.mcp.json` or the plugin manifest; skills reload on the fly. Setup and
-  smoke checklist: `notes/claude_code_tooling_setup_2026-09-04.md`.
-- **Codex** uses a project-local `.codex/config.toml` that is not tracked
-  here; `notes/codex_tooling_smoke_test.md` describes its smoke test.
+- **Claude Code** reads `.mcp.json` (servers `daslang` and `daslang-dap`) and
+  the skills under `.claude/skills/`; the LSP plugin lives in
+  `.claude/skills/daslang-lsp/`. Start the client from the repository root and
+  restart it after any change to `.mcp.json` or the plugin manifest; skills
+  reload on the fly. Smoke: `mcp__daslang__compile_check` on
+  `source/m3_core.das` answers `Compilation OK.`, LSP `documentSymbol` on it
+  lists its functions, and a `debug_launch` of
+  `/root/daScript/utils/dap/_fixture.das` reaches `terminated`.
 - All three servers use the daslang checkout at `/root/daScript`, built in
   place with the `stddlg` and `dasHV` modules (README "Install and run").
   `.mcp.json` runs the MCP server through that checkout's `bin/watchdog`
@@ -176,8 +191,7 @@ Three servers are required, whichever client is used:
   tooling there.
 
 If configuration or bridge schemas change, restart the session; an existing
-session does not reload MCP schemas. `notes/dap_tooling_update_2026-09-04.md`
-records the current DAP contract.
+session does not reload MCP schemas.
 
 ## Runtime-debugging policy
 
@@ -351,8 +365,7 @@ Every change, of any type, goes through the stages in
 definition of done per stage and what CI enforces. The layer-specific steps
 below are its "Reference" and "Implement" stages spelled out for a port.
 
-Runtime recovery takes priority until teardown correctness is proven. When a
-new layer is explicitly in scope:
+When a new layer is in scope:
 
 1. Read `PORTING_MANIFEST.md` and `git log --oneline -15`.
 2. Read the complete C source and header before writing Daslang.
@@ -363,10 +376,11 @@ new layer is explicitly in scope:
    convention.
 6. Run the full verification gate and compare the final diff against C again.
 
-Files marked **Draft** in the manifest (`m3_env`, `m3_compile`, `m3_exec`,
-`m3_exec_defs`, `m3_exception`) are not accepted code. Promoting one means
-reviewing it against C section by section and giving it a test file, not
-reformatting it.
+Files marked **Draft** (`m3_exception`, `m3_exec_defs`, `m3_exec_expand`) or
+**Revision** (`m3_bind`, `m3_parse`, `m3_env`, `m3_compile`, `m3_exec`, the
+host modules, the app) in the manifest are not accepted code. Promoting one
+means reviewing it against C section by section and giving it a test file,
+not reformatting it; only the code owner sets Accepted.
 
 ## Verification policy
 
@@ -393,18 +407,21 @@ scripts/gate.sh
 ```
 
 It is the single definition of the gate, used unchanged by CI and the
-pre-push hook: `-compile-only` on every file under `source/` and
-`tests/integration/`; the
-three lint profiles with zero findings under `.lint_config` (which disables
-only the rules whose findings are the faithful spelling of the C source); the
-full dastest suite. `scripts/gate.sh <stage>` runs one stage (`compile`,
-`lint-paranoid`, `lint-perf`, `lint-style`, `test`).
+pre-push hook: `-compile-only` on every file under `source/`,
+`tests/integration/`, `app/` and `tests/host_test/`; the three lint profiles
+with zero findings under `.lint_config` (which disables only the rules whose
+findings are the faithful spelling of the C source); the full dastest suite;
+the repository invariants (`scripts/check_repo_invariants.sh`: formatter
+verify, test discovery, manifest consistency, file headers).
+`scripts/gate.sh <stage>` runs one stage (`compile`, `lint-paranoid`,
+`lint-perf`, `lint-style`, `test`, `invariants`).
 
 Also run the focused test for the changed layer. Runtime/lifecycle changes
-must additionally pass the real `fib32.wasm` regression through result
-retrieval **and teardown without a crash**. That regression is not yet in
-`tests/integration/`; if the runner is absent or cannot reproduce that lifecycle, report
-the missing verification rather than claiming completion.
+must additionally keep `tests/integration/test_fib32_regression.das` green
+through result retrieval **and teardown without a crash**, and, before they
+land, the original spec and WASI drivers (`docs/test-suites.md`); an AOT-facing
+change also rebuilds the native tiers and runs the same drivers through them
+(`docs/native-build.md`).
 
 The MCP compiler, LSP, lint, and test tools are development aids. The pinned
 CLI gate is authoritative even if the server is bound to another tree.
@@ -427,6 +444,71 @@ CLI gate is authoritative even if the server is bound to another tree.
 - Do not apply mass regex/Python transformations to pointer types, ownership,
   `unsafe`, allocator semantics, or C-macro adaptations. Prove a mechanical
   change at one call site, compile and regress it, then consider expansion.
+
+## C constructs and their Daslang spellings
+
+Recurring translations, each proven in the accepted layers; reuse them instead
+of inventing another:
+
+- C keywords that are Daslang keywords: `_type`, `_module`, `_function`,
+  `_block`; a `label` parameter becomes `stage`. `else if` is `elif`.
+- Functions are not nullable: a C `NULL` function pointer is a sentinel
+  (`c_opNull`, `c_noCompiler`) compared with `==`; a function value is `@@fn`.
+- `let` is const and const flows through pointers; every mutated binding and
+  every parameter the callee writes through is `var` (also what the JIT needs,
+  `docs/upstream-status.md` #3991). `reinterpret<T>(x)` and `unsafe { }`
+  strip it where C casts.
+- No arithmetic on `u8`/`u16`: compiler scalars are `int` (documented in
+  `m3_types.das`), fields are cast at the use site. Hex literals are `uint`.
+- `unsafe(...)` on an expression does not cover indexing; pointer indexing
+  needs an `unsafe { }` block. `addr(ptr[i])` yields a reference-qualified
+  value; bind it through an explicit type or `reinterpret`.
+- Strings are not nullable: `empty(s)` for `== NULL`, `""` for `NULL`; C
+  `m3_Free(name)` is a no-op with a comment (`docs/memory-ownership.md`).
+- C macros (`m3_Free`, `m3_ReallocArray`, `m3_AllocArray`, `_try`/`_throwif`,
+  `m3ApiRawFunction`, `m3log`) are expanded at the call site, never wrapped in
+  a generic helper with `auto&` (it conflicts with string fields).
+- C include cycles are broken by the shared type hub `m3_types.das` and by
+  function-valued globals (`CompileFunctionHook`, `ResizeMemoryHook`) wired
+  in `m3_NewEnvironment`; `require` edges follow the C includes, `public`
+  only where the header itself includes the dependency.
+- A void helper whose only effect is a write through a raw pointer needs
+  `[sideeffects]`, or the optimizer drops the call.
+- Leading `__` identifiers are reserved: `__WASI_X` is `WASI_X`.
+- Under the lint profiles (`no_infer_time_folding`) an enum-indexed fixed
+  array size such as `IM3FuncType[int(M3ValueType.c_m3Type_unknown)]` stops
+  folding; spell the literal with a comment.
+
+## Pitfalls
+
+Collected from the session handoffs; each cost a session time once.
+
+- `Result:` goes to stderr in both app modes, as in C `main.c`: capture with
+  `2>&1`. `grep -q` on REPL output under `pipefail` gives SIGPIPE: capture
+  into a variable first.
+- Tests that write under `tmp/` must `mkdir("tmp")`: CI has no such directory.
+- Never run the WASI driver or a measurement while `source/` is being edited
+  or while another gate or build runs; measure on a quiet machine.
+- `pgrep -f`/`pkill -f` with a pattern that matches your own command line
+  kills the shell; anchor the pattern or exclude `$$`. Never `pkill daslang`
+  broadly: other sessions' MCP and LSP servers are daslang processes.
+- Background Bash commands longer than ten minutes die with the wait; run a
+  build in the background and poll its log.
+- Git Bash on Windows: `[[ -f daslang_static ]]` is true for
+  `daslang_static.exe`; try `.exe` candidates first, give `editbin` a native
+  path through `cygpath -w` and `-STACK:` options.
+- `main` is protected: no direct push, squash merges only, the `Daslang
+  quality gate` check required. Before pushing, `gh pr list`: a branch with
+  the same commits may already sit in an open PR. `origin` is HTTPS with the
+  `gh` credential helper; the Windows credential manager in `~/.gitconfig`
+  does not run from WSL.
+- A PR merged before the branch's last commit was pushed leaves that commit
+  local and the branch deleted; re-home it on a fresh branch from `main`.
+- `detect_duplicates`/`find_dupe` write temp files into the daslang checkout
+  root and `live_status` writes `libhv.<date>.log` into the working
+  directory; neither tool is needed here.
+- The debuggee prints `[daslang atexit] FATAL: g_envTotal=1` on exit; it is
+  upstream noise, not a crash.
 
 ## Scratch and session artefacts
 
@@ -486,14 +568,16 @@ and raw model logs never go into the tree; dated working notes go into
 | `.githooks/pre-push` | local form of the CI quality gate |
 | `scripts/daslang_pin`, `scripts/verify_daslang.sh` | the pinned daslang source commit and the checkout/build verifier |
 | `docs/upstream-status.md` | daslang issues/PRs the pin carries, verified per issue |
-| `notes/handoff_claude_code_2026-09-07.md` | latest session handoff (state of `main` and the open PR, pipeline order, pitfalls); older handoffs are dated the same way |
-| `notes/runtime_recovery_context_2026-09.md` | provenance of `source/`, checkpoint commits, teardown state |
-| `notes/dap_tooling_update_2026-09-04.md` | current DAP lifecycle, fixes, and failure triage |
+| `docs/execution-design.md` | the RunLoop dispatcher that replaces `M3_MUSTTAIL`, the operand-reader expansion pass, and what an operation costs |
+| `docs/native-build.md` | the aot, standalone-context and JIT tiers, AOT lowering findings, measurements, open performance items |
+| `docs/test-suites.md` | running Wasm3's original spec and WASI drivers against the port, with the results |
+| `notes/handoff_2026-09-18.md` | the current session handoff: state of `main`, open decisions, next units, pitfalls of the last session |
+| `notes/upstream_cases/` | reproducer tests for the daslang defects filed upstream, with their run log |
 | `wasm3c/source/` | read-only C semantic reference |
 | `source/`, `tests/integration/` | the Daslang port and the component tests the gate runs |
-| `tests/manual/` | manual fixture sets and `run_fixtures.py`; outside the gate |
+| `tests/manual/` | manual fixture sets, `run_fixtures.py`, `fixture_report.md`, `ATTRIBUTION.md`; outside the gate |
 | `tests/host_test/` | Daslang counterparts of `wasm3c/host_test` (embedding through the public API); compiled and linted by the gate |
 | `app/`, `scripts/wasm3` | the command line front end (port of `platforms/app/main.c`) and its interpreted launcher |
-| `native/`, `scripts/build_port.sh`, `scripts/wasm3-native` | AOT build: C++ host, build script and native launcher (`notes/native_aot_status.md`) |
-| `scripts/bench.sh`, `notes/benchmark_2026-09-07.md` | cross-engine fib32 benchmark and its results |
+| `native/`, `scripts/build_port.sh`, `scripts/wasm3-native`, `scripts/wasm3-ctx` | AOT and standalone builds: C++ hosts, build script and launchers |
+| `scripts/bench.sh` | cross-engine fib32 benchmark; results in `docs/native-build.md` |
 | `scripts/gate.sh`, `scripts/check_repo_invariants.sh` | the gate shared by CI and the pre-push hook |

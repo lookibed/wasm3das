@@ -32,7 +32,7 @@ require daslib/ast
 
     is eight interpreter nodes where the C expansion is two. The daslang
     interpreter charges roughly 8 ns per evaluated node
-    (notes/interp_node_cost_2026-09-08.md), and an operation that reads two
+    (docs/execution-design.md), and an operation that reads two
     operand slots pays that eight times over.
 
     This pass is the missing preprocessor step. It runs during type inference on
