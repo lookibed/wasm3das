@@ -12,6 +12,10 @@ module m3_exec_expand shared private
 // macro therefore registers itself through add_new_infer_macro and builds its
 // three generated nodes (ExprUnsafe, ExprLet, ExprVar) by hand.
 require daslib/ast
+// The native builtin string module, for `starts_with` alone: it is C++, not a
+// daslang source module, so unlike ast_boost/templates_boost it adds nothing to
+// the startup of the port.
+require strings
 
 /*
     The C preprocessor's counterpart for the operand readers of m3_exec.
@@ -68,6 +72,34 @@ require daslib/ast
     `bool_reg` is deliberately NOT rewritten: its splice already folds to a
     single node (`_r0 = (a < b) ? 1 : 0`) because it has no side effect and one
     by-value argument.
+
+    ------------------------------------------------------------------------
+
+    The second pass, M3ExecDispatchPass, is the other thing no compiler can do
+    for the port: the direct-call dispatch tree.
+
+    C stores the IM3Operation function pointer in the code page and calls it
+    indirectly. An indirect call cannot be inlined, so in the native tiers every
+    wasm operation paid a call and a return plus a round trip of the five
+    interpreter registers through memory. The port therefore stores an operation
+    INDEX in the word and turns it back into a DIRECT call, which needs one
+    function per direction:
+
+        m3_DispatchOp(idx, _pc, _sp, _mem, _r0, _fp0)
+                          -> return op_<name>(_pc, _sp, _mem, _r0, _fp0)
+        m3_OpAt(idx)      -> return @@op_<name>
+        m3_OpCount()      -> the number of operations
+
+    All three are placeholders in m3_exec.das whose bodies this pass replaces
+    with a balanced `if (idx < mid)` tree over the op_* functions of the module
+    sorted by name, so an index costs ceil(log2(509)) = 9 comparisons and, with
+    m3_DispatchOp spliced into RunLoop by [inline], the C++ and LLVM backends see
+    509 ordinary direct calls. The numbering is the sorted order, which is a
+    function of the source alone: nothing outside this module and m3_OpIndex
+    (the reverse map, built from m3_OpAt) ever sees it, and the compile tables of
+    m3_compile.das keep C's IM3Operation values unchanged.
+
+    Hand-built AST again, for the reason at the top: daslib/ast only, no qmacro.
 */
 
 // The reader set, in the order m3_exec.das declares it: C's immediate(TYPE),
@@ -480,6 +512,118 @@ class M3ExecExpandPass : AstPassMacro {
     }
 }
 
+// The names m3_DispatchOp and op_<name> bind at the use site, so the generated
+// call passes the dispatcher's own reference parameters straight through, the
+// way C's d_m3OpAllArgs does.
+let private c_opArgs = fixed_array("_pc", "_sp", "_mem", "_r0", "_fp0")
+
+// The tree over [lo, hi): one leaf per operation, otherwise
+// `if (idx < mid) { left } else { right }` around the halves. `direct` picks
+// the leaf - the operation CALLED (m3_DispatchOp) or its function VALUE
+// (m3_OpAt) - because the two trees are the same shape over the same names.
+def private build_op_tree(at : LineInfo; names : array<string>; lo : int; hi : int; direct : bool) : ExpressionPtr {
+    if (hi - lo == 1) {
+        if (!direct) {
+            // C has no counterpart: @@op_<name> is the IM3Operation value the
+            // compile tables of m3_compile.das hold, indexed the same way.
+            var opAddr = new ExprAddr(at = at, target := names[lo])
+            return new ExprReturn(at = at, subexpr = opAddr)
+        }
+        // C: ((IM3Operation)(* _pc))(_pc + 1, d_m3OpArgs), with the operation
+        // named instead of loaded from the word.
+        var call = new ExprCall(at = at, name := names[lo])
+        for (argName in c_opArgs) {
+            var argExpr = new ExprVar(at = at, name := argName)
+            emplace(call.arguments, argExpr)
+        }
+        return new ExprReturn(at = at, subexpr = call)
+    }
+    let mid = (lo + hi) / 2
+    var cond = new ExprOp2(at = at, op := "<",
+        left = new ExprVar(at = at, name := "idx"),
+        right = new ExprConstInt(at = at, value = mid))
+    var ifTrue = new ExprBlock(at = at)
+    var lowHalf = build_op_tree(at, names, lo, mid, direct)
+    emplace(ifTrue.list, lowHalf)
+    var ifFalse = new ExprBlock(at = at)
+    var highHalf = build_op_tree(at, names, mid, hi, direct)
+    emplace(ifFalse.list, highHalf)
+    return new ExprIfThenElse(at = at, cond = cond, if_true = ifTrue, if_false = ifFalse)
+}
+
+// Replace a placeholder body by `stmt`, exactly where the placeholder stood.
+def private set_body(var fn : FunctionPtr; var stmt : ExpressionPtr) {
+    var body = new ExprBlock(at = fn.at)
+    emplace(body.list, stmt)
+    fn.body = body
+    fn.not_inferred()
+}
+
+//! Generates the direct-call dispatch of m3_exec - m3_DispatchOp, m3_OpAt and
+//! m3_OpCount - so a code-page word can be an operation index instead of the
+//! IM3Operation value C stores there.
+class M3ExecDispatchPass : AstPassMacro {
+    // Run-once, the same flag pattern and the same reason as M3ExecExpandPass
+    // above: the generated bodies must be inferred, not regenerated.
+    generated : bool = false
+
+    def override apply(prog : ProgramPtr; mod : Module?) : bool {
+        // the operations live in m3_exec; every other module compiles untouched
+        if (mod.name != "m3_exec" || generated) return false
+        generated = true
+        var names : array<string>
+        var anyAt = LineInfo()
+        for_each_function(mod, "") $(var fn : FunctionPtr) {
+            anyAt = fn.at
+            // C dereferences _pc, _sp and the memory pointers unchecked; the
+            // daslang backends test every pointer for null before a deref
+            // unless the function carries the unsafe_deref flag ([unsafe_deref]
+            // in source). Set here for the whole module - the operations, the
+            // operand readers and their helpers - so the JIT emits the C
+            // shape: three null tests fewer per executed operation.
+            fn.flags.unsafeDeref = true
+            // every operation is `def public op_<name> (d_m3OpSig)`, and the
+            // five parameters are what tells one apart from any other op_ name
+            if ((fn.name |> starts_with("op_")) && length(fn.arguments) == 5) {
+                names |> push(string(fn.name))
+            }
+        }
+        // byte order, so the numbering is a function of the source alone
+        names |> sort()
+        var ok = true
+        var seen = 0
+        for_each_function(mod, "m3_DispatchOp") $(var fn : FunctionPtr) {
+            seen++
+            if (empty(names)) {
+                macro_sticky_error(prog, fn.at,
+                    "m3_exec_expand: m3_exec declares no op_* operation, so there is nothing to dispatch")
+                ok = false
+                return
+            }
+            var tree = build_op_tree(fn.at, names, 0, length(names), true)
+            set_body(fn, tree)
+        }
+        for_each_function(mod, "m3_OpAt") $(var fn : FunctionPtr) {
+            seen++
+            if (empty(names)) return
+            var tree = build_op_tree(fn.at, names, 0, length(names), false)
+            set_body(fn, tree)
+        }
+        for_each_function(mod, "m3_OpCount") $(var fn : FunctionPtr) {
+            seen++
+            var count = new ExprConstInt(at = fn.at, value = length(names))
+            var ret : ExpressionPtr = new ExprReturn(at = fn.at, subexpr = count)
+            set_body(fn, ret)
+        }
+        if (seen != 3) {
+            macro_sticky_error(prog, anyAt,
+                "m3_exec_expand: m3_exec must declare the three dispatch placeholders m3_DispatchOp, m3_OpAt and m3_OpCount, found {seen}")
+            ok = false
+        }
+        return ok && !empty(names)
+    }
+}
+
 // An `[infer_macro]` registration, spelled out so the module needs daslib/ast
 // alone. Was `add_new_pre_infer_macro`: the pre-infer stage came out upstream
 // (see the class comment above), and an infer-macro pass that keeps its own
@@ -489,5 +633,6 @@ class M3ExecExpandPass : AstPassMacro {
 def private setup() {
     if (is_compiling_macros_in_module("m3_exec_expand")) {
         add_new_infer_macro("m3_exec_expand", new M3ExecExpandPass())
+        add_new_infer_macro("m3_exec_dispatch", new M3ExecDispatchPass())
     }
 }

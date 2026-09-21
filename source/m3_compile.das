@@ -112,10 +112,11 @@ let c_ioSlotCount : int = int((d_m3Use32BitSlots ? 1u : 0u) + 1u)
 /* C stores NULL in absent operation-table slots. Daslang function values are
    non-nullable, so absent slots hold these explicit no-op sentinels instead;
    the C `op == null` checks become IsNoOp(op)/IsNoCompiler(fn). The sentinels
-   are never meant to execute — they trap loudly if reached. */
-def public op_NoOp(var _pc : pc_t; var _sp : m3stack_t; var _mem : M3MemoryHeader?; var _r0 : m3reg_t; var _fp0 : f64) : M3Result {
-    return m3Err_noCompiler
-}
+   are never meant to execute — they trap loudly if reached.
+   op_NoOp itself is defined in m3_exec.das with the other operations: C's
+   Compile_Select emits its NULL operation unguarded when the stack is
+   polymorphic, so the sentinel does reach a code page and therefore needs a
+   dispatch index like every other operation. */
 
 let public c_opNull : IM3Operation = @@op_NoOp
 
@@ -151,7 +152,9 @@ def EnsureCodePageNumLines(var o : IM3Compilation; var i_numLines : u32) : M3Res
         var page = AcquireCodePageWithCapacity(o.runtime, i_numLines)
         if (page != null) {
                         d_m3Assert(NumFreeLines(o.page) >= 2u)
-            EmitWord(o.page, @@op_Branch)
+            // C: EmitWord (o->page, op_Branch). The operation word carries the
+            // operation index, not the IM3Operation value; see m3_OpIndex.
+            EmitWord(o.page, u64(m3_OpIndex(@@op_Branch)))
             EmitWord(o.page, GetPagePC(page))
             ReleaseCodePage(o.runtime, o.page)
             o.page = page
@@ -176,7 +179,10 @@ def EmitOp(var o : IM3Compilation; i_operation : IM3Operation) : M3Result {
         if (result == m3Err_none) {
             // d_m3LogEmit/d_m3RecordBacktraces are inactive: the C log_emit
             // and EmitMappingEntry calls are compiled out.
-            EmitWord(o.page, i_operation)
+            // C: EmitWord (o->page, i_operation) stores the IM3Operation value.
+            // The port stores its index, which is what RunLoop dispatches on;
+            // see m3_OpIndex in m3_exec.das.
+            EmitWord(o.page, u64(m3_OpIndex(i_operation)))
         }
     }
     return result
@@ -1796,7 +1802,10 @@ def CompileRawFunction(var io_module : IM3Module; var io_function : IM3Function;
     if (page == null) { return m3Err_mallocFailedCodePage }
     io_function.compiled = GetPagePC(page)
     io_function._module = io_module
-    EmitWord(page, @@op_CallRawFunction)
+    // C: EmitWord (page, op_CallRawFunction) — the operation word, so the index.
+    // The three words after it are immediates op_CallRawFunction reads (the raw
+    // function pointer, the IM3Function and the userdata) and keep their layout.
+    EmitWord(page, u64(m3_OpIndex(@@op_CallRawFunction)))
     EmitWord_impl(page, unsafe(reinterpret<void?>(i_function)))
     EmitWord(page, io_function)
     EmitWord_impl(page, unsafe(reinterpret<void?>(i_userdata)))

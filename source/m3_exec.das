@@ -21,10 +21,16 @@ require ./m3_exec_expand.das
 // (section 6): every operation takes the five interpreter registers (_pc,
 // _sp, _mem, _r0, _fp0) BY VALUE and `return nextOpDirect (...)` /
 // `return jumpOpDirect (...)` calls the next operation directly, which is
-// what C's M3_MUSTTAIL return of nextOpImpl()/jumpOpImpl(PC) does. Daslang
-// has no M3_MUSTTAIL, so the daslang interpreter tier nests one frame per
-// executed operation; the AOT/ctx tier emits `return operation(...)`, which
-// gcc turns into a sibling-call jump.
+// what C's M3_MUSTTAIL return of nextOpImpl()/jumpOpImpl(PC) does.
+//
+// The direct-dispatch experiment on top of it (m3_exec_defs.das): a code-page
+// word holds an operation INDEX, not the IM3Operation value C stores there,
+// and nextOpImpl dispatches it through m3_DispatchOp, a generated balanced
+// tree of DIRECT calls to the op_* below (m3_exec_expand.das), because the
+// daslang JIT tail-calls a direct call in return position and never a call
+// through a function value. The C-form IM3Operation function values are
+// unchanged and still live in the compile tables of m3_compile.das;
+// m3_OpIndex maps one to its word.
 
 let INT32_MIN : i32 = -2147483647 - 1
 let INT64_MIN : i64 = -9223372036854775807l - 1l
@@ -195,7 +201,7 @@ def bool_reg(value : bool) : m3reg_t {
 def immediate_i32(var _pc : pc_t&) : i32 {
     unsafe {
         let value = reinterpret<i32 const?>(_pc)[0]
-        _pc++
+        _pc += 1
         return value
     }
 }
@@ -204,7 +210,7 @@ def immediate_i32(var _pc : pc_t&) : i32 {
 def immediate_u32(var _pc : pc_t&) : u32 {
     unsafe {
         let value = reinterpret<u32 const?>(_pc)[0]
-        _pc++
+        _pc += 1
         return value
     }
 }
@@ -213,7 +219,7 @@ def immediate_u32(var _pc : pc_t&) : u32 {
 def immediate_pc(var _pc : pc_t&) : pc_t {
     unsafe {
         var value = reinterpret<pc_t>(_pc[0])
-        _pc++
+        _pc += 1
         return value
     }
 }
@@ -222,7 +228,7 @@ def immediate_pc(var _pc : pc_t&) : pc_t {
 def immediate_code(var _pc : pc_t&) : code_t {
     unsafe {
         let value = _pc[0]
-        _pc++
+        _pc += 1
         return value
     }
 }
@@ -231,7 +237,7 @@ def immediate_code(var _pc : pc_t&) : code_t {
 def immediate_function(var _pc : pc_t&) : IM3Function {
     unsafe {
         var value = reinterpret<IM3Function>(_pc[0])
-        _pc++
+        _pc += 1
         return value
     }
 }
@@ -240,7 +246,7 @@ def immediate_function(var _pc : pc_t&) : IM3Function {
 def immediate_module(var _pc : pc_t&) : IM3Module {
     unsafe {
         var value = reinterpret<IM3Module>(_pc[0])
-        _pc++
+        _pc += 1
         return value
     }
 }
@@ -249,7 +255,7 @@ def immediate_module(var _pc : pc_t&) : IM3Module {
 def immediate_functype(var _pc : pc_t&) : IM3FuncType {
     unsafe {
         var value = reinterpret<IM3FuncType>(_pc[0])
-        _pc++
+        _pc += 1
         return value
     }
 }
@@ -258,7 +264,7 @@ def immediate_functype(var _pc : pc_t&) : IM3FuncType {
 def immediate_rawcall(var _pc : pc_t&) : M3RawCall {
     unsafe {
         let value = reinterpret<M3RawCall>(_pc[0])
-        _pc++
+        _pc += 1
         return value
     }
 }
@@ -267,7 +273,7 @@ def immediate_rawcall(var _pc : pc_t&) : M3RawCall {
 def slot_ptr_i8(var _pc : pc_t&; _sp : m3stack_t&) : i8? {
     unsafe {
         var ptr = reinterpret<i8?>(_sp + reinterpret<i32 const?>(_pc)[0])
-        _pc++
+        _pc += 1
         return ptr
     }
 }
@@ -276,7 +282,7 @@ def slot_ptr_i8(var _pc : pc_t&; _sp : m3stack_t&) : i8? {
 def slot_i8(var _pc : pc_t&; _sp : m3stack_t&) : i8 {
     unsafe {
         let value = reinterpret<i8?>(_sp + reinterpret<i32 const?>(_pc)[0])[0]
-        _pc++
+        _pc += 1
         return value
     }
 }
@@ -285,7 +291,7 @@ def slot_i8(var _pc : pc_t&; _sp : m3stack_t&) : i8 {
 def slot_ptr_u8(var _pc : pc_t&; _sp : m3stack_t&) : u8? {
     unsafe {
         var ptr = reinterpret<u8?>(_sp + reinterpret<i32 const?>(_pc)[0])
-        _pc++
+        _pc += 1
         return ptr
     }
 }
@@ -294,7 +300,7 @@ def slot_ptr_u8(var _pc : pc_t&; _sp : m3stack_t&) : u8? {
 def slot_u8(var _pc : pc_t&; _sp : m3stack_t&) : u8 {
     unsafe {
         let value = reinterpret<u8?>(_sp + reinterpret<i32 const?>(_pc)[0])[0]
-        _pc++
+        _pc += 1
         return value
     }
 }
@@ -303,7 +309,7 @@ def slot_u8(var _pc : pc_t&; _sp : m3stack_t&) : u8 {
 def slot_ptr_i16(var _pc : pc_t&; _sp : m3stack_t&) : i16? {
     unsafe {
         var ptr = reinterpret<i16?>(_sp + reinterpret<i32 const?>(_pc)[0])
-        _pc++
+        _pc += 1
         return ptr
     }
 }
@@ -312,7 +318,7 @@ def slot_ptr_i16(var _pc : pc_t&; _sp : m3stack_t&) : i16? {
 def slot_i16(var _pc : pc_t&; _sp : m3stack_t&) : i16 {
     unsafe {
         let value = reinterpret<i16?>(_sp + reinterpret<i32 const?>(_pc)[0])[0]
-        _pc++
+        _pc += 1
         return value
     }
 }
@@ -321,7 +327,7 @@ def slot_i16(var _pc : pc_t&; _sp : m3stack_t&) : i16 {
 def slot_ptr_u16(var _pc : pc_t&; _sp : m3stack_t&) : u16? {
     unsafe {
         var ptr = reinterpret<u16?>(_sp + reinterpret<i32 const?>(_pc)[0])
-        _pc++
+        _pc += 1
         return ptr
     }
 }
@@ -330,7 +336,7 @@ def slot_ptr_u16(var _pc : pc_t&; _sp : m3stack_t&) : u16? {
 def slot_u16(var _pc : pc_t&; _sp : m3stack_t&) : u16 {
     unsafe {
         let value = reinterpret<u16?>(_sp + reinterpret<i32 const?>(_pc)[0])[0]
-        _pc++
+        _pc += 1
         return value
     }
 }
@@ -339,7 +345,7 @@ def slot_u16(var _pc : pc_t&; _sp : m3stack_t&) : u16 {
 def slot_ptr_i32(var _pc : pc_t&; _sp : m3stack_t&) : i32? {
     unsafe {
         var ptr = reinterpret<i32?>(_sp + reinterpret<i32 const?>(_pc)[0])
-        _pc++
+        _pc += 1
         return ptr
     }
 }
@@ -348,7 +354,7 @@ def slot_ptr_i32(var _pc : pc_t&; _sp : m3stack_t&) : i32? {
 def slot_i32(var _pc : pc_t&; _sp : m3stack_t&) : i32 {
     unsafe {
         let value = reinterpret<i32?>(_sp + reinterpret<i32 const?>(_pc)[0])[0]
-        _pc++
+        _pc += 1
         return value
     }
 }
@@ -357,7 +363,7 @@ def slot_i32(var _pc : pc_t&; _sp : m3stack_t&) : i32 {
 def slot_ptr_u32(var _pc : pc_t&; _sp : m3stack_t&) : u32? {
     unsafe {
         var ptr = reinterpret<u32?>(_sp + reinterpret<i32 const?>(_pc)[0])
-        _pc++
+        _pc += 1
         return ptr
     }
 }
@@ -366,7 +372,7 @@ def slot_ptr_u32(var _pc : pc_t&; _sp : m3stack_t&) : u32? {
 def slot_u32(var _pc : pc_t&; _sp : m3stack_t&) : u32 {
     unsafe {
         let value = reinterpret<u32?>(_sp + reinterpret<i32 const?>(_pc)[0])[0]
-        _pc++
+        _pc += 1
         return value
     }
 }
@@ -375,7 +381,7 @@ def slot_u32(var _pc : pc_t&; _sp : m3stack_t&) : u32 {
 def slot_ptr_i64(var _pc : pc_t&; _sp : m3stack_t&) : i64? {
     unsafe {
         var ptr = reinterpret<i64?>(_sp + reinterpret<i32 const?>(_pc)[0])
-        _pc++
+        _pc += 1
         return ptr
     }
 }
@@ -384,7 +390,7 @@ def slot_ptr_i64(var _pc : pc_t&; _sp : m3stack_t&) : i64? {
 def slot_i64(var _pc : pc_t&; _sp : m3stack_t&) : i64 {
     unsafe {
         let value = reinterpret<i64?>(_sp + reinterpret<i32 const?>(_pc)[0])[0]
-        _pc++
+        _pc += 1
         return value
     }
 }
@@ -393,7 +399,7 @@ def slot_i64(var _pc : pc_t&; _sp : m3stack_t&) : i64 {
 def slot_ptr_u64(var _pc : pc_t&; _sp : m3stack_t&) : u64? {
     unsafe {
         var ptr = reinterpret<u64?>(_sp + reinterpret<i32 const?>(_pc)[0])
-        _pc++
+        _pc += 1
         return ptr
     }
 }
@@ -402,7 +408,7 @@ def slot_ptr_u64(var _pc : pc_t&; _sp : m3stack_t&) : u64? {
 def slot_u64(var _pc : pc_t&; _sp : m3stack_t&) : u64 {
     unsafe {
         let value = reinterpret<u64?>(_sp + reinterpret<i32 const?>(_pc)[0])[0]
-        _pc++
+        _pc += 1
         return value
     }
 }
@@ -411,7 +417,7 @@ def slot_u64(var _pc : pc_t&; _sp : m3stack_t&) : u64 {
 def slot_ptr_f32(var _pc : pc_t&; _sp : m3stack_t&) : f32? {
     unsafe {
         var ptr = reinterpret<f32?>(_sp + reinterpret<i32 const?>(_pc)[0])
-        _pc++
+        _pc += 1
         return ptr
     }
 }
@@ -420,7 +426,7 @@ def slot_ptr_f32(var _pc : pc_t&; _sp : m3stack_t&) : f32? {
 def slot_f32(var _pc : pc_t&; _sp : m3stack_t&) : f32 {
     unsafe {
         let value = reinterpret<f32?>(_sp + reinterpret<i32 const?>(_pc)[0])[0]
-        _pc++
+        _pc += 1
         return value
     }
 }
@@ -429,7 +435,7 @@ def slot_f32(var _pc : pc_t&; _sp : m3stack_t&) : f32 {
 def slot_ptr_f64(var _pc : pc_t&; _sp : m3stack_t&) : f64? {
     unsafe {
         var ptr = reinterpret<f64?>(_sp + reinterpret<i32 const?>(_pc)[0])
-        _pc++
+        _pc += 1
         return ptr
     }
 }
@@ -438,10 +444,104 @@ def slot_ptr_f64(var _pc : pc_t&; _sp : m3stack_t&) : f64? {
 def slot_f64(var _pc : pc_t&; _sp : m3stack_t&) : f64 {
     unsafe {
         let value = reinterpret<f64?>(_sp + reinterpret<i32 const?>(_pc)[0])[0]
-        _pc++
+        _pc += 1
         return value
     }
 }
+
+// ============================================================================
+// Operation dispatch
+// ============================================================================
+
+
+/*
+    C stores the IM3Operation function pointer itself in the code page and
+    reaches the operation through an indirect call. The port stores an operation
+    INDEX in the word - a plain int in 0..m3_OpCount()-1 over the op_* functions
+    of this module sorted by name - and turns it back into a DIRECT call here,
+    because the daslang JIT tail-calls a direct call in return position and
+    never a call through a function value. The full reasoning is the
+    direct-dispatch paragraph at the top of m3_exec_defs.das; the three
+    functions below are generated by the second pass of m3_exec_expand.das,
+    which is also why nextOpImpl lives in this file: only here is every op_*
+    visible for a direct call.
+*/
+
+// Generated by m3_exec_expand: the operation with index `idx` called DIRECTLY,
+// a balanced tree of `if (idx < mid)` over the sorted op_* names. A plain
+// function, not [inline]: every operation tail-calls it and it tail-calls the
+// operation, so the backends see one chain of sibling calls; an [inline]
+// splice would copy the tree into every one of the 500 tail positions.
+[unused_argument(idx, _pc, _sp, _mem, _r0, _fp0)]
+def public m3_DispatchOp(idx : int; var _pc : pc_t; var _sp : m3stack_t; var _mem : M3MemoryHeader?; var _r0 : m3reg_t; var _fp0 : f64) : M3Result {
+    return m3Err_none   // replaced by the generated tree
+}
+
+// Generated by m3_exec_expand: the function value of the operation with index
+// `idx`, same tree, leaves return @@op_<name>.
+def public m3_OpAt(idx : int) : IM3Operation {
+    return @@op_NoOp   // replaced by the generated tree
+}
+
+def public m3_OpCount() : int { return 0 }   // replaced by the generated constant
+
+// The reverse of m3_OpAt, and the only thing the emitters need: the compile
+// tables keep C's IM3Operation VALUES (c_setSetOps, the M3OP rows, c_opNull,
+// IsNoOp), so EmitOp and the two hand-written emission sites of m3_compile.das
+// turn the value into the index the code-page word carries.
+var private g_opIndex : table<u64; int>
+
+def public m3_OpIndex(op : IM3Operation) : int {
+    // Filled lazily, deliberately not from an [init]: a required module's
+    // [init] does not run in the standalone context on the pinned daslang.
+    if (empty(g_opIndex)) {
+        for (i in range(m3_OpCount())) {
+            g_opIndex[unsafe(reinterpret<u64>(m3_OpAt(i)))] = i
+        }
+    }
+    let idx = g_opIndex ?[unsafe(reinterpret<u64>(op))] ?? -1
+    d_m3Assert(idx >= 0, "m3_OpIndex: not an m3_exec operation")
+    return idx
+}
+
+
+// C: #define nextOpImpl() ((IM3Operation)(* _pc))(_pc + 1, d_m3OpArgs)
+// The word is the operation index and m3_DispatchOp the direct call tree that
+// stands in for C's indirect call through the word.
+def public nextOpImpl(var _pc : pc_t; var _sp : m3stack_t; var _mem : M3MemoryHeader?; var _r0 : m3reg_t; var _fp0 : f64) : M3Result {
+    var idx : int
+    unsafe {
+        idx = int(reinterpret<u64>(_pc[0]))
+    }
+    return m3_DispatchOp(idx, unsafe(_pc + 1), _sp, _mem, _r0, _fp0)
+}
+
+// C: #define jumpOpImpl(PC) ((IM3Operation)(* PC))( PC + 1, d_m3OpArgs)
+def public jumpOpImpl(var pc : pc_t; var _sp : m3stack_t; var _mem : M3MemoryHeader?; var _r0 : m3reg_t; var _fp0 : f64) : M3Result {
+    var idx : int
+    unsafe {
+        idx = int(reinterpret<u64>(pc[0]))
+    }
+    return m3_DispatchOp(idx, unsafe(pc + 1), _sp, _mem, _r0, _fp0)
+}
+
+// C: #define nextOpDirect() M3_MUSTTAIL return nextOpImpl()
+[inline]
+def public nextOpDirect(var _pc : pc_t; var _sp : m3stack_t; var _mem : M3MemoryHeader?; var _r0 : m3reg_t; var _fp0 : f64) : M3Result {
+    return nextOpImpl(_pc, _sp, _mem, _r0, _fp0)
+}
+
+// C: #define jumpOpDirect(PC) M3_MUSTTAIL return jumpOpImpl((pc_t)(PC))
+[inline]
+def public jumpOpDirect(var PC : pc_t; var _sp : m3stack_t; var _mem : M3MemoryHeader?; var _r0 : m3reg_t; var _fp0 : f64) : M3Result {
+    return jumpOpImpl(PC, _sp, _mem, _r0, _fp0)
+}
+
+// C: d_m3RetSig RunCode (d_m3OpSig) { nextOpDirect(); }
+def public RunCode(var _pc : pc_t; var _sp : m3stack_t; var _mem : M3MemoryHeader?; var _r0 : m3reg_t; var _fp0 : f64) : M3Result {
+    return nextOpImpl(_pc, _sp, _mem, _r0, _fp0)
+}
+
 
 // C: static inline m3ret_t Call (d_m3OpSig) — takes the operation signature by
 // value and its callers (op_Call, op_CallIndirect) pass a fresh stack pointer
@@ -455,6 +555,17 @@ def Call(var _pc : pc_t; var _sp : m3stack_t; var _mem : M3MemoryHeader?; var _r
     let possible_trap = m3_Yield()
     if (possible_trap != m3Err_none) { return possible_trap }
     return nextOpImpl(_pc, _sp, _mem, _r0, _fp0)
+}
+
+/* C stores NULL in absent operation-table slots; m3_compile.das holds the
+   explicit sentinel c_opNull = @@op_NoOp instead, because Daslang function
+   values are non-nullable. The operation itself lives here, with the other
+   operations: C's Compile_Select emits its NULL operation unguarded when the
+   stack is polymorphic, so the sentinel does reach a code page and needs a
+   dispatch index like every other op_*. It is never meant to execute. */
+[unused_argument(_pc, _sp, _mem, _r0, _fp0)]
+def public op_NoOp(var _pc : pc_t; var _sp : m3stack_t; var _mem : M3MemoryHeader?; var _r0 : m3reg_t; var _fp0 : f64) : M3Result {
+    return m3Err_noCompiler
 }
 
 def public op_i32_Equal_rs(var _pc : pc_t; var _sp : m3stack_t; var _mem : M3MemoryHeader?; var _r0 : m3reg_t; var _fp0 : f64) : M3Result {
@@ -3191,8 +3302,10 @@ def public op_MemFill(var _pc : pc_t; var _sp : m3stack_t; var _mem : M3MemoryHe
 def public op_Compile(var _pc : pc_t; var _sp : m3stack_t; var _mem : M3MemoryHeader?; var _r0 : m3reg_t; var _fp0 : f64) : M3Result {
     unsafe {
         var rewrite = (_pc - 1)
-        // Through u64: the AOT backend lowers a function-to-pointer reinterpret to the value's address; see EmitWord in m3_code.das.
-        rewrite[0] = unsafe(reinterpret<code_t>(reinterpret<u64>(@@op_Call)))
+        // C: * (_pc - 1) = op_Call — the operation word of the op_Compile that
+        // is running. A word carries the operation INDEX here, so the
+        // self-rewrite stores op_Call's index; see m3_OpIndex above.
+        rewrite[0] = unsafe(reinterpret<code_t>(u64(m3_OpIndex(@@op_Call))))
     }
     var _function = immediate_function(_pc)
     var result : M3Result = m3Err_none

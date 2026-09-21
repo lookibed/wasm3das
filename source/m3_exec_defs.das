@@ -27,6 +27,7 @@ require ./m3_types.das
     every C return shape in the interpreter core (m3Err_xxx or nextOp
     passthrough).
 
+<<<<<<< HEAD
     The C form restored (docs/execution-design.md, section 6). The five
     interpreter registers are passed BY VALUE and every operation ends with
     `return nextOpImpl(...)`, the direct call of the next operation that C
@@ -36,6 +37,28 @@ require ./m3_types.das
     (measured 1.3-1.6x on fib 30); the gain is in the AOT/ctx tier, where the
     emitted C++ `return operation(...)` is a tail call gcc turns into a
     sibling-call jump, exactly as in C wasm3.
+
+    Direct-dispatch experiment (branch perf/jit-dispatch-tree). C stores the
+    IM3Operation function pointer itself in the code page and reaches it
+    through an indirect call. This branch stores an operation INDEX instead -
+    a plain int in 0..m3_OpCount()-1 over the op_* functions of m3_exec sorted
+    by name - and nextOpImpl turns it back into the operation with
+    m3_DispatchOp, a generated balanced `if (idx < mid)` tree whose leaves are
+    DIRECT calls to op_<name>. The reason is the daslang JIT: it never emits a
+    tail call for a call through a function value, so on the C form every
+    executed operation nests an LLVM frame until the wasm function returns
+    (measured 209 ns per operation in a micro-model against 4 ns for the call
+    itself), whereas a direct call in return position with the same signature
+    is a sibling-call jump for LLVM as it is for gcc.
+
+    Consequently nextOpImpl, jumpOpImpl, nextOpDirect, jumpOpDirect and RunCode
+    live in m3_exec.das, not here: only there is every op_* visible for a
+    direct call. What stays in this file is the ABI itself - IM3Operation -
+    because the operation bodies and the compile tables of m3_compile.das keep
+    the C form: `IM3Operation` VALUES live in c_setSetOps, the M3OP(...) rows,
+    c_opNull and IsNoOp exactly as in C, and only the code-page word is an
+    index. m3_OpIndex (m3_exec.das) is the reverse map the emitters use,
+    m3_OpAt the forward one it is built from.
 */
 
 
@@ -85,41 +108,7 @@ def public m3MemInfo(var _mem : M3MemoryHeader?&) : IM3Memory {
 typedef public IM3Operation = function<(var _pc : pc_t; var _sp : m3stack_t; var _mem : M3MemoryHeader?; var _r0 : m3reg_t; var _fp0 : f64) : M3Result>
 
 
-// C: #define nextOpImpl() ((IM3Operation)(* _pc))(_pc + 1, d_m3OpArgs)
-def public nextOpImpl(var _pc : pc_t; var _sp : m3stack_t; var _mem : M3MemoryHeader?; var _r0 : m3reg_t; var _fp0 : f64) : M3Result {
-    unsafe {
-        let operation = reinterpret<IM3Operation>(_pc[0])
-        return operation(_pc + 1, _sp, _mem, _r0, _fp0)
-    }
-}
-
-// C: #define jumpOpImpl(PC) ((IM3Operation)(* PC))( PC + 1, d_m3OpArgs)
-def public jumpOpImpl(var pc : pc_t; var _sp : m3stack_t; var _mem : M3MemoryHeader?; var _r0 : m3reg_t; var _fp0 : f64) : M3Result {
-    unsafe {
-        let operation = reinterpret<IM3Operation>(pc[0])
-        return operation(pc + 1, _sp, _mem, _r0, _fp0)
-    }
-}
-
-// C: #define nextOpDirect() M3_MUSTTAIL return nextOpImpl()
-[inline]
-def public nextOpDirect(var _pc : pc_t; var _sp : m3stack_t; var _mem : M3MemoryHeader?; var _r0 : m3reg_t; var _fp0 : f64) : M3Result {
-    return nextOpImpl(_pc, _sp, _mem, _r0, _fp0)
-}
-
-// C: #define jumpOpDirect(PC) M3_MUSTTAIL return jumpOpImpl((pc_t)(PC))
-[inline]
-def public jumpOpDirect(var PC : pc_t; var _sp : m3stack_t; var _mem : M3MemoryHeader?; var _r0 : m3reg_t; var _fp0 : f64) : M3Result {
-    return jumpOpImpl(PC, _sp, _mem, _r0, _fp0)
-}
-
-
-// ============================================================================
-// RunCode
-// ============================================================================
-
-
-// C: d_m3RetSig RunCode (d_m3OpSig) { nextOpDirect(); }
-def public RunCode(var _pc : pc_t; var _sp : m3stack_t; var _mem : M3MemoryHeader?; var _r0 : m3reg_t; var _fp0 : f64) : M3Result {
-    return nextOpImpl(_pc, _sp, _mem, _r0, _fp0)
-}
+// nextOpImpl, jumpOpImpl, nextOpDirect, jumpOpDirect and RunCode - C's
+// M3_MUSTTAIL threading - live in m3_exec.das, next to the operations the
+// generated dispatch tree calls directly. See the direct-dispatch paragraph
+// above.
