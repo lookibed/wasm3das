@@ -17,7 +17,7 @@ like Wasm3 and is verified with Wasm3's own test suite.
 - Passes the WebAssembly core spec suite driven by Wasm3's unmodified
   `run-spec-test.py`: 17863 / 17863 assertions on the current corpus
   (`opam-1.1.1`) and 17526 / 17526 on the previous one (`v1.1`), with no
-  crashes. Per-file numbers are in `notes/spec_test_status.md`.
+  crashes. Per-file numbers are in `docs/test-suites.md`.
 - Runs every module in `wasm3c/test/lang`.
 - Runs WASI programs (`wasi_snapshot_preview1` and `wasi_unstable`, the
   same function set as Wasm3): Wasm3's own `run-wasi-test.py` passes its
@@ -38,7 +38,7 @@ like Wasm3 and is verified with Wasm3's own test suite.
 - Speed: run through `scripts/wasm3` the port is interpreted by Daslang and
   is tens of times slower than the C build; the native AOT build
   (`scripts/build_port.sh`, below) closes most of that gap. Numbers for
-  every engine are in `notes/benchmark_2026-09-07.md`.
+  every engine are in `docs/native-build.md` and `tests/manual/fixture_report.md`.
 - Every run compiles the Daslang sources first (about 2 s), in both the
   interpreted and the native build.
 - Deep recursion needs a large stack. The wrapper raises the thread stack
@@ -197,3 +197,9 @@ scripts/wasm3-ctx wasm3c/test/lang/fib32.wasm --func fib 35   # ~50 ms total
 The measured column in `tests/manual/fixture_report.md` is
 `wasm3das(aot_ctx)`. Development rules, the verification gate and the review
 process are in `docs/development-pipeline.md` and `AGENTS.md`.
+
+## License
+
+MIT (`LICENSE`). The vendored Wasm3 sources under `wasm3c/` keep their own MIT
+license (`wasm3c/LICENSE`); the fixture modules under `tests/manual/` carry
+the upstream licenses listed in `tests/manual/ATTRIBUTION.md`.

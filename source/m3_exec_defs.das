@@ -27,7 +27,7 @@ require ./m3_types.das
     every C return shape in the interpreter core (m3Err_xxx or nextOp
     passthrough).
 
-    Trampoline deviation (notes/exec_trampoline_design.md). Daslang has no
+    Trampoline deviation (docs/execution-design.md). Daslang has no
     M3_MUSTTAIL, so the C shape "every op tail-jumps to the next op" would nest
     one Daslang frame per executed operation. Instead the operation returns to
     a dispatch loop:
