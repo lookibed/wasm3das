@@ -71,10 +71,8 @@ def ParseSection_Type(var io_module : IM3Module; i_bytes : bytes_t; i_end : cbyt
     }
 
     if (numTypes != 0) {
-        unsafe {
-            io_module.funcTypes = reinterpret<IM3FuncType?>(
-                m3_Malloc_Impl(uint64(typeinfo sizeof(type<IM3FuncType>)) * uint64(numTypes)))
-        }
+        io_module.funcTypes = unsafe(reinterpret<IM3FuncType?>(
+            m3_Malloc_Impl(uint64(typeinfo sizeof(type<IM3FuncType>)) * uint64(numTypes))))
         if (io_module.funcTypes == null) {
             return m3Err_mallocFailed
         }
@@ -133,16 +131,17 @@ def ParseSection_Type(var io_module : IM3Module; i_bytes : bytes_t; i_end : cbyt
                 if (result != m3Err_none) { break }
                 result = NormalizeType(retType, wasmType)
                 if (result != m3Err_none) { break }
-                unsafe { types[r] = retType }            }
+                unsafe(types[r]) = retType
+            }
             if (result != m3Err_none) { break }
 
             for (a in 0u..numArgs) {
-                unsafe { types[numRets + a] = argTypes[int(a)] }
+                unsafe(types[numRets + a]) = argTypes[int(a)]
             }
 
 
             Environment_AddFuncType(io_module.environment, ftype)
-            unsafe { io_module.funcTypes[i] = ftype }
+            unsafe(io_module.funcTypes[i]) = ftype
             ftype = null
         }
     }
@@ -352,8 +351,7 @@ def Parse_InitExpr(var io_module : IM3Module; var io_bytes : bytes_t&; i_end : c
         wasmEnd = unsafe(reinterpret<bytes_t>(i_end))
     )
 
-    var compilationPtr : IM3Compilation
-    unsafe { compilationPtr = addr(compilation) }
+    var compilationPtr : IM3Compilation = unsafe(addr(compilation))
     let result = CompileBlockStatements(compilationPtr)
     io_bytes = compilation.wasm
     return result
@@ -394,7 +392,7 @@ def ParseSection_Code(var io_module : IM3Module; i_bytes : bytes_t; i_end : cbyt
         if (result != m3Err_none) { break }
 
         if (size != 0) {
-            unsafe { bytes += size }
+            bytes = unsafe(bytes + size)
 
             if (intptr(bytes) <= intptr(i_end)) {
                 var func = Module_GetFunction(io_module, f + io_module.numFuncImports)
@@ -426,10 +424,8 @@ def ParseSection_Data(var io_module : IM3Module; i_bytes : bytes_t; i_end : cbyt
         return "too many data segments"
     }
 
-    unsafe {
-        io_module.dataSegments = reinterpret<M3DataSegment?>(
-            m3_Malloc_Impl(uint64(typeinfo sizeof(type<M3DataSegment>)) * uint64(numDataSegments)))
-    }
+    io_module.dataSegments = unsafe(reinterpret<M3DataSegment?>(
+        m3_Malloc_Impl(uint64(typeinfo sizeof(type<M3DataSegment>)) * uint64(numDataSegments))))
     if (io_module.dataSegments == null) {
         return m3Err_mallocFailed
     }
@@ -457,7 +453,7 @@ def ParseSection_Data(var io_module : IM3Module; i_bytes : bytes_t; i_end : cbyt
         segment.data = bytes
 
 
-        unsafe { bytes += segment.size }
+        bytes = unsafe(bytes + segment.size)
         if (intptr(bytes) > intptr(i_end)) {
             result = "data segment underflow"
             break
@@ -580,7 +576,7 @@ def ParseSection_Name(var io_module : IM3Module; i_bytes : bytes_t; i_end : cbyt
             if (result != m3Err_none) { break }
         }
 
-        unsafe { bytes = start + payloadLength }
+        bytes = unsafe(start + payloadLength)
     }
 
     return result
@@ -645,9 +641,7 @@ def public m3_ParseModule(var i_environment : IM3Environment; var o_module : IM3
 
     // C: module = m3_AllocStruct (M3Module) - zeroed host allocation; released
     // with m3_Free_Impl in m3_FreeModule (docs/memory-ownership.md).
-    unsafe {
-        _module = reinterpret<IM3Module>(m3_Malloc_Impl(u64(typeinfo sizeof(type<M3Module>))))
-    }
+    _module = unsafe(reinterpret<IM3Module>(m3_Malloc_Impl(u64(typeinfo sizeof(type<M3Module>)))))
     if (_module == null) {
         o_module = null
         return m3Err_mallocFailed

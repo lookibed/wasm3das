@@ -267,9 +267,7 @@ def private new_wasi_fixture(t : T?; var bytes : array<u8>) : WasiFixture {
 
 def private import_context(ctx : m3_wasi_context_t?) : M3ImportContext {
     var ictx : M3ImportContext
-    unsafe {
-        ictx.userdata = reinterpret<void?>(ctx)
-    }
+    ictx.userdata = unsafe(reinterpret<void?>(ctx))
     return ictx
 }
 
