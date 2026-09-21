@@ -430,6 +430,14 @@ class M3ExecExpandPass : AstPassMacro {
         expander.prog := prog
         var ok = true
         for_each_function(mod, "") $(var fn : FunctionPtr) {
+            // C dereferences _pc, _sp and the memory pointers unchecked; the
+            // daslang backends test every pointer for null before a deref
+            // unless the function carries the unsafe_deref flag ([unsafe_deref]
+            // in source). Set here for the whole module - the operations, the
+            // operand readers and their helpers - so the JIT emits the C shape:
+            // three null tests fewer per executed operation (measured on the
+            // cached DLL with objdump, docs/native-build.md section 7, E7).
+            fn.flags.unsafeDeref = true
             if (!is_reader_name(string(fn.name))) return
             var r : Reader
             if (!split_reader(fn, r)) {
