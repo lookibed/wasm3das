@@ -115,22 +115,26 @@ require strings
     m3_exec.das (see dispatch_shape below for why it is that file and not the
     entry file, and for the leading underscore):
 
-        "chain"     a linear `if (idx == k) return op_k (...)` per operation,
-                    which LLVM folds into a switch with a jump table - one
-                    indirect jump instead of nine comparisons;
+        "chain"     (the measured default) a linear `if (idx == k) return
+                    op_k (...)` per operation, which LLVM folds into a switch
+                    with a jump table - one indirect jump instead of nine
+                    comparisons;
         "tree"      a balanced `if (idx < mid)` tree, so an index costs
                     ceil(log2(N)) comparisons and every arm is a `jmp`;
         "noinline"  the tree, with `[hint(noinline)]` added to every operation
                     so LLVM cannot inline a small one into the dispatch and
                     grow its prologue with the hoisted constants;
         "chain_noinline"
-                    (the measured default) the chain's jump table and the
-                    noinline hint together: with no operation inlined into it
-                    the dispatch needs no callee-saved register and no frame,
-                    so an operation's `jmp` into it no longer re-executes a
-                    six-push prologue and the arm no longer unwinds one.
+                    the chain's jump table and the noinline hint together:
+                    with no operation inlined into it the dispatch needs no
+                    callee-saved register and no frame, so an operation's
+                    `jmp` into it no longer re-executes a six-push prologue
+                    and the arm no longer unwinds one. Measured a loss all
+                    the same: the prologue is paid only by the operations
+                    LLVM did NOT inline, and taking the inlining away costs
+                    the hot ones two jumps each.
 
-    The four are measured in docs/native-build.md section 6, E9.
+    The four are measured in docs/native-build.md section 6, E9 and E10.
 
     Hand-built AST again, for the reason at the top: daslib/ast only, no qmacro.
 */
