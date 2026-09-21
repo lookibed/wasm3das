@@ -195,7 +195,7 @@ def bool_reg(value : bool) : m3reg_t {
 def immediate_i32(var _pc : pc_t&) : i32 {
     unsafe {
         let value = reinterpret<i32 const?>(_pc)[0]
-        _pc++
+        _pc += 1
         return value
     }
 }
@@ -204,7 +204,7 @@ def immediate_i32(var _pc : pc_t&) : i32 {
 def immediate_u32(var _pc : pc_t&) : u32 {
     unsafe {
         let value = reinterpret<u32 const?>(_pc)[0]
-        _pc++
+        _pc += 1
         return value
     }
 }
@@ -213,7 +213,7 @@ def immediate_u32(var _pc : pc_t&) : u32 {
 def immediate_pc(var _pc : pc_t&) : pc_t {
     unsafe {
         var value = reinterpret<pc_t>(_pc[0])
-        _pc++
+        _pc += 1
         return value
     }
 }
@@ -222,7 +222,7 @@ def immediate_pc(var _pc : pc_t&) : pc_t {
 def immediate_code(var _pc : pc_t&) : code_t {
     unsafe {
         let value = _pc[0]
-        _pc++
+        _pc += 1
         return value
     }
 }
@@ -231,7 +231,7 @@ def immediate_code(var _pc : pc_t&) : code_t {
 def immediate_function(var _pc : pc_t&) : IM3Function {
     unsafe {
         var value = reinterpret<IM3Function>(_pc[0])
-        _pc++
+        _pc += 1
         return value
     }
 }
@@ -240,7 +240,7 @@ def immediate_function(var _pc : pc_t&) : IM3Function {
 def immediate_module(var _pc : pc_t&) : IM3Module {
     unsafe {
         var value = reinterpret<IM3Module>(_pc[0])
-        _pc++
+        _pc += 1
         return value
     }
 }
@@ -249,7 +249,7 @@ def immediate_module(var _pc : pc_t&) : IM3Module {
 def immediate_functype(var _pc : pc_t&) : IM3FuncType {
     unsafe {
         var value = reinterpret<IM3FuncType>(_pc[0])
-        _pc++
+        _pc += 1
         return value
     }
 }
@@ -258,7 +258,7 @@ def immediate_functype(var _pc : pc_t&) : IM3FuncType {
 def immediate_rawcall(var _pc : pc_t&) : M3RawCall {
     unsafe {
         let value = reinterpret<M3RawCall>(_pc[0])
-        _pc++
+        _pc += 1
         return value
     }
 }
@@ -267,7 +267,7 @@ def immediate_rawcall(var _pc : pc_t&) : M3RawCall {
 def slot_ptr_i8(var _pc : pc_t&; _sp : m3stack_t&) : i8? {
     unsafe {
         var ptr = reinterpret<i8?>(_sp + reinterpret<i32 const?>(_pc)[0])
-        _pc++
+        _pc += 1
         return ptr
     }
 }
@@ -276,7 +276,7 @@ def slot_ptr_i8(var _pc : pc_t&; _sp : m3stack_t&) : i8? {
 def slot_i8(var _pc : pc_t&; _sp : m3stack_t&) : i8 {
     unsafe {
         let value = reinterpret<i8?>(_sp + reinterpret<i32 const?>(_pc)[0])[0]
-        _pc++
+        _pc += 1
         return value
     }
 }
@@ -285,7 +285,7 @@ def slot_i8(var _pc : pc_t&; _sp : m3stack_t&) : i8 {
 def slot_ptr_u8(var _pc : pc_t&; _sp : m3stack_t&) : u8? {
     unsafe {
         var ptr = reinterpret<u8?>(_sp + reinterpret<i32 const?>(_pc)[0])
-        _pc++
+        _pc += 1
         return ptr
     }
 }
@@ -294,7 +294,7 @@ def slot_ptr_u8(var _pc : pc_t&; _sp : m3stack_t&) : u8? {
 def slot_u8(var _pc : pc_t&; _sp : m3stack_t&) : u8 {
     unsafe {
         let value = reinterpret<u8?>(_sp + reinterpret<i32 const?>(_pc)[0])[0]
-        _pc++
+        _pc += 1
         return value
     }
 }
@@ -303,7 +303,7 @@ def slot_u8(var _pc : pc_t&; _sp : m3stack_t&) : u8 {
 def slot_ptr_i16(var _pc : pc_t&; _sp : m3stack_t&) : i16? {
     unsafe {
         var ptr = reinterpret<i16?>(_sp + reinterpret<i32 const?>(_pc)[0])
-        _pc++
+        _pc += 1
         return ptr
     }
 }
@@ -312,7 +312,7 @@ def slot_ptr_i16(var _pc : pc_t&; _sp : m3stack_t&) : i16? {
 def slot_i16(var _pc : pc_t&; _sp : m3stack_t&) : i16 {
     unsafe {
         let value = reinterpret<i16?>(_sp + reinterpret<i32 const?>(_pc)[0])[0]
-        _pc++
+        _pc += 1
         return value
     }
 }
@@ -321,7 +321,7 @@ def slot_i16(var _pc : pc_t&; _sp : m3stack_t&) : i16 {
 def slot_ptr_u16(var _pc : pc_t&; _sp : m3stack_t&) : u16? {
     unsafe {
         var ptr = reinterpret<u16?>(_sp + reinterpret<i32 const?>(_pc)[0])
-        _pc++
+        _pc += 1
         return ptr
     }
 }
@@ -330,7 +330,7 @@ def slot_ptr_u16(var _pc : pc_t&; _sp : m3stack_t&) : u16? {
 def slot_u16(var _pc : pc_t&; _sp : m3stack_t&) : u16 {
     unsafe {
         let value = reinterpret<u16?>(_sp + reinterpret<i32 const?>(_pc)[0])[0]
-        _pc++
+        _pc += 1
         return value
     }
 }
@@ -339,7 +339,7 @@ def slot_u16(var _pc : pc_t&; _sp : m3stack_t&) : u16 {
 def slot_ptr_i32(var _pc : pc_t&; _sp : m3stack_t&) : i32? {
     unsafe {
         var ptr = reinterpret<i32?>(_sp + reinterpret<i32 const?>(_pc)[0])
-        _pc++
+        _pc += 1
         return ptr
     }
 }
@@ -348,7 +348,7 @@ def slot_ptr_i32(var _pc : pc_t&; _sp : m3stack_t&) : i32? {
 def slot_i32(var _pc : pc_t&; _sp : m3stack_t&) : i32 {
     unsafe {
         let value = reinterpret<i32?>(_sp + reinterpret<i32 const?>(_pc)[0])[0]
-        _pc++
+        _pc += 1
         return value
     }
 }
@@ -357,7 +357,7 @@ def slot_i32(var _pc : pc_t&; _sp : m3stack_t&) : i32 {
 def slot_ptr_u32(var _pc : pc_t&; _sp : m3stack_t&) : u32? {
     unsafe {
         var ptr = reinterpret<u32?>(_sp + reinterpret<i32 const?>(_pc)[0])
-        _pc++
+        _pc += 1
         return ptr
     }
 }
@@ -366,7 +366,7 @@ def slot_ptr_u32(var _pc : pc_t&; _sp : m3stack_t&) : u32? {
 def slot_u32(var _pc : pc_t&; _sp : m3stack_t&) : u32 {
     unsafe {
         let value = reinterpret<u32?>(_sp + reinterpret<i32 const?>(_pc)[0])[0]
-        _pc++
+        _pc += 1
         return value
     }
 }
@@ -375,7 +375,7 @@ def slot_u32(var _pc : pc_t&; _sp : m3stack_t&) : u32 {
 def slot_ptr_i64(var _pc : pc_t&; _sp : m3stack_t&) : i64? {
     unsafe {
         var ptr = reinterpret<i64?>(_sp + reinterpret<i32 const?>(_pc)[0])
-        _pc++
+        _pc += 1
         return ptr
     }
 }
@@ -384,7 +384,7 @@ def slot_ptr_i64(var _pc : pc_t&; _sp : m3stack_t&) : i64? {
 def slot_i64(var _pc : pc_t&; _sp : m3stack_t&) : i64 {
     unsafe {
         let value = reinterpret<i64?>(_sp + reinterpret<i32 const?>(_pc)[0])[0]
-        _pc++
+        _pc += 1
         return value
     }
 }
@@ -393,7 +393,7 @@ def slot_i64(var _pc : pc_t&; _sp : m3stack_t&) : i64 {
 def slot_ptr_u64(var _pc : pc_t&; _sp : m3stack_t&) : u64? {
     unsafe {
         var ptr = reinterpret<u64?>(_sp + reinterpret<i32 const?>(_pc)[0])
-        _pc++
+        _pc += 1
         return ptr
     }
 }
@@ -402,7 +402,7 @@ def slot_ptr_u64(var _pc : pc_t&; _sp : m3stack_t&) : u64? {
 def slot_u64(var _pc : pc_t&; _sp : m3stack_t&) : u64 {
     unsafe {
         let value = reinterpret<u64?>(_sp + reinterpret<i32 const?>(_pc)[0])[0]
-        _pc++
+        _pc += 1
         return value
     }
 }
@@ -411,7 +411,7 @@ def slot_u64(var _pc : pc_t&; _sp : m3stack_t&) : u64 {
 def slot_ptr_f32(var _pc : pc_t&; _sp : m3stack_t&) : f32? {
     unsafe {
         var ptr = reinterpret<f32?>(_sp + reinterpret<i32 const?>(_pc)[0])
-        _pc++
+        _pc += 1
         return ptr
     }
 }
@@ -420,7 +420,7 @@ def slot_ptr_f32(var _pc : pc_t&; _sp : m3stack_t&) : f32? {
 def slot_f32(var _pc : pc_t&; _sp : m3stack_t&) : f32 {
     unsafe {
         let value = reinterpret<f32?>(_sp + reinterpret<i32 const?>(_pc)[0])[0]
-        _pc++
+        _pc += 1
         return value
     }
 }
@@ -429,7 +429,7 @@ def slot_f32(var _pc : pc_t&; _sp : m3stack_t&) : f32 {
 def slot_ptr_f64(var _pc : pc_t&; _sp : m3stack_t&) : f64? {
     unsafe {
         var ptr = reinterpret<f64?>(_sp + reinterpret<i32 const?>(_pc)[0])
-        _pc++
+        _pc += 1
         return ptr
     }
 }
@@ -438,7 +438,7 @@ def slot_ptr_f64(var _pc : pc_t&; _sp : m3stack_t&) : f64? {
 def slot_f64(var _pc : pc_t&; _sp : m3stack_t&) : f64 {
     unsafe {
         let value = reinterpret<f64?>(_sp + reinterpret<i32 const?>(_pc)[0])[0]
-        _pc++
+        _pc += 1
         return value
     }
 }

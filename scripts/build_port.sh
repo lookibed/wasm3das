@@ -208,8 +208,9 @@ ctx)
     #          of rtti_core and ast_core (loaded for a compile-time macro) at
     #          every start; the patch registers the used modules and their
     #          dependencies only (marker: the comment line of the patch)
-    #    Neither is accepted in the daslang fork yet (submitted 2026-09-21,
-    #    review pending; the first is applied in the owner's working tree).
+    #    The fork took the first on 2026-09-21 (d6dbcfd75, spelled
+    #    emitsForeignBody there); the second is pending (submitted the same
+    #    day). Neither is upstream.
     #    A patch the dasroot lacks is applied to a private overlay under tmp/,
     #    DASLANG_ROOT itself is never written: every top-level entry of the
     #    overlay is a symlink into DASLANG_ROOT except daslib/, a copy with the
@@ -222,7 +223,9 @@ ctx)
         echo "build_port [ctx]: emitter: stock dasroot (WASM3DAS_CTX_EMITTER=stock)"
     else
         pending=()
-        grep -q 'directForeign' "$DASLANG_ROOT/daslib/aot_cpp.das" \
+        # the fork took the first change on 2026-09-21 (d6dbcfd75) under its own
+        # name, emitsForeignBody; directForeign is the patch's own spelling
+        grep -qE 'emitsForeignBody|directForeign' "$DASLANG_ROOT/daslib/aot_cpp.das" \
             || pending+=(ctx_direct_calls.patch)
         grep -q 'a default C++ module the runtime program never reaches' "$DASLANG_ROOT/daslib/aot_cpp.das" \
             || pending+=(ctx_used_modules.patch)
