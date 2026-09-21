@@ -1,5 +1,9 @@
 options gen2
 options indenting = 4
+// The shape of the operation dispatch the LLVM JIT tier gets: "tree" (the
+// default), "chain" or "noinline". It has no effect in any other tier. See the
+// "Operation dispatch" section below and dispatch_shape in m3_exec_expand.das.
+options _m3_dispatch = "tree"
 
 module m3_exec shared public
 
@@ -527,7 +531,8 @@ def public m3_WordIndex(var _pc : pc_t&) : int {
 
 /* Placeholder. Under the JIT the pass replaces this body with the generated
    dispatch: `let idx = m3_WordIndex(_pc)` followed by a balanced `if (idx <
-   mid)` tree (or, with `options m3_dispatch = "chain"`, a linear equality
+   mid)` tree (or, with `options _m3_dispatch = "chain"` at the top of this
+   file, a linear equality
    chain) whose leaves are DIRECT calls `return op_<name>(_pc, _sp, _mem, _r0,
    _fp0)`. A plain function, not [inline]: every operation tail-calls into it
    through nextOpImpl and it tail-calls the operation, so the backend sees one

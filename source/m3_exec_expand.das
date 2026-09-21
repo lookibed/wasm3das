@@ -111,7 +111,9 @@ require strings
     m3_compile.das keep C's IM3Operation values unchanged.
 
     The dispatch shape is selectable, because which one LLVM likes is an
-    empirical question - `options m3_dispatch = "<shape>"` in the entry file:
+    empirical question - `options _m3_dispatch = "<shape>"` at the top of
+    m3_exec.das (see dispatch_shape below for why it is that file and not the
+    entry file, and for the leading underscore):
 
         "tree"      (the default) a balanced `if (idx < mid)` tree, so an index
                     costs ceil(log2(N)) comparisons and every arm is a `jmp`;
@@ -547,13 +549,20 @@ class M3ExecExpandPass : AstPassMacro {
 // ============================================================================
 
 
-// `options m3_dispatch = "<shape>"` in the entry file, read the way daslib
-// reads its own options (dupe_detect.das, flatten.das, lint.das). find_arg is
-// daslib/ast_boost, which this module deliberately does not require (see the
-// require comment at the top), and it is four lines.
+// `options _m3_dispatch = "<shape>"` at the top of m3_exec.das, read the way
+// daslib reads its own options (dupe_detect.das, flatten.das, lint.das).
+// find_arg is daslib/ast_boost, which this module deliberately does not
+// require (see the require comment at the top), and it is four lines.
+//
+// The option has to sit in m3_exec.das and not in the entry file: m3_exec is a
+// `shared` module, so it compiles as a program of its own and the ProgramPtr
+// this pass is handed carries that module's options, not the entry file's
+// (verified - with the option in app/wasm3.das the list here is just `gen2`
+// and `indenting`). The leading underscore is what makes it a custom user
+// option; daslang refuses an unregistered option without it.
 def private dispatch_shape(prog : ProgramPtr) : string {
     for (a in prog._options) {
-        if (a.name == "m3_dispatch" && a.basicType == Type.tString) return string(a.sValue)
+        if (a.name == "_m3_dispatch" && a.basicType == Type.tString) return string(a.sValue)
     }
     return "tree"
 }
