@@ -429,9 +429,16 @@ def slot_f64(var _pc : pc_t&; _sp : m3stack_t&) : f64 {
 // Deliberately not [inline]: its five parameters are by value, so an inline
 // splice turns one call node into five argument-copy nodes plus the result
 // temporary. Measured on fib 28 that is a loss (4.04 s against 3.91 s).
+// C tests the M3Result against NULL, one pointer comparison. The port's
+// M3Result is a string and m3Err_none is "" (m3_core.das), so `r ==
+// m3Err_none` is a CONTENT comparison: both backends emit a call - strcmp in
+// the -ctx emission, jit_str_cmp in the LLVM JIT - on the return path of every
+// wasm call, every host call and every trapping arithmetic operation. `empty`
+// is the spelling AGENTS.md gives for C's `== NULL` and is the length test C's
+// comparison is, so this module tests the result with empty/!empty.
 def Call(var _pc : pc_t; var _sp : m3stack_t; var _mem : M3MemoryHeader?; var _r0 : m3reg_t; var _fp0 : f64) : M3Result {
     let possible_trap = m3_Yield()
-    if (possible_trap != m3Err_none) { return possible_trap }
+    if (!empty(possible_trap)) { return possible_trap }
     return nextOpImpl(_pc, _sp, _mem, _r0, _fp0)
 }
 
@@ -1522,7 +1529,7 @@ def public op_u32_Divide_sr(var _pc : pc_t&; var _sp : m3stack_t&; var _mem : M3
     let operand = slot_u32(_pc, _sp)
     var RES : u32
     let result = OP_DIV_U(RES, u32(_r0), operand)
-    if (result != m3Err_none) { return result }
+    if (!empty(result)) { return result }
     _r0 = m3reg_t(RES)
     return nextOpDirect(_pc, _sp, _mem, _r0, _fp0)
 }
@@ -1531,7 +1538,7 @@ def public op_u32_Divide_rs(var _pc : pc_t&; var _sp : m3stack_t&; var _mem : M3
     let operand = slot_u32(_pc, _sp)
     var RES : u32
     let result = OP_DIV_U(RES, operand, u32(_r0))
-    if (result != m3Err_none) { return result }
+    if (!empty(result)) { return result }
     _r0 = m3reg_t(RES)
     return nextOpDirect(_pc, _sp, _mem, _r0, _fp0)
 }
@@ -1541,7 +1548,7 @@ def public op_u32_Divide_ss(var _pc : pc_t&; var _sp : m3stack_t&; var _mem : M3
     let operand1 = slot_u32(_pc, _sp)
     var RES : u32
     let result = OP_DIV_U(RES, operand1, operand2)
-    if (result != m3Err_none) { return result }
+    if (!empty(result)) { return result }
     _r0 = m3reg_t(RES)
     return nextOpDirect(_pc, _sp, _mem, _r0, _fp0)
 }
@@ -1550,7 +1557,7 @@ def public op_u32_Remainder_sr(var _pc : pc_t&; var _sp : m3stack_t&; var _mem :
     let operand = slot_u32(_pc, _sp)
     var RES : u32
     let result = OP_REM_U(RES, u32(_r0), operand)
-    if (result != m3Err_none) { return result }
+    if (!empty(result)) { return result }
     _r0 = m3reg_t(RES)
     return nextOpDirect(_pc, _sp, _mem, _r0, _fp0)
 }
@@ -1559,7 +1566,7 @@ def public op_u32_Remainder_rs(var _pc : pc_t&; var _sp : m3stack_t&; var _mem :
     let operand = slot_u32(_pc, _sp)
     var RES : u32
     let result = OP_REM_U(RES, operand, u32(_r0))
-    if (result != m3Err_none) { return result }
+    if (!empty(result)) { return result }
     _r0 = m3reg_t(RES)
     return nextOpDirect(_pc, _sp, _mem, _r0, _fp0)
 }
@@ -1569,7 +1576,7 @@ def public op_u32_Remainder_ss(var _pc : pc_t&; var _sp : m3stack_t&; var _mem :
     let operand1 = slot_u32(_pc, _sp)
     var RES : u32
     let result = OP_REM_U(RES, operand1, operand2)
-    if (result != m3Err_none) { return result }
+    if (!empty(result)) { return result }
     _r0 = m3reg_t(RES)
     return nextOpDirect(_pc, _sp, _mem, _r0, _fp0)
 }
@@ -1578,7 +1585,7 @@ def public op_i32_Divide_sr(var _pc : pc_t&; var _sp : m3stack_t&; var _mem : M3
     let operand = slot_i32(_pc, _sp)
     var RES : i32
     let result = OP_DIV_S(RES, i32(_r0), operand, INT32_MIN)
-    if (result != m3Err_none) { return result }
+    if (!empty(result)) { return result }
     _r0 = m3reg_t(RES)
     return nextOpDirect(_pc, _sp, _mem, _r0, _fp0)
 }
@@ -1587,7 +1594,7 @@ def public op_i32_Divide_rs(var _pc : pc_t&; var _sp : m3stack_t&; var _mem : M3
     let operand = slot_i32(_pc, _sp)
     var RES : i32
     let result = OP_DIV_S(RES, operand, i32(_r0), INT32_MIN)
-    if (result != m3Err_none) { return result }
+    if (!empty(result)) { return result }
     _r0 = m3reg_t(RES)
     return nextOpDirect(_pc, _sp, _mem, _r0, _fp0)
 }
@@ -1597,7 +1604,7 @@ def public op_i32_Divide_ss(var _pc : pc_t&; var _sp : m3stack_t&; var _mem : M3
     let operand1 = slot_i32(_pc, _sp)
     var RES : i32
     let result = OP_DIV_S(RES, operand1, operand2, INT32_MIN)
-    if (result != m3Err_none) { return result }
+    if (!empty(result)) { return result }
     _r0 = m3reg_t(RES)
     return nextOpDirect(_pc, _sp, _mem, _r0, _fp0)
 }
@@ -1606,7 +1613,7 @@ def public op_i32_Remainder_sr(var _pc : pc_t&; var _sp : m3stack_t&; var _mem :
     let operand = slot_i32(_pc, _sp)
     var RES : i32
     let result = OP_REM_S(RES, i32(_r0), operand, INT32_MIN)
-    if (result != m3Err_none) { return result }
+    if (!empty(result)) { return result }
     _r0 = m3reg_t(RES)
     return nextOpDirect(_pc, _sp, _mem, _r0, _fp0)
 }
@@ -1615,7 +1622,7 @@ def public op_i32_Remainder_rs(var _pc : pc_t&; var _sp : m3stack_t&; var _mem :
     let operand = slot_i32(_pc, _sp)
     var RES : i32
     let result = OP_REM_S(RES, operand, i32(_r0), INT32_MIN)
-    if (result != m3Err_none) { return result }
+    if (!empty(result)) { return result }
     _r0 = m3reg_t(RES)
     return nextOpDirect(_pc, _sp, _mem, _r0, _fp0)
 }
@@ -1625,7 +1632,7 @@ def public op_i32_Remainder_ss(var _pc : pc_t&; var _sp : m3stack_t&; var _mem :
     let operand1 = slot_i32(_pc, _sp)
     var RES : i32
     let result = OP_REM_S(RES, operand1, operand2, INT32_MIN)
-    if (result != m3Err_none) { return result }
+    if (!empty(result)) { return result }
     _r0 = m3reg_t(RES)
     return nextOpDirect(_pc, _sp, _mem, _r0, _fp0)
 }
@@ -1634,7 +1641,7 @@ def public op_u64_Divide_sr(var _pc : pc_t&; var _sp : m3stack_t&; var _mem : M3
     let operand = slot_u64(_pc, _sp)
     var RES : u64
     let result = OP_DIV_U(RES, u64(_r0), operand)
-    if (result != m3Err_none) { return result }
+    if (!empty(result)) { return result }
     _r0 = m3reg_t(RES)
     return nextOpDirect(_pc, _sp, _mem, _r0, _fp0)
 }
@@ -1643,7 +1650,7 @@ def public op_u64_Divide_rs(var _pc : pc_t&; var _sp : m3stack_t&; var _mem : M3
     let operand = slot_u64(_pc, _sp)
     var RES : u64
     let result = OP_DIV_U(RES, operand, u64(_r0))
-    if (result != m3Err_none) { return result }
+    if (!empty(result)) { return result }
     _r0 = m3reg_t(RES)
     return nextOpDirect(_pc, _sp, _mem, _r0, _fp0)
 }
@@ -1653,7 +1660,7 @@ def public op_u64_Divide_ss(var _pc : pc_t&; var _sp : m3stack_t&; var _mem : M3
     let operand1 = slot_u64(_pc, _sp)
     var RES : u64
     let result = OP_DIV_U(RES, operand1, operand2)
-    if (result != m3Err_none) { return result }
+    if (!empty(result)) { return result }
     _r0 = m3reg_t(RES)
     return nextOpDirect(_pc, _sp, _mem, _r0, _fp0)
 }
@@ -1662,7 +1669,7 @@ def public op_u64_Remainder_sr(var _pc : pc_t&; var _sp : m3stack_t&; var _mem :
     let operand = slot_u64(_pc, _sp)
     var RES : u64
     let result = OP_REM_U(RES, u64(_r0), operand)
-    if (result != m3Err_none) { return result }
+    if (!empty(result)) { return result }
     _r0 = m3reg_t(RES)
     return nextOpDirect(_pc, _sp, _mem, _r0, _fp0)
 }
@@ -1671,7 +1678,7 @@ def public op_u64_Remainder_rs(var _pc : pc_t&; var _sp : m3stack_t&; var _mem :
     let operand = slot_u64(_pc, _sp)
     var RES : u64
     let result = OP_REM_U(RES, operand, u64(_r0))
-    if (result != m3Err_none) { return result }
+    if (!empty(result)) { return result }
     _r0 = m3reg_t(RES)
     return nextOpDirect(_pc, _sp, _mem, _r0, _fp0)
 }
@@ -1681,7 +1688,7 @@ def public op_u64_Remainder_ss(var _pc : pc_t&; var _sp : m3stack_t&; var _mem :
     let operand1 = slot_u64(_pc, _sp)
     var RES : u64
     let result = OP_REM_U(RES, operand1, operand2)
-    if (result != m3Err_none) { return result }
+    if (!empty(result)) { return result }
     _r0 = m3reg_t(RES)
     return nextOpDirect(_pc, _sp, _mem, _r0, _fp0)
 }
@@ -1690,7 +1697,7 @@ def public op_i64_Divide_sr(var _pc : pc_t&; var _sp : m3stack_t&; var _mem : M3
     let operand = slot_i64(_pc, _sp)
     var RES : i64
     let result = OP_DIV_S(RES, _r0, operand, INT64_MIN)
-    if (result != m3Err_none) { return result }
+    if (!empty(result)) { return result }
     _r0 = RES
     return nextOpDirect(_pc, _sp, _mem, _r0, _fp0)
 }
@@ -1699,7 +1706,7 @@ def public op_i64_Divide_rs(var _pc : pc_t&; var _sp : m3stack_t&; var _mem : M3
     let operand = slot_i64(_pc, _sp)
     var RES : i64
     let result = OP_DIV_S(RES, operand, _r0, INT64_MIN)
-    if (result != m3Err_none) { return result }
+    if (!empty(result)) { return result }
     _r0 = RES
     return nextOpDirect(_pc, _sp, _mem, _r0, _fp0)
 }
@@ -1709,7 +1716,7 @@ def public op_i64_Divide_ss(var _pc : pc_t&; var _sp : m3stack_t&; var _mem : M3
     let operand1 = slot_i64(_pc, _sp)
     var RES : i64
     let result = OP_DIV_S(RES, operand1, operand2, INT64_MIN)
-    if (result != m3Err_none) { return result }
+    if (!empty(result)) { return result }
     _r0 = RES
     return nextOpDirect(_pc, _sp, _mem, _r0, _fp0)
 }
@@ -1718,7 +1725,7 @@ def public op_i64_Remainder_sr(var _pc : pc_t&; var _sp : m3stack_t&; var _mem :
     let operand = slot_i64(_pc, _sp)
     var RES : i64
     let result = OP_REM_S(RES, _r0, operand, INT64_MIN)
-    if (result != m3Err_none) { return result }
+    if (!empty(result)) { return result }
     _r0 = RES
     return nextOpDirect(_pc, _sp, _mem, _r0, _fp0)
 }
@@ -1727,7 +1734,7 @@ def public op_i64_Remainder_rs(var _pc : pc_t&; var _sp : m3stack_t&; var _mem :
     let operand = slot_i64(_pc, _sp)
     var RES : i64
     let result = OP_REM_S(RES, operand, _r0, INT64_MIN)
-    if (result != m3Err_none) { return result }
+    if (!empty(result)) { return result }
     _r0 = RES
     return nextOpDirect(_pc, _sp, _mem, _r0, _fp0)
 }
@@ -1737,7 +1744,7 @@ def public op_i64_Remainder_ss(var _pc : pc_t&; var _sp : m3stack_t&; var _mem :
     let operand1 = slot_i64(_pc, _sp)
     var RES : i64
     let result = OP_REM_S(RES, operand1, operand2, INT64_MIN)
-    if (result != m3Err_none) { return result }
+    if (!empty(result)) { return result }
     _r0 = RES
     return nextOpDirect(_pc, _sp, _mem, _r0, _fp0)
 }
@@ -2167,7 +2174,7 @@ def public op_i64_Extend32_s_s(var _pc : pc_t&; var _sp : m3stack_t&; var _mem :
 def public op_i32_Trunc_f32_r_r(var _pc : pc_t&; var _sp : m3stack_t&; var _mem : M3MemoryHeader?&; var _r0 : m3reg_t&; var _fp0 : f64&) : M3Result {
     var RES : i32
     let result = OP_I32_TRUNC_F32(RES, f32(_fp0))
-    if (result != m3Err_none) { return result }
+    if (!empty(result)) { return result }
     _r0 = m3reg_t(RES)
     return nextOpDirect(_pc, _sp, _mem, _r0, _fp0)
 }
@@ -2176,7 +2183,7 @@ def public op_i32_Trunc_f32_r_s(var _pc : pc_t&; var _sp : m3stack_t&; var _mem 
     let source = slot_f32(_pc, _sp)
     var RES : i32
     let result = OP_I32_TRUNC_F32(RES, source)
-    if (result != m3Err_none) { return result }
+    if (!empty(result)) { return result }
     _r0 = m3reg_t(RES)
     return nextOpDirect(_pc, _sp, _mem, _r0, _fp0)
 }
@@ -2185,7 +2192,7 @@ def public op_i32_Trunc_f32_s_r(var _pc : pc_t&; var _sp : m3stack_t&; var _mem 
     var dest = slot_ptr_i32(_pc, _sp)
     var RES : i32
     let result = OP_I32_TRUNC_F32(RES, f32(_fp0))
-    if (result != m3Err_none) { return result }
+    if (!empty(result)) { return result }
     unsafe(dest[0]) = RES
     return nextOpDirect(_pc, _sp, _mem, _r0, _fp0)
 }
@@ -2195,7 +2202,7 @@ def public op_i32_Trunc_f32_s_s(var _pc : pc_t&; var _sp : m3stack_t&; var _mem 
     var dest = slot_ptr_i32(_pc, _sp)
     var RES : i32
     let result = OP_I32_TRUNC_F32(RES, source)
-    if (result != m3Err_none) { return result }
+    if (!empty(result)) { return result }
     unsafe(dest[0]) = RES
     return nextOpDirect(_pc, _sp, _mem, _r0, _fp0)
 }
@@ -2203,7 +2210,7 @@ def public op_i32_Trunc_f32_s_s(var _pc : pc_t&; var _sp : m3stack_t&; var _mem 
 def public op_u32_Trunc_f32_r_r(var _pc : pc_t&; var _sp : m3stack_t&; var _mem : M3MemoryHeader?&; var _r0 : m3reg_t&; var _fp0 : f64&) : M3Result {
     var RES : u32
     let result = OP_U32_TRUNC_F32(RES, f32(_fp0))
-    if (result != m3Err_none) { return result }
+    if (!empty(result)) { return result }
     _r0 = m3reg_t(RES)
     return nextOpDirect(_pc, _sp, _mem, _r0, _fp0)
 }
@@ -2212,7 +2219,7 @@ def public op_u32_Trunc_f32_r_s(var _pc : pc_t&; var _sp : m3stack_t&; var _mem 
     let source = slot_f32(_pc, _sp)
     var RES : u32
     let result = OP_U32_TRUNC_F32(RES, source)
-    if (result != m3Err_none) { return result }
+    if (!empty(result)) { return result }
     _r0 = m3reg_t(RES)
     return nextOpDirect(_pc, _sp, _mem, _r0, _fp0)
 }
@@ -2221,7 +2228,7 @@ def public op_u32_Trunc_f32_s_r(var _pc : pc_t&; var _sp : m3stack_t&; var _mem 
     var dest = slot_ptr_u32(_pc, _sp)
     var RES : u32
     let result = OP_U32_TRUNC_F32(RES, f32(_fp0))
-    if (result != m3Err_none) { return result }
+    if (!empty(result)) { return result }
     unsafe(dest[0]) = RES
     return nextOpDirect(_pc, _sp, _mem, _r0, _fp0)
 }
@@ -2231,7 +2238,7 @@ def public op_u32_Trunc_f32_s_s(var _pc : pc_t&; var _sp : m3stack_t&; var _mem 
     var dest = slot_ptr_u32(_pc, _sp)
     var RES : u32
     let result = OP_U32_TRUNC_F32(RES, source)
-    if (result != m3Err_none) { return result }
+    if (!empty(result)) { return result }
     unsafe(dest[0]) = RES
     return nextOpDirect(_pc, _sp, _mem, _r0, _fp0)
 }
@@ -2239,7 +2246,7 @@ def public op_u32_Trunc_f32_s_s(var _pc : pc_t&; var _sp : m3stack_t&; var _mem 
 def public op_i32_Trunc_f64_r_r(var _pc : pc_t&; var _sp : m3stack_t&; var _mem : M3MemoryHeader?&; var _r0 : m3reg_t&; var _fp0 : f64&) : M3Result {
     var RES : i32
     let result = OP_I32_TRUNC_F64(RES, _fp0)
-    if (result != m3Err_none) { return result }
+    if (!empty(result)) { return result }
     _r0 = m3reg_t(RES)
     return nextOpDirect(_pc, _sp, _mem, _r0, _fp0)
 }
@@ -2248,7 +2255,7 @@ def public op_i32_Trunc_f64_r_s(var _pc : pc_t&; var _sp : m3stack_t&; var _mem 
     let source = slot_f64(_pc, _sp)
     var RES : i32
     let result = OP_I32_TRUNC_F64(RES, source)
-    if (result != m3Err_none) { return result }
+    if (!empty(result)) { return result }
     _r0 = m3reg_t(RES)
     return nextOpDirect(_pc, _sp, _mem, _r0, _fp0)
 }
@@ -2257,7 +2264,7 @@ def public op_i32_Trunc_f64_s_r(var _pc : pc_t&; var _sp : m3stack_t&; var _mem 
     var dest = slot_ptr_i32(_pc, _sp)
     var RES : i32
     let result = OP_I32_TRUNC_F64(RES, _fp0)
-    if (result != m3Err_none) { return result }
+    if (!empty(result)) { return result }
     unsafe(dest[0]) = RES
     return nextOpDirect(_pc, _sp, _mem, _r0, _fp0)
 }
@@ -2267,7 +2274,7 @@ def public op_i32_Trunc_f64_s_s(var _pc : pc_t&; var _sp : m3stack_t&; var _mem 
     var dest = slot_ptr_i32(_pc, _sp)
     var RES : i32
     let result = OP_I32_TRUNC_F64(RES, source)
-    if (result != m3Err_none) { return result }
+    if (!empty(result)) { return result }
     unsafe(dest[0]) = RES
     return nextOpDirect(_pc, _sp, _mem, _r0, _fp0)
 }
@@ -2275,7 +2282,7 @@ def public op_i32_Trunc_f64_s_s(var _pc : pc_t&; var _sp : m3stack_t&; var _mem 
 def public op_u32_Trunc_f64_r_r(var _pc : pc_t&; var _sp : m3stack_t&; var _mem : M3MemoryHeader?&; var _r0 : m3reg_t&; var _fp0 : f64&) : M3Result {
     var RES : u32
     let result = OP_U32_TRUNC_F64(RES, _fp0)
-    if (result != m3Err_none) { return result }
+    if (!empty(result)) { return result }
     _r0 = m3reg_t(RES)
     return nextOpDirect(_pc, _sp, _mem, _r0, _fp0)
 }
@@ -2284,7 +2291,7 @@ def public op_u32_Trunc_f64_r_s(var _pc : pc_t&; var _sp : m3stack_t&; var _mem 
     let source = slot_f64(_pc, _sp)
     var RES : u32
     let result = OP_U32_TRUNC_F64(RES, source)
-    if (result != m3Err_none) { return result }
+    if (!empty(result)) { return result }
     _r0 = m3reg_t(RES)
     return nextOpDirect(_pc, _sp, _mem, _r0, _fp0)
 }
@@ -2293,7 +2300,7 @@ def public op_u32_Trunc_f64_s_r(var _pc : pc_t&; var _sp : m3stack_t&; var _mem 
     var dest = slot_ptr_u32(_pc, _sp)
     var RES : u32
     let result = OP_U32_TRUNC_F64(RES, _fp0)
-    if (result != m3Err_none) { return result }
+    if (!empty(result)) { return result }
     unsafe(dest[0]) = RES
     return nextOpDirect(_pc, _sp, _mem, _r0, _fp0)
 }
@@ -2303,7 +2310,7 @@ def public op_u32_Trunc_f64_s_s(var _pc : pc_t&; var _sp : m3stack_t&; var _mem 
     var dest = slot_ptr_u32(_pc, _sp)
     var RES : u32
     let result = OP_U32_TRUNC_F64(RES, source)
-    if (result != m3Err_none) { return result }
+    if (!empty(result)) { return result }
     unsafe(dest[0]) = RES
     return nextOpDirect(_pc, _sp, _mem, _r0, _fp0)
 }
@@ -2311,7 +2318,7 @@ def public op_u32_Trunc_f64_s_s(var _pc : pc_t&; var _sp : m3stack_t&; var _mem 
 def public op_i64_Trunc_f32_r_r(var _pc : pc_t&; var _sp : m3stack_t&; var _mem : M3MemoryHeader?&; var _r0 : m3reg_t&; var _fp0 : f64&) : M3Result {
     var RES : i64
     let result = OP_I64_TRUNC_F32(RES, f32(_fp0))
-    if (result != m3Err_none) { return result }
+    if (!empty(result)) { return result }
     _r0 = RES
     return nextOpDirect(_pc, _sp, _mem, _r0, _fp0)
 }
@@ -2320,7 +2327,7 @@ def public op_i64_Trunc_f32_r_s(var _pc : pc_t&; var _sp : m3stack_t&; var _mem 
     let source = slot_f32(_pc, _sp)
     var RES : i64
     let result = OP_I64_TRUNC_F32(RES, source)
-    if (result != m3Err_none) { return result }
+    if (!empty(result)) { return result }
     _r0 = RES
     return nextOpDirect(_pc, _sp, _mem, _r0, _fp0)
 }
@@ -2329,7 +2336,7 @@ def public op_i64_Trunc_f32_s_r(var _pc : pc_t&; var _sp : m3stack_t&; var _mem 
     var dest = slot_ptr_i64(_pc, _sp)
     var RES : i64
     let result = OP_I64_TRUNC_F32(RES, f32(_fp0))
-    if (result != m3Err_none) { return result }
+    if (!empty(result)) { return result }
     unsafe(dest[0]) = RES
     return nextOpDirect(_pc, _sp, _mem, _r0, _fp0)
 }
@@ -2339,7 +2346,7 @@ def public op_i64_Trunc_f32_s_s(var _pc : pc_t&; var _sp : m3stack_t&; var _mem 
     var dest = slot_ptr_i64(_pc, _sp)
     var RES : i64
     let result = OP_I64_TRUNC_F32(RES, source)
-    if (result != m3Err_none) { return result }
+    if (!empty(result)) { return result }
     unsafe(dest[0]) = RES
     return nextOpDirect(_pc, _sp, _mem, _r0, _fp0)
 }
@@ -2347,7 +2354,7 @@ def public op_i64_Trunc_f32_s_s(var _pc : pc_t&; var _sp : m3stack_t&; var _mem 
 def public op_u64_Trunc_f32_r_r(var _pc : pc_t&; var _sp : m3stack_t&; var _mem : M3MemoryHeader?&; var _r0 : m3reg_t&; var _fp0 : f64&) : M3Result {
     var RES : u64
     let result = OP_U64_TRUNC_F32(RES, f32(_fp0))
-    if (result != m3Err_none) { return result }
+    if (!empty(result)) { return result }
     _r0 = m3reg_t(RES)
     return nextOpDirect(_pc, _sp, _mem, _r0, _fp0)
 }
@@ -2356,7 +2363,7 @@ def public op_u64_Trunc_f32_r_s(var _pc : pc_t&; var _sp : m3stack_t&; var _mem 
     let source = slot_f32(_pc, _sp)
     var RES : u64
     let result = OP_U64_TRUNC_F32(RES, source)
-    if (result != m3Err_none) { return result }
+    if (!empty(result)) { return result }
     _r0 = m3reg_t(RES)
     return nextOpDirect(_pc, _sp, _mem, _r0, _fp0)
 }
@@ -2365,7 +2372,7 @@ def public op_u64_Trunc_f32_s_r(var _pc : pc_t&; var _sp : m3stack_t&; var _mem 
     var dest = slot_ptr_u64(_pc, _sp)
     var RES : u64
     let result = OP_U64_TRUNC_F32(RES, f32(_fp0))
-    if (result != m3Err_none) { return result }
+    if (!empty(result)) { return result }
     unsafe(dest[0]) = RES
     return nextOpDirect(_pc, _sp, _mem, _r0, _fp0)
 }
@@ -2375,7 +2382,7 @@ def public op_u64_Trunc_f32_s_s(var _pc : pc_t&; var _sp : m3stack_t&; var _mem 
     var dest = slot_ptr_u64(_pc, _sp)
     var RES : u64
     let result = OP_U64_TRUNC_F32(RES, source)
-    if (result != m3Err_none) { return result }
+    if (!empty(result)) { return result }
     unsafe(dest[0]) = RES
     return nextOpDirect(_pc, _sp, _mem, _r0, _fp0)
 }
@@ -2383,7 +2390,7 @@ def public op_u64_Trunc_f32_s_s(var _pc : pc_t&; var _sp : m3stack_t&; var _mem 
 def public op_i64_Trunc_f64_r_r(var _pc : pc_t&; var _sp : m3stack_t&; var _mem : M3MemoryHeader?&; var _r0 : m3reg_t&; var _fp0 : f64&) : M3Result {
     var RES : i64
     let result = OP_I64_TRUNC_F64(RES, _fp0)
-    if (result != m3Err_none) { return result }
+    if (!empty(result)) { return result }
     _r0 = RES
     return nextOpDirect(_pc, _sp, _mem, _r0, _fp0)
 }
@@ -2392,7 +2399,7 @@ def public op_i64_Trunc_f64_r_s(var _pc : pc_t&; var _sp : m3stack_t&; var _mem 
     let source = slot_f64(_pc, _sp)
     var RES : i64
     let result = OP_I64_TRUNC_F64(RES, source)
-    if (result != m3Err_none) { return result }
+    if (!empty(result)) { return result }
     _r0 = RES
     return nextOpDirect(_pc, _sp, _mem, _r0, _fp0)
 }
@@ -2401,7 +2408,7 @@ def public op_i64_Trunc_f64_s_r(var _pc : pc_t&; var _sp : m3stack_t&; var _mem 
     var dest = slot_ptr_i64(_pc, _sp)
     var RES : i64
     let result = OP_I64_TRUNC_F64(RES, _fp0)
-    if (result != m3Err_none) { return result }
+    if (!empty(result)) { return result }
     unsafe(dest[0]) = RES
     return nextOpDirect(_pc, _sp, _mem, _r0, _fp0)
 }
@@ -2411,7 +2418,7 @@ def public op_i64_Trunc_f64_s_s(var _pc : pc_t&; var _sp : m3stack_t&; var _mem 
     var dest = slot_ptr_i64(_pc, _sp)
     var RES : i64
     let result = OP_I64_TRUNC_F64(RES, source)
-    if (result != m3Err_none) { return result }
+    if (!empty(result)) { return result }
     unsafe(dest[0]) = RES
     return nextOpDirect(_pc, _sp, _mem, _r0, _fp0)
 }
@@ -2419,7 +2426,7 @@ def public op_i64_Trunc_f64_s_s(var _pc : pc_t&; var _sp : m3stack_t&; var _mem 
 def public op_u64_Trunc_f64_r_r(var _pc : pc_t&; var _sp : m3stack_t&; var _mem : M3MemoryHeader?&; var _r0 : m3reg_t&; var _fp0 : f64&) : M3Result {
     var RES : u64
     let result = OP_U64_TRUNC_F64(RES, _fp0)
-    if (result != m3Err_none) { return result }
+    if (!empty(result)) { return result }
     _r0 = m3reg_t(RES)
     return nextOpDirect(_pc, _sp, _mem, _r0, _fp0)
 }
@@ -2428,7 +2435,7 @@ def public op_u64_Trunc_f64_r_s(var _pc : pc_t&; var _sp : m3stack_t&; var _mem 
     let source = slot_f64(_pc, _sp)
     var RES : u64
     let result = OP_U64_TRUNC_F64(RES, source)
-    if (result != m3Err_none) { return result }
+    if (!empty(result)) { return result }
     _r0 = m3reg_t(RES)
     return nextOpDirect(_pc, _sp, _mem, _r0, _fp0)
 }
@@ -2437,7 +2444,7 @@ def public op_u64_Trunc_f64_s_r(var _pc : pc_t&; var _sp : m3stack_t&; var _mem 
     var dest = slot_ptr_u64(_pc, _sp)
     var RES : u64
     let result = OP_U64_TRUNC_F64(RES, _fp0)
-    if (result != m3Err_none) { return result }
+    if (!empty(result)) { return result }
     unsafe(dest[0]) = RES
     return nextOpDirect(_pc, _sp, _mem, _r0, _fp0)
 }
@@ -2447,7 +2454,7 @@ def public op_u64_Trunc_f64_s_s(var _pc : pc_t&; var _sp : m3stack_t&; var _mem 
     var dest = slot_ptr_u64(_pc, _sp)
     var RES : u64
     let result = OP_U64_TRUNC_F64(RES, source)
-    if (result != m3Err_none) { return result }
+    if (!empty(result)) { return result }
     unsafe(dest[0]) = RES
     return nextOpDirect(_pc, _sp, _mem, _r0, _fp0)
 }
@@ -3067,7 +3074,7 @@ def public op_Call(var _pc : pc_t&; var _sp : m3stack_t&; var _mem : M3MemoryHea
     var sp = unsafe(_sp + stackOffset)
     let r = Call(callPC, sp, _mem, 0l, 0.0lf)
     _mem = unsafe(reinterpret<M3MemoryHeader?>(memory.mallocated))
-    if (r == m3Err_none) { return nextOpDirect(_pc, _sp, _mem, _r0, _fp0) }
+    if (empty(r)) { return nextOpDirect(_pc, _sp, _mem, _r0, _fp0) }
     pushBacktraceFrame(_pc, _mem)
     return forwardTrap(r)
 }
@@ -3085,18 +3092,18 @@ def public op_CallIndirect(var _pc : pc_t&; var _sp : m3stack_t&; var _mem : M3M
         if (_function != null) {
             if (_type == _function.funcType) {
                 if (_function.compiled == null) { r = CompileFunction(_function) }
-                if (r == m3Err_none) {
+                if (empty(r)) {
                     // C: Call (function->compiled, ...) - read after the lazy compile, not before.
                     r = Call(unsafe(reinterpret<pc_t>(_function.compiled)), sp, _mem, 0l, 0.0lf)
                     _mem = unsafe(reinterpret<M3MemoryHeader?>(memory.mallocated))
-                    if (r == m3Err_none) { return nextOpDirect(_pc, _sp, _mem, _r0, _fp0) }
+                    if (empty(r)) { return nextOpDirect(_pc, _sp, _mem, _r0, _fp0) }
                     pushBacktraceFrame(_pc, _mem)
                     return forwardTrap(r)
                 }
             } else { r = m3Err_trapIndirectCallTypeMismatch }
         } else { r = m3Err_trapTableElementIsNull }
     } else { r = m3Err_trapTableIndexOutOfRange }
-    if (r != m3Err_none) { return newTrap(_pc, _mem, r) }
+    if (!empty(r)) { return newTrap(_pc, _mem, r) }
     return forwardTrap(r)
 }
 
@@ -3114,7 +3121,7 @@ def public op_CallRawFunction(var _pc : pc_t&; var _sp : m3stack_t&; var _mem : 
     runtime.stack = sp
     let possible_trap = call(runtime, unsafe(addr(ctx)), sp, m3MemData(_mem))
     runtime.stack = stack_backup
-    if (possible_trap != m3Err_none) { _mem = unsafe(reinterpret<M3MemoryHeader?>(memory.mallocated)); pushBacktraceFrame(_pc, _mem) }
+    if (!empty(possible_trap)) { _mem = unsafe(reinterpret<M3MemoryHeader?>(memory.mallocated)); pushBacktraceFrame(_pc, _mem) }
     return forwardTrap(possible_trap)
 }
 
@@ -3133,7 +3140,7 @@ def public op_MemGrow(var _pc : pc_t&; var _sp : m3stack_t&; var _mem : M3Memory
         if (numPagesToGrow != 0) {
             let requiredPages = memory.numPages + u32(numPagesToGrow)
             let r = ResizeMemory(runtime, requiredPages)
-            if (r != m3Err_none) { _r0 = -1l }
+            if (!empty(r)) { _r0 = -1l }
             _mem = unsafe(reinterpret<M3MemoryHeader?>(memory.mallocated))
         }
     } else { _r0 = -1l }
@@ -3175,7 +3182,7 @@ def public op_Compile(var _pc : pc_t&; var _sp : m3stack_t&; var _mem : M3Memory
     var _function = immediate_function(_pc)
     var result : M3Result = m3Err_none
     if (_function.compiled == null) { result = CompileFunction(_function) }
-    if (result == m3Err_none) {
+    if (empty(result)) {
         _pc = unsafe(_pc - 1)
         unsafe { _pc[0] = reinterpret<code_t>(_function.compiled) }
         _pc = unsafe(_pc - 1)
@@ -3198,7 +3205,7 @@ if (d_m3SkipStackCheck || intptr(stackEnd) < intptr(_mem.maxStack)) {
         stack = unsafe(stack + int(_function.numLocalBytes))
         if (_function.constants != null) { unsafe(memcpy(stack, _function.constants, int(_function.numConstantBytes))) }
         let r = nextOpImpl(_pc, _sp, _mem, _r0, _fp0)
-        if (r != m3Err_none) {
+        if (!empty(r)) {
             _mem = unsafe(reinterpret<M3MemoryHeader?>(memory.mallocated))
             // d_m3RecordBacktraces == false: the C FillBacktraceFunctionInfo call is compiled out.
         }
