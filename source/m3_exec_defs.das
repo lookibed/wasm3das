@@ -27,16 +27,15 @@ require ./m3_types.das
     every C return shape in the interpreter core (m3Err_xxx or nextOp
     passthrough).
 
-    Experiment branch (perf/cform-abi). This branch drops the trampoline of
-    notes/exec_trampoline_design.md and restores C's by-value form: the five
+    The C form restored (docs/execution-design.md, section 6). The five
     interpreter registers are passed BY VALUE and every operation ends with
     `return nextOpImpl(...)`, the direct call of the next operation that C
     spells `M3_MUSTTAIL return nextOpImpl()`. Daslang still has no
     M3_MUSTTAIL, so the daslang interpreter tier nests one frame per executed
-    operation and is slower and deeper than with the trampoline (measured
-    19 s against 8 s on fib 30); the point of the experiment is the AOT/ctx
-    tier, where the emitted C++ `return operation(...)` is a tail call gcc can
-    turn into a sibling-call jump, exactly as in C wasm3.
+    operation and is slower and deeper than the trampoline it replaces
+    (measured 1.3-1.6x on fib 30); the gain is in the AOT/ctx tier, where the
+    emitted C++ `return operation(...)` is a tail call gcc turns into a
+    sibling-call jump, exactly as in C wasm3.
 */
 
 

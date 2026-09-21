@@ -12,7 +12,7 @@ wasm3das rules on top of it:
 
 - Every `.das` starts with `options gen2` and `options indenting = 4` (AGENTS.md); a
   module may add further `options` lines after those two (the cold modules carry
-  `options never_inline = true`, see `notes/interp_node_cost_2026-09-08.md`).
+  `options never_inline = true`, see `docs/execution-design.md`).
 - Format with the MCP tool `mcp__daslang__format_file`, never with a shell-invoked
   compiler. Pass absolute paths under the repository root (`<repo>/source/<file>.das`).
 - The gate's formatter check is `scripts/check_repo_invariants.sh` (dasfmt `--verify`

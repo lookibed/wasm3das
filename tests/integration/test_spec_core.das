@@ -270,11 +270,8 @@ def private session_load(var s : SpecSession; path : string; modname : string; v
     let index = length(s.wasmBins) - 1
 
     var _module : IM3Module
-    var result : M3Result
-    unsafe {
-        result = m3_ParseModule(s.env, _module, addr(s.wasmBins[index][0]),
-                                u32(length(s.wasmBins[index])))
-    }
+    var result : M3Result = m3_ParseModule(s.env, _module, unsafe(addr(s.wasmBins[index][0])),
+                                           u32(length(s.wasmBins[index])))
     if (result != m3Err_none) {
         st.moduleFailed++
         return

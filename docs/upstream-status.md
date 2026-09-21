@@ -19,6 +19,7 @@ unchanged). Issue #3991 reproduces on both commits.
 | #3970 interpreter: `reinterpret<uint64>(@@fn)` yields 0 in store contexts | the interpreter dropped the bits exactly like #3969 | PR #3974 | the spec suite (`17863/17863` through `scripts/wasm3 --repl`) covers this pattern; re-run after every bump |
 | `ast_gen.inc` / `debugapi_gen.inc` missing from the release bundles | `scripts/build_port.sh` failed to compile its AOT output against a shipped SDK (found on a fresh machine) | commit `29e2a1208` (2026-09-08) installs both generated headers and adds `ci/smoke_test_bundle.sh` | `scripts/verify_daslang.sh` requires `include/daScript/builtin/ast_gen.inc` to exist in the build |
 | [#3991](https://github.com/GaijinEntertainment/daScript/issues/3991) LLVM JIT: a `const` pointer/reference parameter the callee writes through gets LLVM `readonly`, so `--jit-opt-level >= 1` folds the caller's read | under `-jit` at the default O3 the port returned stale memory wherever a callee wrote through a `void?` out-parameter or a `const` pointer after `reinterpret`/`intptr`: six spec assertions (`elem`, `memory`, `memory_trap`) and 67 of 86 manual fixtures wrong; O0 correct | none yet (filed 2026-09-10; reproduces on the pin and on master `388691eb1`) — the port carries the `var` workaround instead (see the limitation bullet below) | the reusable case is `notes/upstream_cases/tests/jit_tests/test_const_arg_readonly.das`, run it under `-jit` at O3 after every bump: 8/8 means fixed (still 6 failed on master `388691eb1`, 2026-09-10). The port itself is verified at O3 by the spec suite (`17863/17863`), `run-wasi-test.py` (12/12) and the manual fixture parity run (86/86) |
+| standalone `-ctx`: every call into a required module is emitted as `Context::fnByMangledName` + `das_invoke_function` (`daslib/aot_cpp.das` `isHybridCall`, `func._module != program.getThisModule`) although the context defines the callee as an `inline` function in the same unit | 1734 lookup sites in the port's context, `RunLoop`, `nextOpImpl` and every helper an operation calls; no C++ inlining across them | none yet (found 2026-09-21 on master `1969ad4d4`); `notes/upstream_cases/ctx_direct_calls.patch` calls the emitted foreign functions directly, issue draft `notes/upstream_cases/ctx_direct_calls.md` | the emitted `wasm3.das.cpp` counts 310 `fnByMangledName` sites instead of 1734; `fib 35` on the ctx tier 1.65 s -> 1.15 s, the corpus 4.15 -> 3.7 s, spec 17863/17863 (`docs/native-build.md`, section 7) |
 
 ## Known upstream limitations still live (not blockers)
 
@@ -71,12 +72,22 @@ unchanged). Issue #3991 reproduces on both commits.
   interpreted and aot launchers raise `ulimit -s` for the spec suite's
   `assert_exhaustion` cases; the standalone binary reserves a 256 MiB
   thread stack itself (`native/standalone_main.cpp`) and needs no launcher.
-  Trampoline/tail-call architecture remains the future port task.
+  With the emitter patch of the table above and the C form of the operation
+  ABI (PR #54) the ctx tier runs C's tail-jump chain; the LLVM JIT does not
+  emit a tail call for `return f(args)` even with matching signatures, so the
+  exe tier keeps its frames (`docs/execution-design.md`, section 6): the
+  second ask to daslang.
 
 ## Historical record
 
-`notes/upstream_daslang_issues_2026-09-07.md` (issue drafts, reproducer
-tests under `notes/upstream_cases/`) and
+The reproducer tests under `notes/upstream_cases/` (in the layout of the
+upstream daScript test suite, with `RESULTS.md` as their run log) and
 `notes/daslang_jit_fixes_2026-09-07.patch` (daslang-side fixes written before
-PR #3974 landed) are kept as provenance; their content is superseded by this
-table and the pin.
+PR #3974 landed) are kept as provenance; the issue texts were filed upstream
+on 2026-09-08 (#3967, #3968, #3969, #3970) and 2026-09-10 (#3991) from the
+owner's account, and PR #3974 (twelve files) fixes the three JIT/interpreter
+defects plus the AOT `das_cast` of a `Func` that `docs/native-build.md`
+section 2 works around. Checklist when the pin moves: rebuild, run
+`scripts/gate.sh`, the spec and WASI drivers through `scripts/wasm3` and
+`scripts/wasm3-native` (`docs/test-suites.md`), then
+`tests/manual/run_fixtures.py`, and re-verify every row of the table above.

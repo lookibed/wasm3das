@@ -7,17 +7,16 @@ description: Stateful step debugging of .das programs through the daslang-dap MC
 
 Read first:
 
-- `$DASLANG_ROOT/utils/dap/README.md` (bridge contract, launch and attach workflows)
-- `$DASLANG_ROOT/doc/source/reference/utils/dap.rst` (tool-by-tool reference)
+- `/root/daScript/utils/dap/README.md` (bridge contract, launch and attach workflows)
+- `/root/daScript/doc/source/reference/utils/dap.rst` (tool-by-tool reference)
 - AGENTS.md sections "Runtime-debugging policy" and "DAP session contract"
 
-The `daslang-dap` server in `.mcp.json` runs the bridge `utils/dap/mcp_bridge.py` from
-the `$DASLANG_ROOT` checkout — the DAP bridge and `utils/dap` are merged upstream
-(daScript PR #3937; the pin carries them) — with `$DASLANG_ROOT/bin/daslang`
-as the debuggee executable. Compile, lint and test gates use the same
-`$DASLANG_ROOT` (`scripts/build-daslang.sh`, README "Install and run"). The
-stepping-race fix and the waiting-worker-shutdown fix are in upstream, carried
-by the pin (AGENTS.md, "Agent client configuration").
+The `daslang-dap` server in `.mcp.json` is the `bin/watchdog` stdio front of the
+`/root/daScript` checkout over `utils/dap/main.das`, with that checkout's `bin/daslang`
+as the debuggee executable (the same daslang the MCP compiler and the LSP use). The
+bridge spawns the debuggee with `--das-wait-debugger`, picks a free local port and
+connects; `optimize=false` keeps every source statement so breakpoints stop where the
+source says.
 
 Canonical launch lifecycle:
 
@@ -34,5 +33,10 @@ finish:      debug_terminate or debug_disconnect (idempotent; already_disconnect
 
 Rules: never pick ports by hand, never `pkill daslang` broadly, always `debug_disconnect`
 before a new `debug_launch`, and record `session` fields (`return_code`, `close_reason`,
-`last_dap_termination`, `process_output_tail`) when a session dies unexpectedly. Use
-`$DASLANG_ROOT/utils/dap/_fixture.das` for connection smoke tests, not the wasm3 runtime.
+`last_dap_termination`, `process_output_tail`) when a session dies unexpectedly. A
+breakpoint reported `verified: false` before `configurationDone` is normal in
+instrumentation mode; the `breakpoint changed` event verifies it. A `continue` inside a
+loop re-hits the same breakpoint; wait for `terminated` only after the last hit. The
+debuggee prints `[daslang atexit] FATAL: g_envTotal=1` on exit; that is upstream noise, not
+a crash. Use `/root/daScript/utils/dap/_fixture.das` for connection smoke tests, not the
+wasm3 runtime.

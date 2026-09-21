@@ -246,9 +246,7 @@ def public m3_libc_print(runtime : IM3Runtime; _ctx : IM3ImportContext; var _sp 
 
     // C: fwrite (i_ptr, i_size, 1, stdout); fflush (stdout);
     // _builtin_write is the raw pointer+length write behind daslib fwrite.
-    unsafe {
-        _builtin_write(fstdout(), i_ptr, int(i_size))
-    }
+    _builtin_write(fstdout(), i_ptr, int(i_size))
     fflush(fstdout())
 
     m3ApiReturn_u32(raw_return, i_size)

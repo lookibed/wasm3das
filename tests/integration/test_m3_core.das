@@ -25,9 +25,7 @@ def private check_result(actual : M3Result; expected : M3Result; message : strin
 
 
 def private cursor_offset(start : bytes_t; cursor : bytes_t) : int {
-    unsafe {
-        return int(intptr(cursor) - intptr(start))
-    }
+    return int(intptr(cursor) - intptr(start))
 }
 
 
@@ -462,11 +460,9 @@ def test_read_errors_and_positions() {
         var end : cbytes_t
         init_cursor(buf, start, cursor, end)
 
-        unsafe {
-            end = start
-            cursor = start
-            cursor += 1
-        }
+        end = start
+        cursor = start
+        cursor = unsafe(cursor + 1)
 
         var value : u8 = 0x5au8
         check_result(Read_u8(value, cursor, end), m3Err_wasmOverrun, "Read_u8 overrun")
@@ -506,11 +502,9 @@ def test_read_errors_and_positions() {
         var end : cbytes_t
         init_cursor(buf, start, cursor, end)
 
-        unsafe {
-            end = start
-            cursor = start
-            cursor += 1
-        }
+        end = start
+        cursor = start
+        cursor = unsafe(cursor + 1)
 
         var value : u64 = 123ul
         check_result(ReadLebUnsigned(value, 32u, cursor, end), m3Err_wasmOverrun, "uleb overrun")

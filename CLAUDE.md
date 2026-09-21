@@ -42,16 +42,15 @@ environment/runtime, compiler, executor, the host modules (spectest, libc,
 WASI) and the app are in revision (reviewed against C, awaiting code-owner
 sign-off). End-to-end execution works: `scripts/wasm3` runs every
 `wasm3c/test/lang` fixture, the original `wasm3c/test/run-spec-test.py`
-passes its whole default list (`notes/spec_test_status.md`) and
-`wasm3c/test/run-wasi-test.py` passes 12/12 (`notes/wasi_test_status.md`).
-The executor dispatches through `RunLoop` instead of nested calls
-(`notes/exec_trampoline_design.md`), and `scripts/build_port.sh` produces
-an AOT-compiled native binary that passes the same suites
-(`notes/native_aot_status.md`); `notes/benchmark_2026-09-07.md` and
-`tests/manual/fixture_report.md` hold the measurements against wasmtime and
-the C wasm3. `m3_info`, the tracer and the full public `wasm3.h` API are
-not started. `wasm3c/` is the reference C source tree. The latest session
-handoff is `notes/handoff_claude_code_2026-09-07.md`.
+passes its whole default list and `wasm3c/test/run-wasi-test.py` passes
+12/12 (`docs/test-suites.md`). The executor dispatches through `RunLoop`
+instead of nested calls (`docs/execution-design.md`), and
+`scripts/build_port.sh` produces the AOT and standalone-context native
+binaries that pass the same suites (`docs/native-build.md`, measurements in
+`tests/manual/fixture_report.md`). `m3_info`, the tracer and the full public
+`wasm3.h` API are not started. `wasm3c/` is the reference C source tree. The
+current session handoff is `notes/handoff_2026-09-18.md`; the documentation
+set is exactly the files named in the `AGENTS.md` "Key files" table.
 
 ## Layout
 

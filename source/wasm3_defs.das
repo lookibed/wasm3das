@@ -92,10 +92,8 @@ let public M3_COMPILER_VER = "Daslang {get_das_version()}"
 def private m3_detect_little_endian() : bool {
     var probe : uint16 = uint16(0x0102)
 
-    unsafe {
-        let first_byte = *addr<uint8?>(probe)
-        return first_byte == uint8(0x02)
-    }
+    let first_byte = *unsafe(addr<uint8?>(probe))
+    return first_byte == uint8(0x02)
 }
 
 

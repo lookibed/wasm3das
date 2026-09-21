@@ -29,7 +29,7 @@
 #                 sentinel m3Ret_nextOp is a `var` string precisely so that the
 #                 JIT shares its address with the interpreter.
 #
-# Usage: scripts/bench.sh [> notes/benchmark.md]
+# Usage: scripts/bench.sh [> tmp/benchmark.md]   (results table: docs/native-build.md)
 
 set -uo pipefail
 

@@ -82,9 +82,7 @@ def m3ApiCheckMem(runtime : IM3Runtime; _mem : void?; _addr : void?; len : u64) 
 // C: # define m3ApiReturnType(TYPE)                 TYPE* raw_return = ((TYPE*) (_sp++));
 def m3ApiReturnType(var _sp : u64?&) : u64? {
     var raw_return = _sp
-    unsafe {
-        _sp = _sp + 1
-    }
+    _sp = unsafe(_sp + 1)
     return raw_return
 }
 
@@ -180,9 +178,7 @@ def m3ApiReturn_i64(var raw_return : u64?; value : i64) {
 
 
 def m3ApiReturn_u64(var raw_return : u64?; value : u64) {
-    unsafe {
-        raw_return[0] = value
-    }
+    unsafe(raw_return[0]) = value
 }
 
 
