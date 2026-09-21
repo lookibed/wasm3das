@@ -157,7 +157,14 @@ ctx)
     #   indirect call per wasm operation, so this is the only flag here that
     #   touches execution: 7.35 s vs 7.41 s (-0.9 %). It gives up the CET
     #   indirect-branch tracking the distro gcc enables by default.
-    cxxflags+=(-fno-pic -ffunction-sections -fdata-sections -fno-strict-aliasing)
+    # -falign-functions=64: the threaded operation chain is 500 small
+    #   functions reached by tail jumps, and their placement decides the
+    #   fetch behaviour of the hot loop. Measured 2026-09-22 (fib 35, pinned
+    #   to one core, six interleaved rounds): 0.55-0.58 s with gcc's default
+    #   alignment against 0.44-0.46 s with 64 (C wasm3 0.40); the 0.04 s
+    #   the used-modules emitter patch had "cost" on fib was this layout
+    #   shift, not the modules. docs/native-build.md, section 7.
+    cxxflags+=(-fno-pic -ffunction-sections -fdata-sections -fno-strict-aliasing -falign-functions=64)
     ldflags+=(-no-pie -Wl,--gc-sections)
     if [[ "$(uname -m)" == "x86_64" ]]; then
         cxxflags+=(-fcf-protection=none)

@@ -164,6 +164,7 @@ total of the 98-check fixture run, mean of four; C wasm3 stayed at 3.02–3.09 s
 | combo1 | nopie + gcs + cfnone | 45.78 MB | 30.52 MB | 7.13 s | 25 ms |
 | **combo2** | **combo1 + nsa (shipped)** | **45.79 MB** | **30.53 MB** | **7.06 s** | **25 ms** |
 | combo3 | combo1 + `-march=x86-64-v3` | 45.80 MB | 30.54 MB | 7.13 s | 26 ms |
+| **align** (2026-09-22, shipped) | combo2 + `-falign-functions=64` | 31.8 MB (with the used-modules patch) | | fib 35 0.55-0.58 -> 0.44-0.46 s, C 0.40 (measured on the C form of the operation ABI) | |
 
 Run-to-run spread is ±0.1 s, so only the combined set's 0.35 s and 4 ms of
 start are outside the noise; execution proper is flat, the win is image size
