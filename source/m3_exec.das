@@ -3632,13 +3632,25 @@ def public op_SetGlobal_f64(var _pc : pc_t&; var _sp : m3stack_t&; var _mem : M3
     return nextOpDirect(_pc, _sp, _mem, _r0, _fp0)
 }
 
+/* The load and store operations below. C writes the access through memcpy of
+   a constant size (m3_exec.h, d_m3Load/d_m3Store) and says why at the macro:
+   "memcpy here is to support non-aligned access on some platforms". On the
+   platforms this port builds for, a scalar load or store of the same size is
+   exactly what that memcpy compiles to, and it is the one spelling both
+   backends lower to one instruction: gcc folds the constant-size memcpy of the
+   -ctx emission itself, but the LLVM JIT keeps daslang's memcpy as a call
+   through the runtime's function pointer, which needs a frame and spills the
+   interpreter registers around it on every executed load (docs/native-build.md,
+   section 6, E10). So the deviation from C's spelling is the constant-size
+   memcpy written as the typed access it means. The two variable-size copies of
+   this module, op_MemCopy and op_Entry's constants, stay memcpy, as in C. */
 def public op_f32_Load_f32_r(var _pc : pc_t&; var _sp : m3stack_t&; var _mem : M3MemoryHeader?&; var _r0 : m3reg_t&; var _fp0 : f64&) : M3Result {
     let offset = immediate_u32(_pc)
     var operand = u64(u32(_r0))
     operand += u64(offset)
     if (d_m3SkipMemoryBoundsCheck || operand + u64(typeinfo sizeof(type<f32>)) <= _mem.length) {
         var value : f32
-        unsafe { memcpy(addr(value), m3MemData(_mem) + int64(operand), u64(typeinfo sizeof(type<f32>))) }
+        unsafe { value = reinterpret<f32 const?>(m3MemData(_mem) + int64(operand))[0] }
         _fp0 = f64(value)
         return nextOpDirect(_pc, _sp, _mem, _r0, _fp0)
     }
@@ -3651,7 +3663,7 @@ def public op_f32_Load_f32_s(var _pc : pc_t&; var _sp : m3stack_t&; var _mem : M
     operand += u64(offset)
     if (d_m3SkipMemoryBoundsCheck || operand + u64(typeinfo sizeof(type<f32>)) <= _mem.length) {
         var value : f32
-        unsafe { memcpy(addr(value), m3MemData(_mem) + int64(operand), u64(typeinfo sizeof(type<f32>))) }
+        unsafe { value = reinterpret<f32 const?>(m3MemData(_mem) + int64(operand))[0] }
         _fp0 = f64(value)
         return nextOpDirect(_pc, _sp, _mem, _r0, _fp0)
     }
@@ -3664,7 +3676,7 @@ def public op_f64_Load_f64_r(var _pc : pc_t&; var _sp : m3stack_t&; var _mem : M
     operand += u64(offset)
     if (d_m3SkipMemoryBoundsCheck || operand + u64(typeinfo sizeof(type<f64>)) <= _mem.length) {
         var value : f64
-        unsafe { memcpy(addr(value), m3MemData(_mem) + int64(operand), u64(typeinfo sizeof(type<f64>))) }
+        unsafe { value = reinterpret<f64 const?>(m3MemData(_mem) + int64(operand))[0] }
         _fp0 = value
         return nextOpDirect(_pc, _sp, _mem, _r0, _fp0)
     }
@@ -3677,7 +3689,7 @@ def public op_f64_Load_f64_s(var _pc : pc_t&; var _sp : m3stack_t&; var _mem : M
     operand += u64(offset)
     if (d_m3SkipMemoryBoundsCheck || operand + u64(typeinfo sizeof(type<f64>)) <= _mem.length) {
         var value : f64
-        unsafe { memcpy(addr(value), m3MemData(_mem) + int64(operand), u64(typeinfo sizeof(type<f64>))) }
+        unsafe { value = reinterpret<f64 const?>(m3MemData(_mem) + int64(operand))[0] }
         _fp0 = value
         return nextOpDirect(_pc, _sp, _mem, _r0, _fp0)
     }
@@ -3690,7 +3702,7 @@ def public op_i32_Load_i8_r(var _pc : pc_t&; var _sp : m3stack_t&; var _mem : M3
     operand += u64(offset)
     if (d_m3SkipMemoryBoundsCheck || operand + u64(typeinfo sizeof(type<i8>)) <= _mem.length) {
         var value : i8
-        unsafe { memcpy(addr(value), m3MemData(_mem) + int64(operand), u64(typeinfo sizeof(type<i8>))) }
+        unsafe { value = reinterpret<i8 const?>(m3MemData(_mem) + int64(operand))[0] }
         _r0 = m3reg_t(i32(value))
         return nextOpDirect(_pc, _sp, _mem, _r0, _fp0)
     }
@@ -3703,7 +3715,7 @@ def public op_i32_Load_i8_s(var _pc : pc_t&; var _sp : m3stack_t&; var _mem : M3
     operand += u64(offset)
     if (d_m3SkipMemoryBoundsCheck || operand + u64(typeinfo sizeof(type<i8>)) <= _mem.length) {
         var value : i8
-        unsafe { memcpy(addr(value), m3MemData(_mem) + int64(operand), u64(typeinfo sizeof(type<i8>))) }
+        unsafe { value = reinterpret<i8 const?>(m3MemData(_mem) + int64(operand))[0] }
         _r0 = m3reg_t(i32(value))
         return nextOpDirect(_pc, _sp, _mem, _r0, _fp0)
     }
@@ -3716,7 +3728,7 @@ def public op_i32_Load_u8_r(var _pc : pc_t&; var _sp : m3stack_t&; var _mem : M3
     operand += u64(offset)
     if (d_m3SkipMemoryBoundsCheck || operand + u64(typeinfo sizeof(type<u8>)) <= _mem.length) {
         var value : u8
-        unsafe { memcpy(addr(value), m3MemData(_mem) + int64(operand), u64(typeinfo sizeof(type<u8>))) }
+        unsafe { value = reinterpret<u8 const?>(m3MemData(_mem) + int64(operand))[0] }
         _r0 = m3reg_t(i32(value))
         return nextOpDirect(_pc, _sp, _mem, _r0, _fp0)
     }
@@ -3729,7 +3741,7 @@ def public op_i32_Load_u8_s(var _pc : pc_t&; var _sp : m3stack_t&; var _mem : M3
     operand += u64(offset)
     if (d_m3SkipMemoryBoundsCheck || operand + u64(typeinfo sizeof(type<u8>)) <= _mem.length) {
         var value : u8
-        unsafe { memcpy(addr(value), m3MemData(_mem) + int64(operand), u64(typeinfo sizeof(type<u8>))) }
+        unsafe { value = reinterpret<u8 const?>(m3MemData(_mem) + int64(operand))[0] }
         _r0 = m3reg_t(i32(value))
         return nextOpDirect(_pc, _sp, _mem, _r0, _fp0)
     }
@@ -3742,7 +3754,7 @@ def public op_i32_Load_i16_r(var _pc : pc_t&; var _sp : m3stack_t&; var _mem : M
     operand += u64(offset)
     if (d_m3SkipMemoryBoundsCheck || operand + u64(typeinfo sizeof(type<i16>)) <= _mem.length) {
         var value : i16
-        unsafe { memcpy(addr(value), m3MemData(_mem) + int64(operand), u64(typeinfo sizeof(type<i16>))) }
+        unsafe { value = reinterpret<i16 const?>(m3MemData(_mem) + int64(operand))[0] }
         _r0 = m3reg_t(i32(value))
         return nextOpDirect(_pc, _sp, _mem, _r0, _fp0)
     }
@@ -3755,7 +3767,7 @@ def public op_i32_Load_i16_s(var _pc : pc_t&; var _sp : m3stack_t&; var _mem : M
     operand += u64(offset)
     if (d_m3SkipMemoryBoundsCheck || operand + u64(typeinfo sizeof(type<i16>)) <= _mem.length) {
         var value : i16
-        unsafe { memcpy(addr(value), m3MemData(_mem) + int64(operand), u64(typeinfo sizeof(type<i16>))) }
+        unsafe { value = reinterpret<i16 const?>(m3MemData(_mem) + int64(operand))[0] }
         _r0 = m3reg_t(i32(value))
         return nextOpDirect(_pc, _sp, _mem, _r0, _fp0)
     }
@@ -3768,7 +3780,7 @@ def public op_i32_Load_u16_r(var _pc : pc_t&; var _sp : m3stack_t&; var _mem : M
     operand += u64(offset)
     if (d_m3SkipMemoryBoundsCheck || operand + u64(typeinfo sizeof(type<u16>)) <= _mem.length) {
         var value : u16
-        unsafe { memcpy(addr(value), m3MemData(_mem) + int64(operand), u64(typeinfo sizeof(type<u16>))) }
+        unsafe { value = reinterpret<u16 const?>(m3MemData(_mem) + int64(operand))[0] }
         _r0 = m3reg_t(i32(value))
         return nextOpDirect(_pc, _sp, _mem, _r0, _fp0)
     }
@@ -3781,7 +3793,7 @@ def public op_i32_Load_u16_s(var _pc : pc_t&; var _sp : m3stack_t&; var _mem : M
     operand += u64(offset)
     if (d_m3SkipMemoryBoundsCheck || operand + u64(typeinfo sizeof(type<u16>)) <= _mem.length) {
         var value : u16
-        unsafe { memcpy(addr(value), m3MemData(_mem) + int64(operand), u64(typeinfo sizeof(type<u16>))) }
+        unsafe { value = reinterpret<u16 const?>(m3MemData(_mem) + int64(operand))[0] }
         _r0 = m3reg_t(i32(value))
         return nextOpDirect(_pc, _sp, _mem, _r0, _fp0)
     }
@@ -3794,7 +3806,7 @@ def public op_i32_Load_i32_r(var _pc : pc_t&; var _sp : m3stack_t&; var _mem : M
     operand += u64(offset)
     if (d_m3SkipMemoryBoundsCheck || operand + u64(typeinfo sizeof(type<i32>)) <= _mem.length) {
         var value : i32
-        unsafe { memcpy(addr(value), m3MemData(_mem) + int64(operand), u64(typeinfo sizeof(type<i32>))) }
+        unsafe { value = reinterpret<i32 const?>(m3MemData(_mem) + int64(operand))[0] }
         _r0 = m3reg_t(value)
         return nextOpDirect(_pc, _sp, _mem, _r0, _fp0)
     }
@@ -3807,7 +3819,7 @@ def public op_i32_Load_i32_s(var _pc : pc_t&; var _sp : m3stack_t&; var _mem : M
     operand += u64(offset)
     if (d_m3SkipMemoryBoundsCheck || operand + u64(typeinfo sizeof(type<i32>)) <= _mem.length) {
         var value : i32
-        unsafe { memcpy(addr(value), m3MemData(_mem) + int64(operand), u64(typeinfo sizeof(type<i32>))) }
+        unsafe { value = reinterpret<i32 const?>(m3MemData(_mem) + int64(operand))[0] }
         _r0 = m3reg_t(value)
         return nextOpDirect(_pc, _sp, _mem, _r0, _fp0)
     }
@@ -3820,7 +3832,7 @@ def public op_i64_Load_i8_r(var _pc : pc_t&; var _sp : m3stack_t&; var _mem : M3
     operand += u64(offset)
     if (d_m3SkipMemoryBoundsCheck || operand + u64(typeinfo sizeof(type<i8>)) <= _mem.length) {
         var value : i8
-        unsafe { memcpy(addr(value), m3MemData(_mem) + int64(operand), u64(typeinfo sizeof(type<i8>))) }
+        unsafe { value = reinterpret<i8 const?>(m3MemData(_mem) + int64(operand))[0] }
         _r0 = i64(value)
         return nextOpDirect(_pc, _sp, _mem, _r0, _fp0)
     }
@@ -3833,7 +3845,7 @@ def public op_i64_Load_i8_s(var _pc : pc_t&; var _sp : m3stack_t&; var _mem : M3
     operand += u64(offset)
     if (d_m3SkipMemoryBoundsCheck || operand + u64(typeinfo sizeof(type<i8>)) <= _mem.length) {
         var value : i8
-        unsafe { memcpy(addr(value), m3MemData(_mem) + int64(operand), u64(typeinfo sizeof(type<i8>))) }
+        unsafe { value = reinterpret<i8 const?>(m3MemData(_mem) + int64(operand))[0] }
         _r0 = i64(value)
         return nextOpDirect(_pc, _sp, _mem, _r0, _fp0)
     }
@@ -3846,7 +3858,7 @@ def public op_i64_Load_u8_r(var _pc : pc_t&; var _sp : m3stack_t&; var _mem : M3
     operand += u64(offset)
     if (d_m3SkipMemoryBoundsCheck || operand + u64(typeinfo sizeof(type<u8>)) <= _mem.length) {
         var value : u8
-        unsafe { memcpy(addr(value), m3MemData(_mem) + int64(operand), u64(typeinfo sizeof(type<u8>))) }
+        unsafe { value = reinterpret<u8 const?>(m3MemData(_mem) + int64(operand))[0] }
         _r0 = i64(value)
         return nextOpDirect(_pc, _sp, _mem, _r0, _fp0)
     }
@@ -3859,7 +3871,7 @@ def public op_i64_Load_u8_s(var _pc : pc_t&; var _sp : m3stack_t&; var _mem : M3
     operand += u64(offset)
     if (d_m3SkipMemoryBoundsCheck || operand + u64(typeinfo sizeof(type<u8>)) <= _mem.length) {
         var value : u8
-        unsafe { memcpy(addr(value), m3MemData(_mem) + int64(operand), u64(typeinfo sizeof(type<u8>))) }
+        unsafe { value = reinterpret<u8 const?>(m3MemData(_mem) + int64(operand))[0] }
         _r0 = i64(value)
         return nextOpDirect(_pc, _sp, _mem, _r0, _fp0)
     }
@@ -3872,7 +3884,7 @@ def public op_i64_Load_i16_r(var _pc : pc_t&; var _sp : m3stack_t&; var _mem : M
     operand += u64(offset)
     if (d_m3SkipMemoryBoundsCheck || operand + u64(typeinfo sizeof(type<i16>)) <= _mem.length) {
         var value : i16
-        unsafe { memcpy(addr(value), m3MemData(_mem) + int64(operand), u64(typeinfo sizeof(type<i16>))) }
+        unsafe { value = reinterpret<i16 const?>(m3MemData(_mem) + int64(operand))[0] }
         _r0 = i64(value)
         return nextOpDirect(_pc, _sp, _mem, _r0, _fp0)
     }
@@ -3885,7 +3897,7 @@ def public op_i64_Load_i16_s(var _pc : pc_t&; var _sp : m3stack_t&; var _mem : M
     operand += u64(offset)
     if (d_m3SkipMemoryBoundsCheck || operand + u64(typeinfo sizeof(type<i16>)) <= _mem.length) {
         var value : i16
-        unsafe { memcpy(addr(value), m3MemData(_mem) + int64(operand), u64(typeinfo sizeof(type<i16>))) }
+        unsafe { value = reinterpret<i16 const?>(m3MemData(_mem) + int64(operand))[0] }
         _r0 = i64(value)
         return nextOpDirect(_pc, _sp, _mem, _r0, _fp0)
     }
@@ -3898,7 +3910,7 @@ def public op_i64_Load_u16_r(var _pc : pc_t&; var _sp : m3stack_t&; var _mem : M
     operand += u64(offset)
     if (d_m3SkipMemoryBoundsCheck || operand + u64(typeinfo sizeof(type<u16>)) <= _mem.length) {
         var value : u16
-        unsafe { memcpy(addr(value), m3MemData(_mem) + int64(operand), u64(typeinfo sizeof(type<u16>))) }
+        unsafe { value = reinterpret<u16 const?>(m3MemData(_mem) + int64(operand))[0] }
         _r0 = i64(value)
         return nextOpDirect(_pc, _sp, _mem, _r0, _fp0)
     }
@@ -3911,7 +3923,7 @@ def public op_i64_Load_u16_s(var _pc : pc_t&; var _sp : m3stack_t&; var _mem : M
     operand += u64(offset)
     if (d_m3SkipMemoryBoundsCheck || operand + u64(typeinfo sizeof(type<u16>)) <= _mem.length) {
         var value : u16
-        unsafe { memcpy(addr(value), m3MemData(_mem) + int64(operand), u64(typeinfo sizeof(type<u16>))) }
+        unsafe { value = reinterpret<u16 const?>(m3MemData(_mem) + int64(operand))[0] }
         _r0 = i64(value)
         return nextOpDirect(_pc, _sp, _mem, _r0, _fp0)
     }
@@ -3924,7 +3936,7 @@ def public op_i64_Load_i32_r(var _pc : pc_t&; var _sp : m3stack_t&; var _mem : M
     operand += u64(offset)
     if (d_m3SkipMemoryBoundsCheck || operand + u64(typeinfo sizeof(type<i32>)) <= _mem.length) {
         var value : i32
-        unsafe { memcpy(addr(value), m3MemData(_mem) + int64(operand), u64(typeinfo sizeof(type<i32>))) }
+        unsafe { value = reinterpret<i32 const?>(m3MemData(_mem) + int64(operand))[0] }
         _r0 = i64(value)
         return nextOpDirect(_pc, _sp, _mem, _r0, _fp0)
     }
@@ -3937,7 +3949,7 @@ def public op_i64_Load_i32_s(var _pc : pc_t&; var _sp : m3stack_t&; var _mem : M
     operand += u64(offset)
     if (d_m3SkipMemoryBoundsCheck || operand + u64(typeinfo sizeof(type<i32>)) <= _mem.length) {
         var value : i32
-        unsafe { memcpy(addr(value), m3MemData(_mem) + int64(operand), u64(typeinfo sizeof(type<i32>))) }
+        unsafe { value = reinterpret<i32 const?>(m3MemData(_mem) + int64(operand))[0] }
         _r0 = i64(value)
         return nextOpDirect(_pc, _sp, _mem, _r0, _fp0)
     }
@@ -3950,7 +3962,7 @@ def public op_i64_Load_u32_r(var _pc : pc_t&; var _sp : m3stack_t&; var _mem : M
     operand += u64(offset)
     if (d_m3SkipMemoryBoundsCheck || operand + u64(typeinfo sizeof(type<u32>)) <= _mem.length) {
         var value : u32
-        unsafe { memcpy(addr(value), m3MemData(_mem) + int64(operand), u64(typeinfo sizeof(type<u32>))) }
+        unsafe { value = reinterpret<u32 const?>(m3MemData(_mem) + int64(operand))[0] }
         _r0 = i64(value)
         return nextOpDirect(_pc, _sp, _mem, _r0, _fp0)
     }
@@ -3963,7 +3975,7 @@ def public op_i64_Load_u32_s(var _pc : pc_t&; var _sp : m3stack_t&; var _mem : M
     operand += u64(offset)
     if (d_m3SkipMemoryBoundsCheck || operand + u64(typeinfo sizeof(type<u32>)) <= _mem.length) {
         var value : u32
-        unsafe { memcpy(addr(value), m3MemData(_mem) + int64(operand), u64(typeinfo sizeof(type<u32>))) }
+        unsafe { value = reinterpret<u32 const?>(m3MemData(_mem) + int64(operand))[0] }
         _r0 = i64(value)
         return nextOpDirect(_pc, _sp, _mem, _r0, _fp0)
     }
@@ -3976,7 +3988,7 @@ def public op_i64_Load_i64_r(var _pc : pc_t&; var _sp : m3stack_t&; var _mem : M
     operand += u64(offset)
     if (d_m3SkipMemoryBoundsCheck || operand + u64(typeinfo sizeof(type<i64>)) <= _mem.length) {
         var value : i64
-        unsafe { memcpy(addr(value), m3MemData(_mem) + int64(operand), u64(typeinfo sizeof(type<i64>))) }
+        unsafe { value = reinterpret<i64 const?>(m3MemData(_mem) + int64(operand))[0] }
         _r0 = value
         return nextOpDirect(_pc, _sp, _mem, _r0, _fp0)
     }
@@ -3989,7 +4001,7 @@ def public op_i64_Load_i64_s(var _pc : pc_t&; var _sp : m3stack_t&; var _mem : M
     operand += u64(offset)
     if (d_m3SkipMemoryBoundsCheck || operand + u64(typeinfo sizeof(type<i64>)) <= _mem.length) {
         var value : i64
-        unsafe { memcpy(addr(value), m3MemData(_mem) + int64(operand), u64(typeinfo sizeof(type<i64>))) }
+        unsafe { value = reinterpret<i64 const?>(m3MemData(_mem) + int64(operand))[0] }
         _r0 = value
         return nextOpDirect(_pc, _sp, _mem, _r0, _fp0)
     }
@@ -4002,7 +4014,7 @@ def public op_f32_Store_f32_rs(var _pc : pc_t&; var _sp : m3stack_t&; var _mem :
     operand += u64(offset)
     if (d_m3SkipMemoryBoundsCheck || operand + u64(typeinfo sizeof(type<f32>)) <= _mem.length) {
         var val = f32(_fp0)
-        unsafe { memcpy(m3MemData(_mem) + int64(operand), addr(val), u64(typeinfo sizeof(type<f32>))) }
+        unsafe { reinterpret<f32?>(m3MemData(_mem) + int64(operand))[0] = val }
         return nextOpDirect(_pc, _sp, _mem, _r0, _fp0)
     }
     return newTrap(_pc, _mem, m3Err_trapOutOfBoundsMemoryAccess)
@@ -4015,7 +4027,7 @@ def public op_f32_Store_f32_sr(var _pc : pc_t&; var _sp : m3stack_t&; var _mem :
     operand += u64(offset)
     if (d_m3SkipMemoryBoundsCheck || operand + u64(typeinfo sizeof(type<f32>)) <= _mem.length) {
         var val = value
-        unsafe { memcpy(m3MemData(_mem) + int64(operand), addr(val), u64(typeinfo sizeof(type<f32>))) }
+        unsafe { reinterpret<f32?>(m3MemData(_mem) + int64(operand))[0] = val }
         return nextOpDirect(_pc, _sp, _mem, _r0, _fp0)
     }
     return newTrap(_pc, _mem, m3Err_trapOutOfBoundsMemoryAccess)
@@ -4028,7 +4040,7 @@ def public op_f32_Store_f32_ss(var _pc : pc_t&; var _sp : m3stack_t&; var _mem :
     operand += u64(offset)
     if (d_m3SkipMemoryBoundsCheck || operand + u64(typeinfo sizeof(type<f32>)) <= _mem.length) {
         var val = value
-        unsafe { memcpy(m3MemData(_mem) + int64(operand), addr(val), u64(typeinfo sizeof(type<f32>))) }
+        unsafe { reinterpret<f32?>(m3MemData(_mem) + int64(operand))[0] = val }
         return nextOpDirect(_pc, _sp, _mem, _r0, _fp0)
     }
     return newTrap(_pc, _mem, m3Err_trapOutOfBoundsMemoryAccess)
@@ -4040,7 +4052,7 @@ def public op_f32_Store_f32_rr(var _pc : pc_t&; var _sp : m3stack_t&; var _mem :
     operand += u64(offset)
     if (d_m3SkipMemoryBoundsCheck || operand + u64(typeinfo sizeof(type<f32>)) <= _mem.length) {
         var val = f32(_fp0)
-        unsafe { memcpy(m3MemData(_mem) + int64(operand), addr(val), u64(typeinfo sizeof(type<f32>))) }
+        unsafe { reinterpret<f32?>(m3MemData(_mem) + int64(operand))[0] = val }
         return nextOpDirect(_pc, _sp, _mem, _r0, _fp0)
     }
     return newTrap(_pc, _mem, m3Err_trapOutOfBoundsMemoryAccess)
@@ -4052,7 +4064,7 @@ def public op_f64_Store_f64_rs(var _pc : pc_t&; var _sp : m3stack_t&; var _mem :
     operand += u64(offset)
     if (d_m3SkipMemoryBoundsCheck || operand + u64(typeinfo sizeof(type<f64>)) <= _mem.length) {
         var val = _fp0
-        unsafe { memcpy(m3MemData(_mem) + int64(operand), addr(val), u64(typeinfo sizeof(type<f64>))) }
+        unsafe { reinterpret<f64?>(m3MemData(_mem) + int64(operand))[0] = val }
         return nextOpDirect(_pc, _sp, _mem, _r0, _fp0)
     }
     return newTrap(_pc, _mem, m3Err_trapOutOfBoundsMemoryAccess)
@@ -4065,7 +4077,7 @@ def public op_f64_Store_f64_sr(var _pc : pc_t&; var _sp : m3stack_t&; var _mem :
     operand += u64(offset)
     if (d_m3SkipMemoryBoundsCheck || operand + u64(typeinfo sizeof(type<f64>)) <= _mem.length) {
         var val = value
-        unsafe { memcpy(m3MemData(_mem) + int64(operand), addr(val), u64(typeinfo sizeof(type<f64>))) }
+        unsafe { reinterpret<f64?>(m3MemData(_mem) + int64(operand))[0] = val }
         return nextOpDirect(_pc, _sp, _mem, _r0, _fp0)
     }
     return newTrap(_pc, _mem, m3Err_trapOutOfBoundsMemoryAccess)
@@ -4078,7 +4090,7 @@ def public op_f64_Store_f64_ss(var _pc : pc_t&; var _sp : m3stack_t&; var _mem :
     operand += u64(offset)
     if (d_m3SkipMemoryBoundsCheck || operand + u64(typeinfo sizeof(type<f64>)) <= _mem.length) {
         var val = value
-        unsafe { memcpy(m3MemData(_mem) + int64(operand), addr(val), u64(typeinfo sizeof(type<f64>))) }
+        unsafe { reinterpret<f64?>(m3MemData(_mem) + int64(operand))[0] = val }
         return nextOpDirect(_pc, _sp, _mem, _r0, _fp0)
     }
     return newTrap(_pc, _mem, m3Err_trapOutOfBoundsMemoryAccess)
@@ -4090,7 +4102,7 @@ def public op_f64_Store_f64_rr(var _pc : pc_t&; var _sp : m3stack_t&; var _mem :
     operand += u64(offset)
     if (d_m3SkipMemoryBoundsCheck || operand + u64(typeinfo sizeof(type<f64>)) <= _mem.length) {
         var val = _fp0
-        unsafe { memcpy(m3MemData(_mem) + int64(operand), addr(val), u64(typeinfo sizeof(type<f64>))) }
+        unsafe { reinterpret<f64?>(m3MemData(_mem) + int64(operand))[0] = val }
         return nextOpDirect(_pc, _sp, _mem, _r0, _fp0)
     }
     return newTrap(_pc, _mem, m3Err_trapOutOfBoundsMemoryAccess)
@@ -4102,7 +4114,7 @@ def public op_i32_Store_u8_rs(var _pc : pc_t&; var _sp : m3stack_t&; var _mem : 
     operand += u64(offset)
     if (d_m3SkipMemoryBoundsCheck || operand + u64(typeinfo sizeof(type<u8>)) <= _mem.length) {
         var val = u8(i32(_r0))
-        unsafe { memcpy(m3MemData(_mem) + int64(operand), addr(val), u64(typeinfo sizeof(type<u8>))) }
+        unsafe { reinterpret<u8?>(m3MemData(_mem) + int64(operand))[0] = val }
         return nextOpDirect(_pc, _sp, _mem, _r0, _fp0)
     }
     return newTrap(_pc, _mem, m3Err_trapOutOfBoundsMemoryAccess)
@@ -4115,7 +4127,7 @@ def public op_i32_Store_u8_sr(var _pc : pc_t&; var _sp : m3stack_t&; var _mem : 
     operand += u64(offset)
     if (d_m3SkipMemoryBoundsCheck || operand + u64(typeinfo sizeof(type<u8>)) <= _mem.length) {
         var val = u8(value)
-        unsafe { memcpy(m3MemData(_mem) + int64(operand), addr(val), u64(typeinfo sizeof(type<u8>))) }
+        unsafe { reinterpret<u8?>(m3MemData(_mem) + int64(operand))[0] = val }
         return nextOpDirect(_pc, _sp, _mem, _r0, _fp0)
     }
     return newTrap(_pc, _mem, m3Err_trapOutOfBoundsMemoryAccess)
@@ -4128,7 +4140,7 @@ def public op_i32_Store_u8_ss(var _pc : pc_t&; var _sp : m3stack_t&; var _mem : 
     operand += u64(offset)
     if (d_m3SkipMemoryBoundsCheck || operand + u64(typeinfo sizeof(type<u8>)) <= _mem.length) {
         var val = u8(value)
-        unsafe { memcpy(m3MemData(_mem) + int64(operand), addr(val), u64(typeinfo sizeof(type<u8>))) }
+        unsafe { reinterpret<u8?>(m3MemData(_mem) + int64(operand))[0] = val }
         return nextOpDirect(_pc, _sp, _mem, _r0, _fp0)
     }
     return newTrap(_pc, _mem, m3Err_trapOutOfBoundsMemoryAccess)
@@ -4140,7 +4152,7 @@ def public op_i32_Store_i16_rs(var _pc : pc_t&; var _sp : m3stack_t&; var _mem :
     operand += u64(offset)
     if (d_m3SkipMemoryBoundsCheck || operand + u64(typeinfo sizeof(type<i16>)) <= _mem.length) {
         var val = i16(i32(_r0))
-        unsafe { memcpy(m3MemData(_mem) + int64(operand), addr(val), u64(typeinfo sizeof(type<i16>))) }
+        unsafe { reinterpret<i16?>(m3MemData(_mem) + int64(operand))[0] = val }
         return nextOpDirect(_pc, _sp, _mem, _r0, _fp0)
     }
     return newTrap(_pc, _mem, m3Err_trapOutOfBoundsMemoryAccess)
@@ -4153,7 +4165,7 @@ def public op_i32_Store_i16_sr(var _pc : pc_t&; var _sp : m3stack_t&; var _mem :
     operand += u64(offset)
     if (d_m3SkipMemoryBoundsCheck || operand + u64(typeinfo sizeof(type<i16>)) <= _mem.length) {
         var val = i16(value)
-        unsafe { memcpy(m3MemData(_mem) + int64(operand), addr(val), u64(typeinfo sizeof(type<i16>))) }
+        unsafe { reinterpret<i16?>(m3MemData(_mem) + int64(operand))[0] = val }
         return nextOpDirect(_pc, _sp, _mem, _r0, _fp0)
     }
     return newTrap(_pc, _mem, m3Err_trapOutOfBoundsMemoryAccess)
@@ -4166,7 +4178,7 @@ def public op_i32_Store_i16_ss(var _pc : pc_t&; var _sp : m3stack_t&; var _mem :
     operand += u64(offset)
     if (d_m3SkipMemoryBoundsCheck || operand + u64(typeinfo sizeof(type<i16>)) <= _mem.length) {
         var val = i16(value)
-        unsafe { memcpy(m3MemData(_mem) + int64(operand), addr(val), u64(typeinfo sizeof(type<i16>))) }
+        unsafe { reinterpret<i16?>(m3MemData(_mem) + int64(operand))[0] = val }
         return nextOpDirect(_pc, _sp, _mem, _r0, _fp0)
     }
     return newTrap(_pc, _mem, m3Err_trapOutOfBoundsMemoryAccess)
@@ -4178,7 +4190,7 @@ def public op_i32_Store_i32_rs(var _pc : pc_t&; var _sp : m3stack_t&; var _mem :
     operand += u64(offset)
     if (d_m3SkipMemoryBoundsCheck || operand + u64(typeinfo sizeof(type<i32>)) <= _mem.length) {
         var val = i32(_r0)
-        unsafe { memcpy(m3MemData(_mem) + int64(operand), addr(val), u64(typeinfo sizeof(type<i32>))) }
+        unsafe { reinterpret<i32?>(m3MemData(_mem) + int64(operand))[0] = val }
         return nextOpDirect(_pc, _sp, _mem, _r0, _fp0)
     }
     return newTrap(_pc, _mem, m3Err_trapOutOfBoundsMemoryAccess)
@@ -4191,7 +4203,7 @@ def public op_i32_Store_i32_sr(var _pc : pc_t&; var _sp : m3stack_t&; var _mem :
     operand += u64(offset)
     if (d_m3SkipMemoryBoundsCheck || operand + u64(typeinfo sizeof(type<i32>)) <= _mem.length) {
         var val = value
-        unsafe { memcpy(m3MemData(_mem) + int64(operand), addr(val), u64(typeinfo sizeof(type<i32>))) }
+        unsafe { reinterpret<i32?>(m3MemData(_mem) + int64(operand))[0] = val }
         return nextOpDirect(_pc, _sp, _mem, _r0, _fp0)
     }
     return newTrap(_pc, _mem, m3Err_trapOutOfBoundsMemoryAccess)
@@ -4204,7 +4216,7 @@ def public op_i32_Store_i32_ss(var _pc : pc_t&; var _sp : m3stack_t&; var _mem :
     operand += u64(offset)
     if (d_m3SkipMemoryBoundsCheck || operand + u64(typeinfo sizeof(type<i32>)) <= _mem.length) {
         var val = value
-        unsafe { memcpy(m3MemData(_mem) + int64(operand), addr(val), u64(typeinfo sizeof(type<i32>))) }
+        unsafe { reinterpret<i32?>(m3MemData(_mem) + int64(operand))[0] = val }
         return nextOpDirect(_pc, _sp, _mem, _r0, _fp0)
     }
     return newTrap(_pc, _mem, m3Err_trapOutOfBoundsMemoryAccess)
@@ -4216,7 +4228,7 @@ def public op_i64_Store_u8_rs(var _pc : pc_t&; var _sp : m3stack_t&; var _mem : 
     operand += u64(offset)
     if (d_m3SkipMemoryBoundsCheck || operand + u64(typeinfo sizeof(type<u8>)) <= _mem.length) {
         var val = u8(_r0)
-        unsafe { memcpy(m3MemData(_mem) + int64(operand), addr(val), u64(typeinfo sizeof(type<u8>))) }
+        unsafe { reinterpret<u8?>(m3MemData(_mem) + int64(operand))[0] = val }
         return nextOpDirect(_pc, _sp, _mem, _r0, _fp0)
     }
     return newTrap(_pc, _mem, m3Err_trapOutOfBoundsMemoryAccess)
@@ -4229,7 +4241,7 @@ def public op_i64_Store_u8_sr(var _pc : pc_t&; var _sp : m3stack_t&; var _mem : 
     operand += u64(offset)
     if (d_m3SkipMemoryBoundsCheck || operand + u64(typeinfo sizeof(type<u8>)) <= _mem.length) {
         var val = u8(value)
-        unsafe { memcpy(m3MemData(_mem) + int64(operand), addr(val), u64(typeinfo sizeof(type<u8>))) }
+        unsafe { reinterpret<u8?>(m3MemData(_mem) + int64(operand))[0] = val }
         return nextOpDirect(_pc, _sp, _mem, _r0, _fp0)
     }
     return newTrap(_pc, _mem, m3Err_trapOutOfBoundsMemoryAccess)
@@ -4242,7 +4254,7 @@ def public op_i64_Store_u8_ss(var _pc : pc_t&; var _sp : m3stack_t&; var _mem : 
     operand += u64(offset)
     if (d_m3SkipMemoryBoundsCheck || operand + u64(typeinfo sizeof(type<u8>)) <= _mem.length) {
         var val = u8(value)
-        unsafe { memcpy(m3MemData(_mem) + int64(operand), addr(val), u64(typeinfo sizeof(type<u8>))) }
+        unsafe { reinterpret<u8?>(m3MemData(_mem) + int64(operand))[0] = val }
         return nextOpDirect(_pc, _sp, _mem, _r0, _fp0)
     }
     return newTrap(_pc, _mem, m3Err_trapOutOfBoundsMemoryAccess)
@@ -4254,7 +4266,7 @@ def public op_i64_Store_i16_rs(var _pc : pc_t&; var _sp : m3stack_t&; var _mem :
     operand += u64(offset)
     if (d_m3SkipMemoryBoundsCheck || operand + u64(typeinfo sizeof(type<i16>)) <= _mem.length) {
         var val = i16(_r0)
-        unsafe { memcpy(m3MemData(_mem) + int64(operand), addr(val), u64(typeinfo sizeof(type<i16>))) }
+        unsafe { reinterpret<i16?>(m3MemData(_mem) + int64(operand))[0] = val }
         return nextOpDirect(_pc, _sp, _mem, _r0, _fp0)
     }
     return newTrap(_pc, _mem, m3Err_trapOutOfBoundsMemoryAccess)
@@ -4267,7 +4279,7 @@ def public op_i64_Store_i16_sr(var _pc : pc_t&; var _sp : m3stack_t&; var _mem :
     operand += u64(offset)
     if (d_m3SkipMemoryBoundsCheck || operand + u64(typeinfo sizeof(type<i16>)) <= _mem.length) {
         var val = i16(value)
-        unsafe { memcpy(m3MemData(_mem) + int64(operand), addr(val), u64(typeinfo sizeof(type<i16>))) }
+        unsafe { reinterpret<i16?>(m3MemData(_mem) + int64(operand))[0] = val }
         return nextOpDirect(_pc, _sp, _mem, _r0, _fp0)
     }
     return newTrap(_pc, _mem, m3Err_trapOutOfBoundsMemoryAccess)
@@ -4280,7 +4292,7 @@ def public op_i64_Store_i16_ss(var _pc : pc_t&; var _sp : m3stack_t&; var _mem :
     operand += u64(offset)
     if (d_m3SkipMemoryBoundsCheck || operand + u64(typeinfo sizeof(type<i16>)) <= _mem.length) {
         var val = i16(value)
-        unsafe { memcpy(m3MemData(_mem) + int64(operand), addr(val), u64(typeinfo sizeof(type<i16>))) }
+        unsafe { reinterpret<i16?>(m3MemData(_mem) + int64(operand))[0] = val }
         return nextOpDirect(_pc, _sp, _mem, _r0, _fp0)
     }
     return newTrap(_pc, _mem, m3Err_trapOutOfBoundsMemoryAccess)
@@ -4292,7 +4304,7 @@ def public op_i64_Store_i32_rs(var _pc : pc_t&; var _sp : m3stack_t&; var _mem :
     operand += u64(offset)
     if (d_m3SkipMemoryBoundsCheck || operand + u64(typeinfo sizeof(type<i32>)) <= _mem.length) {
         var val = i32(_r0)
-        unsafe { memcpy(m3MemData(_mem) + int64(operand), addr(val), u64(typeinfo sizeof(type<i32>))) }
+        unsafe { reinterpret<i32?>(m3MemData(_mem) + int64(operand))[0] = val }
         return nextOpDirect(_pc, _sp, _mem, _r0, _fp0)
     }
     return newTrap(_pc, _mem, m3Err_trapOutOfBoundsMemoryAccess)
@@ -4305,7 +4317,7 @@ def public op_i64_Store_i32_sr(var _pc : pc_t&; var _sp : m3stack_t&; var _mem :
     operand += u64(offset)
     if (d_m3SkipMemoryBoundsCheck || operand + u64(typeinfo sizeof(type<i32>)) <= _mem.length) {
         var val = i32(value)
-        unsafe { memcpy(m3MemData(_mem) + int64(operand), addr(val), u64(typeinfo sizeof(type<i32>))) }
+        unsafe { reinterpret<i32?>(m3MemData(_mem) + int64(operand))[0] = val }
         return nextOpDirect(_pc, _sp, _mem, _r0, _fp0)
     }
     return newTrap(_pc, _mem, m3Err_trapOutOfBoundsMemoryAccess)
@@ -4318,7 +4330,7 @@ def public op_i64_Store_i32_ss(var _pc : pc_t&; var _sp : m3stack_t&; var _mem :
     operand += u64(offset)
     if (d_m3SkipMemoryBoundsCheck || operand + u64(typeinfo sizeof(type<i32>)) <= _mem.length) {
         var val = i32(value)
-        unsafe { memcpy(m3MemData(_mem) + int64(operand), addr(val), u64(typeinfo sizeof(type<i32>))) }
+        unsafe { reinterpret<i32?>(m3MemData(_mem) + int64(operand))[0] = val }
         return nextOpDirect(_pc, _sp, _mem, _r0, _fp0)
     }
     return newTrap(_pc, _mem, m3Err_trapOutOfBoundsMemoryAccess)
@@ -4330,7 +4342,7 @@ def public op_i64_Store_i64_rs(var _pc : pc_t&; var _sp : m3stack_t&; var _mem :
     operand += u64(offset)
     if (d_m3SkipMemoryBoundsCheck || operand + u64(typeinfo sizeof(type<i64>)) <= _mem.length) {
         var val = _r0
-        unsafe { memcpy(m3MemData(_mem) + int64(operand), addr(val), u64(typeinfo sizeof(type<i64>))) }
+        unsafe { reinterpret<i64?>(m3MemData(_mem) + int64(operand))[0] = val }
         return nextOpDirect(_pc, _sp, _mem, _r0, _fp0)
     }
     return newTrap(_pc, _mem, m3Err_trapOutOfBoundsMemoryAccess)
@@ -4343,7 +4355,7 @@ def public op_i64_Store_i64_sr(var _pc : pc_t&; var _sp : m3stack_t&; var _mem :
     operand += u64(offset)
     if (d_m3SkipMemoryBoundsCheck || operand + u64(typeinfo sizeof(type<i64>)) <= _mem.length) {
         var val = value
-        unsafe { memcpy(m3MemData(_mem) + int64(operand), addr(val), u64(typeinfo sizeof(type<i64>))) }
+        unsafe { reinterpret<i64?>(m3MemData(_mem) + int64(operand))[0] = val }
         return nextOpDirect(_pc, _sp, _mem, _r0, _fp0)
     }
     return newTrap(_pc, _mem, m3Err_trapOutOfBoundsMemoryAccess)
@@ -4356,7 +4368,7 @@ def public op_i64_Store_i64_ss(var _pc : pc_t&; var _sp : m3stack_t&; var _mem :
     operand += u64(offset)
     if (d_m3SkipMemoryBoundsCheck || operand + u64(typeinfo sizeof(type<i64>)) <= _mem.length) {
         var val = value
-        unsafe { memcpy(m3MemData(_mem) + int64(operand), addr(val), u64(typeinfo sizeof(type<i64>))) }
+        unsafe { reinterpret<i64?>(m3MemData(_mem) + int64(operand))[0] = val }
         return nextOpDirect(_pc, _sp, _mem, _r0, _fp0)
     }
     return newTrap(_pc, _mem, m3Err_trapOutOfBoundsMemoryAccess)
