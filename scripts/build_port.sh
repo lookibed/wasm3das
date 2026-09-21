@@ -13,10 +13,19 @@
 #         and the daslang front end never runs at startup.
 #         -> default out: tmp/native-ctx (tmp/native-ctx/bin/wasm3das)
 #
-# Usage: scripts/build_port.sh [aot|ctx] [out]
+#   exe   daslang's own standalone executable: `daslang -exe` runs the LLVM
+#         JIT pipeline once, ahead of time, over app/wasm3.das and links the
+#         result against the shared daslang runtime (lib/liblibDaScriptDyn*.so
+#         of DASLANG_ROOT, found through the rpath the linker records). No C++
+#         compiler is involved and no daslang front end runs at start. Needs a
+#         DASLANG_ROOT built with dasLLVM (DAS_LLVM_DISABLED=OFF).
+#         -> default out: tmp/native-exe (tmp/native-exe/bin/wasm3das.exe;
+#            daslang names the output with the suffix on every platform)
+#
+# Usage: scripts/build_port.sh [aot|ctx|exe] [out]
 #   out  the directory the binary tree lands in (default per variant above)
 #
-# Both variants need:
+# All variants need:
 #   DASLANG_ROOT  the daslang checkout pinned in scripts/daslang_pin, built
 #                 in place (verified through scripts/verify_daslang.sh)
 #   CXX           C++ compiler (default: clang++, else g++)
@@ -54,9 +63,31 @@ out_base="${2:-}"
 case "$variant" in
     aot) def_out="tmp/native" ;;
     ctx) def_out="tmp/native-ctx" ;;
-    *) echo "build_port: unknown variant '$variant' (aot|ctx)" >&2; exit 2 ;;
+    exe) def_out="tmp/native-exe" ;;
+    *) echo "build_port: unknown variant '$variant' (aot|ctx|exe)" >&2; exit 2 ;;
 esac
 out="$repo_root/${out_base:-$def_out}"
+
+if [[ "$variant" == "exe" ]]; then
+    # The exe variant is daslang's job end to end: the JIT daslib compiles
+    # the program, LLVM emits one object and daslang links it. The DLL cache
+    # (.jitted_scripts/ under the working directory) is not involved; every
+    # build regenerates the code, about ten seconds plus the codegen.
+    mkdir -p "$out/bin"
+    echo "build_port [exe]: daslang -exe"
+    (cd "$out" && "$DASLANG" -exe "$repo_root/app/wasm3.das" -output "$out/bin/wasm3das") \
+        | grep -v "shared_module\|failed to load\|^\s*$" || true
+    binary="$out/bin/wasm3das.exe"
+    if [[ ! -x "$binary" ]]; then
+        echo "build_port [exe]: daslang -exe produced no executable at $binary" >&2
+        exit 1
+    fi
+    rm -f "$out/bin/wasm3das.o"
+    ls -la "$binary"
+    echo "build_port [exe]: $binary"
+    exit 0
+fi
+
 mkdir -p "$out/aot" "$out/obj" "$out/bin"
 
 ldflags=()

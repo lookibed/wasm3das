@@ -195,8 +195,25 @@ scripts/wasm3-ctx wasm3c/test/lang/fib32.wasm --func fib 35   # ~50 ms total
 ```
 
 The measured column in `tests/manual/fixture_report.md` is
-`wasm3das(aot_ctx)`. Development rules, the verification gate and the review
-process are in `docs/development-pipeline.md` and `AGENTS.md`.
+`wasm3das(aot_ctx)`.
+
+### LLVM executable (`-exe`)
+
+`scripts/build_port.sh exe` hands the whole job to daslang: `daslang -exe`
+runs its LLVM pipeline once, ahead of time, over `app/wasm3.das` and links
+`tmp/native-exe/bin/wasm3das.exe` (the suffix is daslang's on every platform)
+against the shared daslang runtime of your DASLANG_ROOT, which must be built
+with dasLLVM. No C++ compiler is involved; the process starts in about 25 ms
+with neither a front end nor JIT codegen. `scripts/wasm3-exe` is its launcher:
+
+```sh
+scripts/build_port.sh exe
+scripts/wasm3-exe wasm3c/test/lang/fib32.wasm --func fib 35
+```
+
+The measured column is `wasm3das(exe)`. Development rules, the verification
+gate and the review process are in `docs/development-pipeline.md` and
+`AGENTS.md`.
 
 ## License
 

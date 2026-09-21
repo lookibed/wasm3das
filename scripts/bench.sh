@@ -44,12 +44,14 @@ BASELINE="${BASELINE:-wasm3-c}"
 WASMTIME="${WASMTIME:-$repo_root/tools/bin/wasmtime}"
 WASM3C="${WASM3C:-$repo_root/tools/bin/wasm3}"
 NATIVE="${NATIVE:-$repo_root/tmp/native/bin/wasm3das}"
+CTX="${CTX:-$repo_root/tmp/native-ctx/bin/wasm3das}"
+EXE="${EXE:-$repo_root/tmp/native-exe/bin/wasm3das.exe}"
 : "${DASLANG_ROOT:?set DASLANG_ROOT to your daslang checkout at the pinned commit; see README, Install and run}"
 DASLANG="${DASLANG:-$DASLANG_ROOT/bin/daslang}"
 DASLANG_JIT="${DASLANG_JIT:-$DASLANG}"
 JIT_APP="${JIT_APP:-}"
 
-ALL_ENGINES="wasmtime wasm3-c wasm3das-interp wasm3das-jit wasm3das-jit-nocache wasm3das-native"
+ALL_ENGINES="wasmtime wasm3-c wasm3das-interp wasm3das-jit wasm3das-jit-nocache wasm3das-native wasm3das-ctx wasm3das-exe"
 ENGINES="${ENGINES:-$ALL_ENGINES}"
 
 # Engines whose cost does not depend on N: only the start-up column is measured
@@ -68,6 +70,8 @@ engine_binary() {
         wasm3das-interp)                 echo "$DASLANG" ;;
         wasm3das-jit|wasm3das-jit-nocache) echo "$DASLANG_JIT" ;;
         wasm3das-native)                 echo "$NATIVE" ;;
+        wasm3das-ctx)                    echo "$CTX" ;;
+        wasm3das-exe)                    echo "$EXE" ;;
         *)                               echo "" ;;
     esac
 }
@@ -79,7 +83,9 @@ engine_label() {
         wasm3das-interp)      echo "wasm3das, daslang interpreter" ;;
         wasm3das-jit)         echo "wasm3das, daslang -jit (cached DLL)" ;;
         wasm3das-jit-nocache) echo "wasm3das, daslang -jit -jit-no-cache" ;;
-        wasm3das-native)      echo "wasm3das, native build" ;;
+        wasm3das-native)      echo "wasm3das, native build (aot)" ;;
+        wasm3das-ctx)         echo "wasm3das, standalone context (ctx)" ;;
+        wasm3das-exe)         echo "wasm3das, LLVM executable (exe)" ;;
         *)                    echo "$1" ;;
     esac
 }
@@ -112,6 +118,14 @@ engine_cmd() {
             else
                 CMD=("$NATIVE" --func "$FUNC" "$WASM" "$n")
             fi ;;
+        wasm3das-ctx)
+            # scripts/wasm3-ctx forwards the arguments unchanged; the binary
+            # carries its own thread stack, so no limit is raised.
+            CMD=(env "WASM3DAS_CTX=$CTX" "$repo_root/scripts/wasm3-ctx" "$WASM" --func "$FUNC" "$n") ;;
+        wasm3das-exe)
+            # scripts/wasm3-exe raises the stack limit and places the
+            # arguments after the `--` the app expects.
+            CMD=(env "WASM3DAS_EXE=$EXE" "$repo_root/scripts/wasm3-exe" "$WASM" --func "$FUNC" "$n") ;;
         *)
             CMD=() ;;
     esac
