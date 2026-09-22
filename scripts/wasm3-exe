@@ -1,4 +1,4 @@
-#!/usr/bin/env bash
+#!/bin/sh
 # wasm3 command line front end for the `-exe` build of the Daslang port: the
 # same drop-in replacement for the C `wasm3` binary that scripts/wasm3,
 # scripts/wasm3-native and scripts/wasm3-ctx provide, backed by the
@@ -15,13 +15,17 @@
 #   WASM3DAS_EXE   the executable (default: tmp/native-exe/bin/wasm3das.exe;
 #                  daslang -exe names its output with the suffix on every
 #                  platform, an ELF binary on Linux despite the name)
-set -euo pipefail
+#
+# POSIX sh, not bash: this script runs in front of every process the fixture
+# corpus and the WASI driver start, and bash's own start (about 2 ms on the
+# stand) is a tenth of the executable's. It needs nothing bash has.
+set -eu
 
-repo_root="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")/.." && pwd)"
+repo_root="$(cd -- "$(dirname -- "$0")/.." && pwd)"
 
 EXE="${WASM3DAS_EXE:-$repo_root/tmp/native-exe/bin/wasm3das.exe}"
 
-if [[ ! -x "$EXE" ]]; then
+if [ ! -x "$EXE" ]; then
     echo "wasm3-exe: missing executable at $EXE (run scripts/build_port.sh exe)" >&2
     exit 1
 fi
