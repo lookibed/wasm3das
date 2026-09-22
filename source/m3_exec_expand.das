@@ -12,6 +12,7 @@ module m3_exec_expand shared private
 // macro therefore registers itself through add_new_infer_macro and builds its
 // three generated nodes (ExprUnsafe, ExprLet, ExprVar) by hand.
 require daslib/ast
+require strings
 
 /*
     The C preprocessor's counterpart for the operand readers of m3_exec.
@@ -409,6 +410,15 @@ class private ExpandReaders : AstVisitor {
     }
 }
 
+// The functions of m3_exec on the operation path: every operation (`def public
+// op_<name> (d_m3OpSig)`, told apart by its five parameters). The dispatch
+// between them - RunLoop, nextOpImpl, jumpOpImpl, RunCode - lives in
+// m3_exec_defs, which this pass never visits (it compiles before m3_exec and
+// does not require this module), so those carry `[unsafe_deref]` in source.
+def private is_operation_path(var fn : FunctionPtr) : bool {
+    return (fn.name |> starts_with("op_")) && length(fn.arguments) == 5
+}
+
 //! Expands the m3_exec operand readers at their use sites, the way the C
 //! preprocessor expands immediate()/slot()/slot_ptr().
 class M3ExecExpandPass : AstPassMacro {
@@ -431,13 +441,17 @@ class M3ExecExpandPass : AstPassMacro {
         var ok = true
         for_each_function(mod, "") $(var fn : FunctionPtr) {
             // C dereferences _pc, _sp and the memory pointers unchecked; the
-            // daslang backends test every pointer for null before a deref
-            // unless the function carries the unsafe_deref flag ([unsafe_deref]
-            // in source). Set here for the whole module - the operations, the
-            // operand readers and their helpers - so the JIT emits the C shape:
-            // three null tests fewer per executed operation (measured on the
-            // cached DLL with objdump, docs/native-build.md section 7, E7).
-            fn.flags.unsafeDeref = true
+            // daslang backends test a pointer for null before a deref unless
+            // the function being generated carries the unsafe_deref flag
+            // (what `[unsafe_deref]` in source sets). Set here on the
+            // operations - the functions whose own code runs once per
+            // executed wasm instruction - and on nothing else of the module.
+            // Not on the readers: their bodies are cloned into the operations
+            // above, and the backends test the flag of the function they
+            // generate, so a reader's own flag would change no instruction.
+            if (is_operation_path(fn)) {
+                fn.flags.unsafeDeref = true
+            }
             if (!is_reader_name(string(fn.name))) return
             var r : Reader
             if (!split_reader(fn, r)) {

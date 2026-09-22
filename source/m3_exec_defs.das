@@ -115,6 +115,10 @@ var public m3Ret_nextOp : M3Result = "m3: dispatch the operation at _pc"
 // wasm operation. `r` starts at the sentinel, which is the state "the word at
 // _pc still has to be dispatched"; C's threaded form has the same shape,
 // because there the first operation is entered unconditionally.
+// [unsafe_deref], as on every operation (m3_exec_expand sets the flag there):
+// C reads the word at _pc unchecked, and the dispatch runs once per executed
+// operation.
+[unsafe_deref]
 def public RunLoop(var _pc : pc_t; var _sp : m3stack_t; var _mem : M3MemoryHeader?; var _r0 : m3reg_t; var _fp0 : f64) : M3Result {
     var r : M3Result = m3Ret_nextOp
     unsafe {
@@ -132,11 +136,13 @@ def public RunLoop(var _pc : pc_t; var _sp : m3stack_t; var _mem : M3MemoryHeade
 // Deliberately not [inline], unlike the operand readers: the five parameters
 // are by value, so an inline splice replaces one call node by five
 // argument-copy nodes plus the result temporary, which measures slower.
+[unsafe_deref]
 def public nextOpImpl(var _pc : pc_t; var _sp : m3stack_t; var _mem : M3MemoryHeader?; var _r0 : m3reg_t; var _fp0 : f64) : M3Result {
     return RunLoop(_pc, _sp, _mem, _r0, _fp0)
 }
 
 // C: #define jumpOpImpl(PC) ((IM3Operation)(* PC))( PC + 1, d_m3OpArgs)
+[unsafe_deref]
 def public jumpOpImpl(var pc : pc_t; var _sp : m3stack_t; var _mem : M3MemoryHeader?; var _r0 : m3reg_t; var _fp0 : f64) : M3Result {
     return RunLoop(pc, _sp, _mem, _r0, _fp0)
 }
@@ -165,6 +171,7 @@ def public jumpOpDirect(var _pc : pc_t&; var PC : pc_t) : M3Result {
 
 
 // C: d_m3RetSig RunCode (d_m3OpSig) { nextOpDirect(); }
+[unsafe_deref]
 def public RunCode(var _pc : pc_t; var _sp : m3stack_t; var _mem : M3MemoryHeader?; var _r0 : m3reg_t; var _fp0 : f64) : M3Result {
     return RunLoop(_pc, _sp, _mem, _r0, _fp0)
 }
