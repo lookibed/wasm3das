@@ -195,9 +195,12 @@ scripts/wasm3-ctx wasm3c/test/lang/fib32.wasm --func fib 35   # ~50 ms total
 ```
 
 The measured column in `tests/manual/fixture_report.md` is
-`wasm3das(aot_ctx)`. This tier is the fast one (`docs/native-build.md`,
-section 7). It depends on two changes to daslang's `-ctx` emitter, neither
-upstream: the
+`wasm3das(aot_ctx)`. It is the reference tier (g++), not the headline: the
+tiers that matter are the interpreter and jit/exe, and on the fixture corpus
+the `exe` tier below executes at 0.9x of the C wasm3 with a 17 ms start
+while the interpreter, the console target, stays at 30x
+(`docs/native-build.md`, sections 1 and 7). The ctx tier depends on two
+changes to daslang's `-ctx` emitter, neither upstream: the
 daslang fork took the first on 2026-09-21 (direct calls into required
 modules, `notes/upstream_cases/ctx_direct_calls.patch`) and the second is
 pending (`ctx_used_modules.patch`); `build_port.sh ctx` applies whichever
