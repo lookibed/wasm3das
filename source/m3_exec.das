@@ -108,35 +108,13 @@ def private CompileFunction(var io_function : IM3Function) : M3Result {
 
 
 // ============================================================================
-// C string.h replacements for op_MemCopy / op_MemFill
+// C string.h in op_MemCopy / op_MemFill / op_Entry
 // ============================================================================
 
 
-// `dst` is `var`: it is the destination of the move, and the daslang JIT marks
-// a non-`var` pointer parameter LLVM `readonly` (upstream #3991).
-def c_memmove(var dst : u8?; src : u8?; size : u32) {
-    unsafe {
-        var dptr = dst
-        var sptr = reinterpret<u8?>(src)
-        if (size == 0u) { return }
-        let d = reinterpret<i64>(dptr)
-        let s = reinterpret<i64>(sptr)
-        // Disjoint ranges are the common case and C's memmove hands them to the
-        // same block copy memcpy uses; only a true overlap needs the direction
-        // dependent element loop.
-        if (d + int64(size) <= s || s + int64(size) <= d) {
-            memcpy(dptr, sptr, size)
-        } elif (d < s) {
-            for (i in 0..int(size)) { dptr[i] = sptr[i] }
-        } else {
-            var i = int(size) - 1
-            while (i >= 0) { dptr[i] = sptr[i]; i-- }
-        }
-    }
-}
-
-// C's `memset` needs no replacement: `memset8` is the daslang builtin block
-// fill, and op_Entry and op_MemFill call it directly the way C calls memset.
+// C's `memmove`, `memset` and `memcpy` need no replacement: `memmove`,
+// `memset8` and `memcpy` are the daslang builtins with the same contract, and
+// op_MemCopy, op_MemFill and op_Entry call them directly the way C calls libc.
 
 // ============================================================================
 // libm replacements (C copysignf/copysign)
@@ -3347,9 +3325,9 @@ def public op_MemCopy(var _pc : pc_t; var _sp : m3stack_t; var _mem : M3MemoryHe
     let destination = u64(slot_u32(_pc, _sp))
     if (destination + u64(size) <= _mem.length) {
         if (source + u64(size) <= _mem.length) {
-            var dst = unsafe(m3MemData(_mem) + int64(destination))
+            let dst = unsafe(m3MemData(_mem) + int64(destination))
             let src = unsafe(m3MemData(_mem) + int64(source))
-            c_memmove(dst, src, size)
+            unsafe(memmove(dst, src, size))
             return nextOpDirect(_pc, _sp, _mem, _r0, _fp0)
         }
     }
