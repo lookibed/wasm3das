@@ -603,8 +603,9 @@ def private dispatch_shape(prog : ProgramPtr) : string {
     for (a in prog._options) {
         if (a.name == "_m3_dispatch" && a.basicType == Type.tString) return string(a.sValue)
     }
-    // the measured default, docs/native-build.md section 6, E9
-    return "chain_noinline"
+    // the measured default (docs/native-build.md section 6, E9 and E10), the
+    // same value m3_exec.das sets, so a missing option and the written one agree
+    return "chain"
 }
 
 // `options _m3_jit_readers = "<mode>"` at the top of m3_exec.das, read the same
