@@ -523,6 +523,80 @@ the arms become single five-byte `jmp`s), and it still loses: fib 35 median
 The prologue is paid only by the operations LLVM did *not* inline, and taking
 the inlining away costs the hot ones two jumps each. The shape stays available.
 
+### E11, the starts of the two JIT tiers (2026-09-22, `perf/jit-hyp-start`)
+
+Stand loaded by other jobs (load average 2-7), every timing pinned to one
+core (`taskset -c 12`) and interleaved round by round; the harness itself
+(`taskset` + `nice` + fork) costs 2.6 ms, the time of `/bin/true`.
+
+**jit**, `fib 1` from the DLL cache, 0.76-0.99 s per process. strace
+counts 12 ms of system calls: the start is CPU work in four parts, read
+from the syscall timeline and `options log_compile_time` (which also prints
+the JIT's own phases): about 0.34 s to the end of the front end (the
+dynamic modules, the compile of `app/` and `source/` served from daslang's
+AST module cache, 0.18 s of it the cache read, and the simulation), 0.2-0.6 s
+`hash` in `make_jit_plan` (the AOT hash of all 990 candidate functions,
+which names the DLL, `llvm_jit_plan.das:928`), 0.15-0.22 s `install` (the
+per-function probe of the DLL and `resolve_dll_externs`,
+`llvm_jit_link.das:77-100`), and 45 ms of teardown. None of daslang's
+switches moves it, 10 interleaved rounds each:
+
+| variant | median | min |
+|---|---:|---:|
+| interpreter, no `-jit` (control) | 0.198 s | 0.184 s |
+| `-jit` (the module cache is on by default, silently, `.jitted_scripts/module_cache/`) | 0.881 s | 0.762 s |
+| `-jit -no-module-cache` | 3.516 s | 3.058 s |
+| `-jit -output <fixed path>` (no DLL-name hash; the probe computes the same hashes) | 0.918 s | 0.721 s |
+| `-jit -no-dynamic-modules -load_module modules/dasLLVM` | 0.886 s | 0.718 s |
+| the last two together | 0.854 s | 0.695 s |
+| `--jit-split-modules=0` (one unit, fixed path) | 0.834 s | 0.758 s |
+
+`--jit-obj-cache` acts on a miss only. The explicit `-module-cache <path>`
+still prints `ser: reparsing in place ...` and `deser: partial` to stdout
+(B4); the spec subset passes through it anyway (446/446), and the default
+cache prints nothing. One unit against the split DLL does not change
+execution either (fib 35 1.74 s against 1.80 s). Interleaving two DLL
+shapes under the default path makes each run garbage-collect the other's
+DLL, so every such comparison needs `-output`.
+
+**exe**, `fib 1`, 21-23 ms. The dynamic loader is 0.3 ms (`LD_DEBUG=statistics`:
+3 573 symbol and 179 675 relative relocations). A timing preload over the
+runtime entry points the generated `main` calls: `jit_register_Module_BuiltIn`
+6.3 ms, `Rtti` 1.4, `Math` 0.8, `Strings` 0.5, `FIO` 0.4,
+`jit_initialize_modules_done` 1.1, the program 1 ms, `jit_shutdown` 2.3 ms;
+the rest is exec, mapping and relocating the 37 MB shared runtime, and the
+exit. What the port changed, 20 interleaved rounds:
+
+| exe | start median | min |
+|---|---:|---:|
+| daslang's link, shared runtime, through the bash launcher | 24.8 ms | 23.8 ms |
+| the same, run directly | 21.1-22.6 ms | 20.5-21.6 ms |
+| relinked against `liblibDaScript_runtime.a`, `-no-pie -Wl,--gc-sections -static-libstdc++` (kept, `build_port.sh exe`) | 17.4-18.0 ms | 15.9-16.9 ms |
+| the same with `-static` (glibc too) | 17.7 ms | 17.0 ms |
+| the launcher in POSIX sh (kept) instead of bash | -2.1 ms | |
+
+`daslang -exe` has no static-runtime switch (`--jit-lib-static` makes an
+archive of a `-lib` build, and the `jit_path_to_shared_lib` policy is set by
+no option), so `build_port.sh` links daslang's object again. On execution
+the static link ties (fib 35 and mandelbrot equal; coremark medians 13.3-13.7
+against 13.6-14.9 s, but its minimum was the shared build's in four of four
+runs, by 1-10 %); the fully static `-static` form lost 8 % on coremark and was
+not kept. `--jit-split-modules=-1` and `--jit-size-level=1` change neither
+the start nor execution; `--jit-lto` cannot run on this stand, the only
+clang is 18 and the partitions are LLVM 22 bitcode (`Unknown attribute kind
+(102)`).
+
+**The reader expansion under the JIT** (`options _m3_jit_readers` in
+`m3_exec.das`): "expand" (the pass, as every tier), "splice" (daslang's own
+`[inline]` splice) and "llvm" (the `[inline]` helpers of `m3_exec` lose
+`mustInline` and carry `[hint(alwaysinline)]`) build exes whose text differs
+in 20 KB of 662 KB; minimum of 5 rounds, fib 35 0.730 / 0.738 / 0.753 s,
+coremark 12.07 / 14.06 / 12.21 s (a second run of 4: 12.37 / 12.79 /
+12.58), mandelbrot 128 4e5 1.195 / 1.171 / 1.255 s, smallpt 16 64 2.656 /
+2.586 / 2.849 s: a tie inside the spread, so "expand" stays the default.
+Clearing the contract of `m3_exec_defs`' accessors from the pass crashes
+`daslang -exe`, so "llvm" covers `m3_exec` alone.
+
 ## 7. The plan to beat C wasm3, and the experiments so far (2026-09-21)
 
 Where the ctx tier's time goes is one fact: between wasm operations the port
