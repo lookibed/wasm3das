@@ -92,12 +92,6 @@ var public ResizeMemoryHook : function<(var io_runtime : IM3Runtime; i_numPages 
 // CompileFunction fills function->compiled), and the daslang JIT gives a
 // non-`var` pointer parameter the LLVM `readonly` attribute (upstream #3991),
 // which folds the caller's read of that memory from `--jit-opt-level=1` up.
-// Both are [hint(noinline)], out of line as they are in C (m3_env.c,
-// m3_compile.c): the invoke of a hook passes its arguments in a stack buffer,
-// and once LLVM inlines that into op_CallIndirect, op_Compile or op_MemGrow
-// the escaped buffer forbids the tail call of their nextOpDirect, so the
-// JIT tiers nested one native frame per executed call_indirect.
-[hint(noinline)]
 def private ResizeMemory(var io_runtime : IM3Runtime; i_numPages : u32) : M3Result {
     if (ResizeMemoryHook == null) {
         return "memory resize hook is not wired"
@@ -105,7 +99,6 @@ def private ResizeMemory(var io_runtime : IM3Runtime; i_numPages : u32) : M3Resu
     return ResizeMemoryHook(io_runtime, i_numPages)
 }
 
-[hint(noinline)]
 def private CompileFunction(var io_function : IM3Function) : M3Result {
     if (CompileFunctionHook == null) {
         return "lazy compilation hook is not wired"
