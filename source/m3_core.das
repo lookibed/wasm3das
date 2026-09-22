@@ -349,13 +349,29 @@ let public m3Err_trapStackOverflow : M3Result = "[trap] stack overflow"
 // ============================================================================
 
 
+// C tests an M3Result against NULL (`if (r)`, `if (!r)`): one pointer test.
+// The port's M3Result is a string and m3Err_none is "", which every daslang
+// tier represents as the null pointer (the AOT/ctx emitter writes `nullptr`
+// for an empty constant, the interpreter, the JIT and the string builder
+// produce null for an empty string). `empty(result)` means the same, but the
+// LLVM JIT reaches the runtime's `empty` through a function pointer
+// (llvm_jit_intrin.das lowers `empty` only for arrays and tables), so on the
+// JIT tiers every wasm call, trapping division and float-to-int conversion
+// paid an opaque call, and the constant result of an inlined OP_DIV_S could
+// not fold. The two helpers keep `empty`'s contract - a null pointer or a
+// zero first byte is success - and are spelled as the pointer test, which
+// every backend inlines.
+[inline]
 def public m3ResultIsOk(result : M3Result) : bool {
-    return result == m3Err_none
+    let p = unsafe(reinterpret<uint8 const?>(result))
+    return p == null || *p == 0u8
 }
 
 
+[inline]
 def public m3ResultIsError(result : M3Result) : bool {
-    return result != m3Err_none
+    let p = unsafe(reinterpret<uint8 const?>(result))
+    return p != null && *p != 0u8
 }
 
 
