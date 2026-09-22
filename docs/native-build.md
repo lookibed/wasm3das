@@ -41,20 +41,22 @@ session (2026-09-21, load average 0.5-1.2, section 7 E1 + E4 + E5 + E7,
 
 | runtime | total | x C | start | without start | x C |
 |---|---:|---:|---:|---:|---:|
-| wasm3 C | 3.000 s | 1.0x | 0.001 s | 2.886 s | 1.0x |
-| wasmtime | 3.393 s | 1.1x | 0.010 s | 2.371 s | 0.8x |
-| **ctx** | **2.979 s** | **0.99x** | 0.014 s | **1.585 s** | **0.5x** |
-| **exe** | 4.014 s | 1.3x | 0.018 s | **2.296 s** | **0.8x** |
-| jit | 1m14.1 s | 25x | 0.691 s | 6.4 s | 2.2x (noisy: the front end's 0.7 s per process varies with the load) |
-| interpreter | 2m25.7 s | 49x | 0.195 s | 2m06.6 s | 44x |
-| aot | 3m14.1 s | 65x | 0.778 s | 1m57.8 s | 41x |
+| wasm3 C | 2.965 s | 1.0x | 0.001 s | 2.838 s | 1.0x |
+| wasmtime | 3.344 s | 1.1x | 0.010 s | 2.330 s | 0.8x |
+| **ctx** | **2.995 s** | **1.0x** | 0.013 s | **1.682 s** | **0.6x** |
+| **exe** | 4.019 s | 1.4x | 0.017 s | **2.354 s** | **0.8x** |
+| jit | 1m13.0 s | 25x | 0.671 s | 7.2 s | 2.5x (noisy: the front end's 0.7 s per process varies with the load) |
+| interpreter | 2m25.9 s | 49x | 0.193 s | 2m06.9 s | 45x |
+| aot | 3m10.6 s | 64x | 0.683 s | 2m03.7 s | 44x |
 
-(2026-09-22, branch `perf/jit-dispatch-v2` with E9-E13 and the alignment of
-section 4, load average 2-3; the two runs before it: the same day with E9 +
-E10 alone, ctx 3.012 s / 1.618 s (1.00x / 0.56x), exe 4.725 s / 2.410 s
-(1.6x / 0.8x), jit 4.155 s (1.4x); 2026-09-21 on `perf/cform-abi-full`, ctx
-3.181 s / 1.849 s (1.06x / 0.6x), exe 7.128 s / 4.838 s (2.4x / 1.7x), jit
-11.19 s (3.9x).) All 86 documented results match on every runtime. The ctx
+(2026-09-23 00:00, the merged `perf/jit-dispatch-v2` with E9-E13 and the
+alignment of section 4, started at load average 1.2 on an otherwise idle
+stand; three runs of the same binaries the evening before at load 2-3 gave
+ctx 2.979-3.225 s / 1.585-1.947 s and exe 4.014-4.276 s / 2.296-2.629 s,
+which is the spread to expect. The runs before this branch: 2026-09-22 with
+E9 + E10 alone, ctx 3.012 s / 1.618 s (1.00x / 0.56x), exe 4.725 s / 2.410 s
+(1.6x / 0.8x); 2026-09-21 on `perf/cform-abi-full`, ctx 3.181 s / 1.849 s
+(1.06x / 0.6x), exe 7.128 s / 4.838 s (2.4x / 1.7x), jit 11.19 s (3.9x).) All 86 documented results match on every runtime. The ctx
 tier is at the C wasm3 on the corpus total and runs its execution at 0.5x;
 by coremark's own score it is ahead of C (1700 against 1620, three
 interleaved rounds). The exe tier runs its execution at 0.8x of C and is
@@ -323,8 +325,12 @@ Median of 3, wall clock from process start to exit, seconds:
 | wasm3das, LLVM executable (exe) | 0.019 | 0.024 | 0.074 | 0.645 | 1.6x |
 
 coremark by its own score (higher is faster; three interleaved rounds
-pinned to one core): C 1614-1630, ctx 1676-1706, exe 1019-1028. Every
-engine returned the C reference's values. Against the run below (E9 + E10
+pinned to one core): C 1614-1630, ctx 1676-1706, exe 1019-1028. Two more
+runs of the same binaries (2026-09-22 23:30 and 2026-09-23 00:00, another
+session's build raising the load to 3 during both): C 1551-1644, ctx
+1575-1681, exe 930-1079; fib 35 C 0.388 / 0.438, ctx 0.411 / 0.437, exe
+0.625 / 0.656, jit 1.404 / 1.756 s. Every engine returned the C
+reference's values. Against the run below (E9 + E10
 alone): exe fib 35 0.788 -> 0.645 s and its start 26 -> 19 ms (E12, E13),
 ctx unchanged within the spread.
 
@@ -394,11 +400,11 @@ Brotli 3.726 / 50.894; C wasm3 0.839 s for the whole list.
 
 The current run is the table of section 1 (2026-09-22, the merged
 `perf/jit-dispatch-v2`: the C form with E1, E5, E7, E9-E13 and the
-alignment of section 4, `tests/manual/fixture_report.md`): wasm3 C 3.000 s;
-wasmtime 3.393 s; interpreter 2m25.7 s / 0.195 s / 44x; aot 3m14.1 s /
-0.778 s / 41x; aot_ctx 2.979 s / 0.014 s / 0.5x (0.99x of C end to end);
-jit 1m14.1 s / 0.691 s / 2.2x (noisy); exe 4.014 s / 0.018 s / 0.8x (1.3x
-end to end). The same day with E9 + E10 alone: aot_ctx 3.012 s / 1.618 s,
+alignment of section 4, `tests/manual/fixture_report.md`, 2026-09-23 on an
+idle stand): wasm3 C 2.965 s; wasmtime 3.344 s; interpreter 2m25.9 s /
+0.193 s / 45x; aot 3m10.6 s / 0.683 s / 44x; aot_ctx 2.995 s / 0.013 s /
+0.6x (1.0x of C end to end); jit 1m13.0 s / 0.671 s / 2.5x (noisy); exe
+4.019 s / 0.017 s / 0.8x (1.4x end to end). The same day with E9 + E10 alone: aot_ctx 3.012 s / 1.618 s,
 exe 4.725 s / 2.410 s, jit 4.155 s without start. The run of 2026-09-21 (`perf/cform-abi-full`, before E9 and E10):
 wasm3 C 3.002 s; wasmtime 3.505 s; interpreter 2m24.8 s / 0.181 s / 44x;
 aot 3m09.1 s / 0.830 s / 37x; aot_ctx 3.181 s / 0.014 s / 0.6x; jit 54.3 s /
