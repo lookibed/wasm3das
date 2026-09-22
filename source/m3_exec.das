@@ -5,6 +5,11 @@ options indenting = 4
 // or "chain_noinline". It has no effect in any other tier. See the "Operation
 // dispatch" section below and dispatch_shape in m3_exec_expand.das.
 options _m3_dispatch = "chain"
+// How the operand readers and the other [inline] helpers reach the LLVM JIT
+// tier: "expand" (the reader expansion every tier gets), "splice" (daslang's
+// own [inline] splice) or "llvm" (`[hint(alwaysinline)]`, LLVM inlines). No
+// effect in any other tier. See jit_readers_mode in m3_exec_expand.das.
+options _m3_jit_readers = "expand"
 
 module m3_exec shared public
 

@@ -505,6 +505,17 @@ class M3ExecExpandPass : AstPassMacro {
         // gated by canVisitPass at index 0)
         if (mod.name != "m3_exec" || expanded) return false
         expanded = true
+        // Under the LLVM JIT the expansion is a choice, not a necessity: LLVM
+        // folds the temporaries of daslang's own [inline] splice, which the
+        // interpreter pays node by node. `options _m3_jit_readers` in
+        // m3_exec.das picks it (see jit_readers_mode); every other tier expands.
+        let readersMode = prog.policies.jit_enabled ? jit_readers_mode(prog) : "expand"
+        if (readersMode != "expand") {
+            for_each_function(mod, "") $(var fn : FunctionPtr) {
+                fn.flags.unsafeDeref = true
+            }
+            return readersMode == "llvm" ? inline_by_llvm(prog, mod) : false
+        }
         var expander = new ExpandReaders()
         expander.prog := prog
         var ok = true
@@ -594,6 +605,42 @@ def private dispatch_shape(prog : ProgramPtr) : string {
     }
     // the measured default, docs/native-build.md section 6, E9
     return "chain_noinline"
+}
+
+// `options _m3_jit_readers = "<mode>"` at the top of m3_exec.das, read the same
+// way and for the same reason as `_m3_dispatch`: how the operand readers and the
+// other [inline] helpers of the operations reach the LLVM JIT tier.
+//
+//     "expand"  the reader expansion of M3ExecExpandPass, what every other tier
+//               compiles;
+//     "splice"  no expansion: daslang's own [inline] splice of the readers,
+//               whose result and argument temporaries LLVM folds;
+//     "llvm"    no expansion and no splice: the [inline] helpers of m3_exec
+//               lose the daslang inliner's contract and carry
+//               `[hint(alwaysinline)]`, so LLVM inlines the calls itself.
+def private jit_readers_mode(prog : ProgramPtr) : string {
+    for (a in prog._options) {
+        if (a.name == "_m3_jit_readers" && a.basicType == Type.tString) return string(a.sValue)
+    }
+    return "expand"
+}
+
+// The "llvm" mode of jit_readers_mode: every [inline] function of m3_exec is
+// handed to LLVM's inliner instead of daslang's. Only flags and an annotation
+// change, so nothing is re-inferred. The memory accessors of m3_exec_defs stay
+// [inline]: that module is already compiled when this pass runs, and clearing
+// its functions' contract from here crashes `daslang -exe` (a segmentation
+// fault in the compiler, 2026-09-22).
+def private inline_by_llvm(prog : ProgramPtr; mod : Module?) : bool {
+    for_each_function(mod, "") $(var fn : FunctionPtr) {
+        if (fn.moreFlags.mustInline) {
+            fn.moreFlags.mustInline = false
+            if (!add_hint(fn, "alwaysinline")) {
+                macro_sticky_error(prog, fn.at, "m3_exec_expand: the builtin `hint` annotation is missing")
+            }
+        }
+    }
+    return false
 }
 
 // C's d_m3OpAllArgs, spelled from the function being generated: the names bind
@@ -689,17 +736,18 @@ def private set_body_stmt(var fn : FunctionPtr; var stmt : ExpressionPtr) {
     set_body(fn, body)
 }
 
-// `[hint(noinline)]` on an operation, added here rather than written in
-// m3_exec.das because it is meaningful to the JIT alone and the other tiers
-// must compile the source form untouched.
-def private hint_noinline(var fn : FunctionPtr) : bool {
+// `[hint(<name>)]` on a function (noinline on an operation, alwaysinline on a
+// helper), added here rather than written in m3_exec.das because it is
+// meaningful to the JIT alone and the other tiers must compile the source form
+// untouched.
+def private add_hint(var fn : FunctionPtr; name : string) : bool {
     var builtin = find_compiling_module("$")
     if (builtin == null) return false
     var hint = module_find_annotation(builtin, "hint")
     if (hint == null) return false
     var decl = new AnnotationDeclaration(uninitialized)
     decl.annotation = hint
-    let argIdx = decl.arguments |> add_annotation_argument("noinline")
+    let argIdx = decl.arguments |> add_annotation_argument(name)
     decl.arguments[argIdx].basicType = Type.tBool
     decl.arguments[argIdx].bValue = true
     add_function_annotation(fn, decl)
@@ -735,7 +783,7 @@ class M3ExecDispatchPass : AstPassMacro {
             if ((fn.name |> starts_with("op_")) && length(fn.arguments) == 5) {
                 names |> push(string(fn.name))
                 if (noinline) {
-                    hint_noinline(fn)
+                    add_hint(fn, "noinline")
                 }
             }
         }
