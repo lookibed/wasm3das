@@ -1,7 +1,9 @@
 # Executor design: the missing `M3_MUSTTAIL` and what an operation costs
 
-Decided 2026-09-06 (RunLoop dispatch) and 2026-09-08 (operand-reader
-expansion). Owners: `source/m3_exec.das`, `source/m3_exec_defs.das`,
+Decided 2026-09-06 (RunLoop dispatch), 2026-09-08 (operand-reader expansion),
+2026-09-21 (C's form of the operation ABI restored, section 6) and 2026-09-22
+(the LLVM JIT's own dispatch, section 7).
+Owners: `source/m3_exec.das`, `source/m3_exec_defs.das`,
 `source/m3_exec_expand.das`, `source/m3_compile.das`, `source/m3_core.das`.
 This document replaces the working notes `exec_trampoline_design.md` and
 `interp_node_cost_2026-09-08.md`; every number below comes from them.
@@ -334,10 +336,88 @@ tier is ctx. Two asks to daslang remain: the emitter patch itself
 LLVM JIT for `return f(args)` with matching signatures, which would carry the
 same win to the exe tier (25 ms start).
 
-## 7. Open
+## 7. The LLVM JIT's own dispatch (2026-09-22)
+
+Section 6 ends with "the LLVM JIT emits no tail call for `return f(...)`". That
+is true only for a call **through a function value**, which is what the C form
+is: `((IM3Operation)(* _pc))(...)`. daslang lowers such an invoke to the generic
+wrapper ABI — the five registers are written into an argument buffer on the
+stack and the target is reached with `call *%rax` — and LLVM cannot turn that
+into a tail call, so under `-jit` and `-exe` a wasm loop nests one native frame
+per executed operation. A **direct** call in return position, with the same
+signature, is a sibling-call jump for LLVM exactly as it is for gcc; a
+64-operation micro-model measured 2.1–2.6 ns per dispatched step for the direct
+shape against 33–41 ns for the invoke.
+
+The port therefore keeps C's form as the source form and lets an infer pass
+change it for that one tier. `prog.policies.jit_enabled` is set by `-jit` and by
+`-exe` and is false for the daslang interpreter and for the `-aot`/`-ctx`
+emission, so `M3ExecDispatchPass` (`source/m3_exec_expand.das`) runs only under
+the JIT and replaces six placeholder bodies of `m3_exec.das`:
+
+| placeholder | source form (every other tier) | JIT form |
+|---|---|---|
+| `m3_OpWord(op)` | `reinterpret<u64>(op)` — the cast C's `EmitWord(page, op)` macro does | `m3_OpIndex(op)`, the operation's index |
+| `nextOpImpl`, `jumpOpImpl` | `((IM3Operation)(* pc))(pc + 1, ...)` | `return m3_DispatchOp(pc, ...)` |
+| `m3_DispatchOp` | `return m3Err_none` (never called) | `let idx = m3_WordIndex(_pc)` and the generated dispatch, whose leaves are `return op_<name>(_pc, _sp, _mem, _r0, _fp0)` |
+| `m3_OpAt`, `m3_OpCount` | `@@op_NoOp`, `0` | the same tree over `@@op_<name>`, and the count, for the reverse map `m3_OpIndex` |
+
+The index is the position of the operation in the `op_*` names of `m3_exec`
+sorted by byte order, so it is a function of the source alone. Nothing outside
+`m3_exec` sees it: the compile tables of `m3_compile.das` keep C's
+`IM3Operation` values (`c_setSetOps`, the `M3OP(...)` rows, `c_opNull`,
+`IsNoOp`), and every emission of an operation word — `EmitOp`,
+`EnsureCodePageNumLines`, `CompileRawFunction` and the `op_Compile`
+self-rewrite — goes through `m3_OpWord`. `op_NoOp` moved from `m3_compile.das`
+to `m3_exec.das` because `Compile_Select` emits it unguarded on a polymorphic
+stack, so it does reach a code page and needs an index like any other
+operation; `nextOpImpl`, `jumpOpImpl`, `nextOpDirect`, `jumpOpDirect` and
+`RunCode` moved from `m3_exec_defs.das` for the same reason the dispatch lives
+there — only `m3_exec.das` sees every `op_*` for a direct call.
+
+The shape of the dispatch is an empirical question, so it is an option,
+`options _m3_dispatch` at the top of `m3_exec.das` (it has to be that file:
+`m3_exec` is a `shared` module and compiles as a program of its own, so the
+`ProgramPtr` the pass is handed carries that module's options, not the entry
+file's; the leading underscore is what makes daslang accept an unregistered
+option):
+
+- `"chain"` (the measured default) — one `if (idx == k) return op_k(...)` per
+  operation, which LLVM folds into a switch with a jump table;
+- `"tree"` — a balanced `if (idx < mid)` tree;
+- `"noinline"` — the tree, with `[hint(noinline)]` added by the pass to every
+  operation, so LLVM cannot inline a small one into the dispatch;
+- `"chain_noinline"` — the jump table and that hint together, so the dispatch
+  keeps no callee-saved register and no frame at all (8 instructions from
+  entry to the indirect jump, 0xad8 bytes against 0x2f0a). Measured and
+  rejected in `docs/native-build.md`, section 6, E10: the prologue is paid
+  only by the operations LLVM did not inline, and taking the inlining away
+  costs the hot ones two jumps each.
+
+What objdump shows on the cached DLL is in `docs/native-build.md`, section 6,
+E9, with the measurements. In one line: before, the operation already ended in
+`jmp nextOpImpl` but `nextOpImpl` was 156 bytes that spilled the five registers
+into a 0x50-byte argument buffer, loaded `SimFunction::jitFunction` and
+`call`ed it — a frame per operation; after, `nextOpImpl` is a single 5-byte
+`jmp` into `m3_DispatchOp` and the dispatch's arms are `jmp`s back into the
+operations, so nothing in the chain allocates. The one thing that differs between the shapes is the dispatch's own
+prologue: with `"tree"` and `"chain"` LLVM inlines roughly half the operations
+into it and hoists their constants, so the dispatch pushes six registers,
+allocates a frame and loads four SSE constants before the first comparison (91
+and 79 bytes); with `"noinline"` the dispatch starts with `mov (%rdi),%eax` and
+is 11 bytes from entry to the first branch. That `"noinline"` still does not
+win says the prologue is not the dominant term — the comparisons are — which is
+why `"chain"`, whose jump table costs one indirect jump instead of nine
+compares, is the default; `"tree"` is the one shape that is not worth having,
+since it loses fib 35 against the plain C form.
+
+## 8. Open
 
 - A second expansion layer for the `OP_*` helpers of `m3_math_utils` and
   `m3MemData` in load/store ops through the same pre-infer macro, estimated
   5–15 % on heavy rows (`docs/native-build.md`, item B5).
 - The `_pc++`-as-value defect above, to be reduced and filed upstream.
-- The two daslang asks of section 6.
+- The two daslang asks of section 6. The JIT one
+  (`notes/upstream_cases/jit_invoke_musttail.md`) would make section 7's
+  dispatch unnecessary: with `musttail` on an invoke in return position the C
+  form itself would tail-jump and the pass could be deleted.

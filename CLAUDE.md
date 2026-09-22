@@ -45,7 +45,9 @@ sign-off). End-to-end execution works: `scripts/wasm3` runs every
 passes its whole default list and `wasm3c/test/run-wasi-test.py` passes
 12/12 (`docs/test-suites.md`). The executor keeps C's form of the operation
 ABI, every operation returning the direct call of the next one
-(`docs/execution-design.md`, section 6), and `scripts/build_port.sh`
+(`docs/execution-design.md`, section 6); under the LLVM JIT alone a macro
+pass turns that into a generated jump-table dispatch, because LLVM never
+tail-calls a call through a function value (section 7). `scripts/build_port.sh`
 produces the AOT, standalone-context and LLVM-executable native binaries
 that pass the same suites (`docs/native-build.md`, measurements in
 `tests/manual/fixture_report.md`); the standalone-context tier depends on

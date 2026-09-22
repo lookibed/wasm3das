@@ -36,6 +36,16 @@ require ./m3_types.das
     (measured 1.3-1.6x on fib 30); the gain is in the AOT/ctx tier, where the
     emitted C++ `return operation(...)` is a tail call gcc turns into a
     sibling-call jump, exactly as in C wasm3.
+
+    nextOpImpl, jumpOpImpl, nextOpDirect, jumpOpDirect and RunCode - C's
+    M3_MUSTTAIL threading - live in m3_exec.das, not here, because under the
+    LLVM JIT an infer pass replaces the indirect call through the code-page
+    word with a generated tree of DIRECT calls to the op_* functions, and only
+    m3_exec.das sees them all. The C form is the source form and what every
+    other tier compiles; see the "Operation dispatch" section of m3_exec.das.
+    What stays in this file is the ABI itself - IM3Operation - which the
+    compile tables of m3_compile.das keep in C's shape (c_setSetOps, the
+    M3OP(...) rows, c_opNull and IsNoOp all hold IM3Operation VALUES).
 */
 
 
@@ -85,33 +95,10 @@ def public m3MemInfo(var _mem : M3MemoryHeader?&) : IM3Memory {
 typedef public IM3Operation = function<(var _pc : pc_t; var _sp : m3stack_t; var _mem : M3MemoryHeader?; var _r0 : m3reg_t; var _fp0 : f64) : M3Result>
 
 
-// C: #define nextOpImpl() ((IM3Operation)(* _pc))(_pc + 1, d_m3OpArgs)
-def public nextOpImpl(var _pc : pc_t; var _sp : m3stack_t; var _mem : M3MemoryHeader?; var _r0 : m3reg_t; var _fp0 : f64) : M3Result {
-    unsafe {
-        let operation = reinterpret<IM3Operation>(_pc[0])
-        return operation(_pc + 1, _sp, _mem, _r0, _fp0)
-    }
-}
-
-// C: #define jumpOpImpl(PC) ((IM3Operation)(* PC))( PC + 1, d_m3OpArgs)
-def public jumpOpImpl(var pc : pc_t; var _sp : m3stack_t; var _mem : M3MemoryHeader?; var _r0 : m3reg_t; var _fp0 : f64) : M3Result {
-    unsafe {
-        let operation = reinterpret<IM3Operation>(pc[0])
-        return operation(pc + 1, _sp, _mem, _r0, _fp0)
-    }
-}
-
-// C: #define nextOpDirect() M3_MUSTTAIL return nextOpImpl()
-[inline]
-def public nextOpDirect(var _pc : pc_t; var _sp : m3stack_t; var _mem : M3MemoryHeader?; var _r0 : m3reg_t; var _fp0 : f64) : M3Result {
-    return nextOpImpl(_pc, _sp, _mem, _r0, _fp0)
-}
-
-// C: #define jumpOpDirect(PC) M3_MUSTTAIL return jumpOpImpl((pc_t)(PC))
-[inline]
-def public jumpOpDirect(var PC : pc_t; var _sp : m3stack_t; var _mem : M3MemoryHeader?; var _r0 : m3reg_t; var _fp0 : f64) : M3Result {
-    return jumpOpImpl(PC, _sp, _mem, _r0, _fp0)
-}
+// nextOpImpl, jumpOpImpl, nextOpDirect and jumpOpDirect - C's
+// #define nextOpImpl() ((IM3Operation)(* _pc))(_pc + 1, d_m3OpArgs) and its
+// three companions - live in m3_exec.das, next to the operations. See the
+// "Operation dispatch" section there and the paragraph above.
 
 
 // ============================================================================
@@ -119,7 +106,5 @@ def public jumpOpDirect(var PC : pc_t; var _sp : m3stack_t; var _mem : M3MemoryH
 // ============================================================================
 
 
-// C: d_m3RetSig RunCode (d_m3OpSig) { nextOpDirect(); }
-def public RunCode(var _pc : pc_t; var _sp : m3stack_t; var _mem : M3MemoryHeader?; var _r0 : m3reg_t; var _fp0 : f64) : M3Result {
-    return nextOpImpl(_pc, _sp, _mem, _r0, _fp0)
-}
+// C: d_m3RetSig RunCode (d_m3OpSig) { nextOpDirect(); } - also in m3_exec.das,
+// because it is nextOpDirect and nothing else.
