@@ -3747,7 +3747,7 @@ def public op_Const64(var _pc : pc_t; var _sp : m3stack_t; var _mem : M3MemoryHe
     unsafe {
         let p = reinterpret<u64 const?>(_pc)
         value = p[0]
-        if (M3_SIZEOF_PTR == 4) { _pc += 2 } else { _pc++ }
+        if (M3_SIZEOF_PTR == 4) { _pc += 2 } else { _pc += 1 }
     }
     unsafe(slot_ptr_u64(_pc, _sp)[0]) = value
     return nextOpDirect(_pc, _sp, _mem, _r0, _fp0)
