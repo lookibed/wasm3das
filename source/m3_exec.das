@@ -1,5 +1,11 @@
 options gen2
 options indenting = 4
+// The shape of the operation dispatch the LLVM JIT tier gets: "tree" (the
+// measured default, a balanced tree of range tests), "chain" (jump tables) or
+// "blocksN" (a tree over jump tables of N operations). It has no effect in any
+// other tier. See the "Operation dispatch" section below and
+// M3ExecDispatchPass in m3_exec_expand.das.
+options _m3_dispatch = "tree"
 
 module m3_exec shared public
 
@@ -22,8 +28,8 @@ require ./m3_exec_expand.das
 // does not call its successor. Every operation takes the five interpreter
 // registers (_pc, _sp, _mem, _r0, _fp0) BY REFERENCE and updates them in place -
 // which is what C's "pass the updated values to the next operation" means - and
-// `return nextOpDirect (...)` hands control back to the dispatching RunLoop in
-// m3_exec_defs.das. The bodies below are otherwise the C bodies: the C spelling
+// `return nextOpDirect (...)` hands control back to the dispatching RunLoop
+// ("Operation dispatch" below). The bodies below are otherwise the C bodies: the C spelling
 // of every tail position, of jumpOpDirect and of nextOpImpl is preserved.
 
 let INT32_MIN : i32 = -2147483647 - 1
@@ -420,6 +426,176 @@ def slot_f64(var _pc : pc_t&; _sp : m3stack_t&) : f64 {
         return value
     }
 }
+
+// ============================================================================
+// Operation dispatch
+// ============================================================================
+
+
+/*
+    C stores an operation as the function pointer itself and calls it back
+    through the word:
+
+        EmitWord (page, op)                       // the function pointer
+        ((IM3Operation)(* _pc))(_pc + 1, ...)     // the indirect call back
+
+    That is the source form below - m3_OpWord is the cast C's EmitWord macro
+    does, RunLoop's `operation(...)` the cast and call of C's nextOpImpl - and
+    it is what the daslang interpreter, the AOT tier and the standalone-context
+    tier compile, unchanged.
+
+    Under the LLVM JIT (`-jit`, `-exe`) the call through a function value is
+    daslang's generic invoke: an argument buffer on the stack, a call through
+    the wrapper and a reset of the context's stop flags, several times the cost
+    of a direct call, paid once per executed operation. So when
+    `prog.policies.jit_enabled` is set, and only then, the infer pass in
+    m3_exec_expand.das rewrites the placeholder bodies below:
+
+        m3_OpWord(op)   -> the operation's INDEX, so a code-page word is an
+                           index in 0..m3_OpCount()-1 over the op_* functions
+                           of this module sorted by name;
+        m3_DispatchOp   -> the generated dispatch over that index, whose leaves
+                           are DIRECT calls `return op_<name>(...)`, inlined
+                           into RunLoop's loop;
+        RunLoop         -> the body of RunLoopIndexed, the same loop with the
+                           word read as that index and handed to m3_DispatchOp;
+        m3_OpAt,
+        m3_OpCount      -> the tree over the function VALUES, and the number of
+                           operations, for the reverse map m3_OpIndex.
+
+    Nothing else changes: the compile tables of m3_compile.das keep C's
+    IM3Operation values (c_setSetOps, the M3OP(...) rows, c_opNull, IsNoOp),
+    and every operation still ends with `return nextOpDirect (...)`, the
+    return to RunLoop.
+*/
+
+/* C stores NULL in absent operation-table slots; m3_compile.das holds the
+   explicit sentinel c_opNull = @@op_NoOp instead, because Daslang function
+   values are non-nullable. The operation itself lives here, with the other
+   operations: C's Compile_Select emits its NULL operation unguarded when the
+   stack is polymorphic, so the sentinel does reach a code page and needs a
+   dispatch index like every other op_*. It is never meant to execute. */
+def public op_NoOp(var _pc : pc_t&; var _sp : m3stack_t&; var _mem : M3MemoryHeader?&; var _r0 : m3reg_t&; var _fp0 : f64&) : M3Result {
+    return m3Err_noCompiler
+}
+
+/* C: (const void *) op, the cast inside EmitWord. Through u64, not void?,
+   because the AOT backend lowers a function-to-pointer reinterpret to the
+   value's address (see EmitWord in m3_code.das). Every emission site of an
+   operation word goes through this one function, so the JIT pass has a single
+   body to rewrite into `return m3_OpIndex(op)`. */
+def public m3_OpWord(op : IM3Operation) : u64 {
+    return unsafe(reinterpret<u64>(op))
+}
+
+/* Placeholder. Under the JIT the pass replaces this body with the generated
+   dispatch over `idx` - by default a balanced `if (idx < mid)` tree whose
+   leaves are `return op_k(_pc, _sp, _mem, _r0, _fp0)`; the other shapes of
+   `options _m3_dispatch` at the top of this file - and marks it
+   `[hint(alwaysinline)]`, so LLVM splices it into RunLoop's loop and inlines
+   the smaller operations there, the switch-in-a-loop form of an interpreter.
+   The registers are passed on by reference: the operation updates RunLoop's
+   own state, exactly as through the invoke. */
+[unused_argument(idx, _pc, _sp, _mem, _r0, _fp0)]
+def public m3_DispatchOp(idx : int; var _pc : pc_t&; var _sp : m3stack_t&; var _mem : M3MemoryHeader?&; var _r0 : m3reg_t&; var _fp0 : f64&) : M3Result {
+    return m3Err_noCompiler
+}
+
+/* Placeholder. Under the JIT the pass replaces this body with the tree over
+   the same names, its leaves returning the function VALUE `@@op_<name>`. It
+   has no C counterpart: it exists only so m3_OpIndex can build the reverse
+   map. */
+[unused_argument(idx)]
+def public m3_OpAt(idx : int) : IM3Operation {
+    return @@op_NoOp
+}
+
+/* Placeholder. Under the JIT the pass replaces this body with the number of
+   op_* functions of this module. */
+def public m3_OpCount() : int {
+    return 0
+}
+
+// The reverse of m3_OpAt, and the only thing the emitters need under the JIT:
+// the compile tables keep C's IM3Operation VALUES, so m3_OpWord turns the
+// value it is handed into the index the code-page word carries.
+var private g_opIndex : table<u64; int>
+
+def public m3_OpIndex(op : IM3Operation) : u64 {
+    // Filled lazily, deliberately not from an [init]: a required module's
+    // [init] does not run in the standalone context on the pinned daslang.
+    if (empty(g_opIndex)) {
+        for (i in range(m3_OpCount())) {
+            g_opIndex[unsafe(reinterpret<u64>(m3_OpAt(i)))] = i
+        }
+    }
+    let idx = g_opIndex ?[unsafe(reinterpret<u64>(op))] ?? -1
+    d_m3Assert(idx >= 0, "m3_OpIndex: not an m3_exec operation")
+    return u64(idx)
+}
+
+// The trampoline that stands in for C's M3_MUSTTAIL threading: it owns the five
+// interpreter registers and every operation updates them in place.
+// The sentinel test is the loop condition rather than an `if`/`break` pair in
+// the body: one operation costs one iteration, so two fewer nodes per executed
+// wasm operation. `r` starts at the sentinel, which is the state "the word at
+// _pc still has to be dispatched"; C's threaded form has the same shape,
+// because there the first operation is entered unconditionally.
+// [unsafe_deref], as on every operation (m3_exec_expand sets the flag there):
+// C reads the word at _pc unchecked, and the dispatch runs once per executed
+// operation. Under the JIT the pass replaces this body with RunLoopIndexed's.
+[unsafe_deref]
+def public RunLoop(var _pc : pc_t; var _sp : m3stack_t; var _mem : M3MemoryHeader?; var _r0 : m3reg_t; var _fp0 : f64) : M3Result {
+    var r : M3Result = m3Ret_nextOp
+    unsafe {
+        let nextOpId = reinterpret<void?>(m3Ret_nextOp)
+        while (reinterpret<void?>(r) == nextOpId) {
+            let operation = reinterpret<IM3Operation>(_pc[0])
+            _pc = _pc + 1
+            r = operation(_pc, _sp, _mem, _r0, _fp0)
+        }
+    }
+    return r
+}
+
+// RunLoop as the JIT tier runs it: the code-page word is the operation index
+// m3_OpWord emitted, and m3_DispatchOp calls the operation directly. Never
+// called by name; the pass copies this body into RunLoop under the JIT only.
+[unsafe_deref]
+def public RunLoopIndexed(var _pc : pc_t; var _sp : m3stack_t; var _mem : M3MemoryHeader?; var _r0 : m3reg_t; var _fp0 : f64) : M3Result {
+    var r : M3Result = m3Ret_nextOp
+    unsafe {
+        let nextOpId = reinterpret<void?>(m3Ret_nextOp)
+        while (reinterpret<void?>(r) == nextOpId) {
+            let idx = int(reinterpret<u64>(_pc[0]))
+            _pc = _pc + 1
+            r = m3_DispatchOp(idx, _pc, _sp, _mem, _r0, _fp0)
+        }
+    }
+    return r
+}
+
+// C: #define nextOpImpl() ((IM3Operation)(* _pc))(_pc + 1, d_m3OpArgs)
+// Deliberately not [inline], unlike the operand readers: the five parameters
+// are by value, so an inline splice replaces one call node by five
+// argument-copy nodes plus the result temporary, which measures slower.
+[unsafe_deref]
+def public nextOpImpl(var _pc : pc_t; var _sp : m3stack_t; var _mem : M3MemoryHeader?; var _r0 : m3reg_t; var _fp0 : f64) : M3Result {
+    return RunLoop(_pc, _sp, _mem, _r0, _fp0)
+}
+
+// C: #define jumpOpImpl(PC) ((IM3Operation)(* PC))( PC + 1, d_m3OpArgs)
+[unsafe_deref]
+def public jumpOpImpl(var pc : pc_t; var _sp : m3stack_t; var _mem : M3MemoryHeader?; var _r0 : m3reg_t; var _fp0 : f64) : M3Result {
+    return RunLoop(pc, _sp, _mem, _r0, _fp0)
+}
+
+// C: d_m3RetSig RunCode (d_m3OpSig) { nextOpDirect(); }
+[unsafe_deref]
+def public RunCode(var _pc : pc_t; var _sp : m3stack_t; var _mem : M3MemoryHeader?; var _r0 : m3reg_t; var _fp0 : f64) : M3Result {
+    return RunLoop(_pc, _sp, _mem, _r0, _fp0)
+}
+
 
 // C: static inline m3ret_t Call (d_m3OpSig) — takes the operation signature by
 // value and its callers (op_Call, op_CallIndirect) pass a fresh stack pointer
@@ -3176,8 +3352,10 @@ def public op_MemFill(var _pc : pc_t&; var _sp : m3stack_t&; var _mem : M3Memory
 def public op_Compile(var _pc : pc_t&; var _sp : m3stack_t&; var _mem : M3MemoryHeader?&; var _r0 : m3reg_t&; var _fp0 : f64&) : M3Result {
     unsafe {
         var rewrite = (_pc - 1)
-        // Through u64: the AOT backend lowers a function-to-pointer reinterpret to the value's address; see EmitWord in m3_code.das.
-        rewrite[0] = unsafe(reinterpret<code_t>(reinterpret<u64>(@@op_Call)))
+        // C: * (_pc - 1) = op_Call — the operation word of the op_Compile that
+        // is running, so it goes through m3_OpWord like every other emission
+        // of an operation word (the "Operation dispatch" section above).
+        rewrite[0] = reinterpret<code_t>(m3_OpWord(@@op_Call))
     }
     var _function = immediate_function(_pc)
     var result : M3Result = m3Err_none

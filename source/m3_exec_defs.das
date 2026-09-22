@@ -36,9 +36,10 @@ require ./m3_types.das
                               operation updates the dispatcher's state in place
                               exactly where C would have passed the updated
                               values on to the next operation
-        C nextOpImpl()    ->  RunLoop: run the code at _pc to completion and
-        C jumpOpImpl(PC)      return its result, which is what the C macro means
-                              once every operation below it tail-jumps
+        C nextOpImpl()    ->  RunLoop (m3_exec.das): run the code at _pc to
+        C jumpOpImpl(PC)      completion and return its result, which is what
+                              the C macro means once every operation below it
+                              tail-jumps
         C nextOpDirect()  ->  return m3Ret_nextOp, the sentinel that tells the
         C jumpOpDirect(PC)    dispatching RunLoop to execute the word at _pc
 
@@ -108,44 +109,11 @@ typedef public IM3Operation = function<(var _pc : pc_t&; var _sp : m3stack_t&; v
 var public m3Ret_nextOp : M3Result = "m3: dispatch the operation at _pc"
 
 
-// The trampoline that stands in for C's M3_MUSTTAIL threading: it owns the five
-// interpreter registers and every operation updates them in place.
-// The sentinel test is the loop condition rather than an `if`/`break` pair in
-// the body: one operation costs one iteration, so two fewer nodes per executed
-// wasm operation. `r` starts at the sentinel, which is the state "the word at
-// _pc still has to be dispatched"; C's threaded form has the same shape,
-// because there the first operation is entered unconditionally.
-// [unsafe_deref], as on every operation (m3_exec_expand sets the flag there):
-// C reads the word at _pc unchecked, and the dispatch runs once per executed
-// operation.
-[unsafe_deref]
-def public RunLoop(var _pc : pc_t; var _sp : m3stack_t; var _mem : M3MemoryHeader?; var _r0 : m3reg_t; var _fp0 : f64) : M3Result {
-    var r : M3Result = m3Ret_nextOp
-    unsafe {
-        let nextOpId = reinterpret<void?>(m3Ret_nextOp)
-        while (reinterpret<void?>(r) == nextOpId) {
-            let operation = reinterpret<IM3Operation>(_pc[0])
-            _pc = _pc + 1
-            r = operation(_pc, _sp, _mem, _r0, _fp0)
-        }
-    }
-    return r
-}
-
-// C: #define nextOpImpl() ((IM3Operation)(* _pc))(_pc + 1, d_m3OpArgs)
-// Deliberately not [inline], unlike the operand readers: the five parameters
-// are by value, so an inline splice replaces one call node by five
-// argument-copy nodes plus the result temporary, which measures slower.
-[unsafe_deref]
-def public nextOpImpl(var _pc : pc_t; var _sp : m3stack_t; var _mem : M3MemoryHeader?; var _r0 : m3reg_t; var _fp0 : f64) : M3Result {
-    return RunLoop(_pc, _sp, _mem, _r0, _fp0)
-}
-
-// C: #define jumpOpImpl(PC) ((IM3Operation)(* PC))( PC + 1, d_m3OpArgs)
-[unsafe_deref]
-def public jumpOpImpl(var pc : pc_t; var _sp : m3stack_t; var _mem : M3MemoryHeader?; var _r0 : m3reg_t; var _fp0 : f64) : M3Result {
-    return RunLoop(pc, _sp, _mem, _r0, _fp0)
-}
+// RunLoop, the trampoline that stands in for C's M3_MUSTTAIL threading, and
+// nextOpImpl, jumpOpImpl and RunCode, which enter it, live in m3_exec.das with
+// the operations: under the LLVM JIT the loop dispatches through a generated
+// chain of DIRECT calls to every op_*, which only that module can name (the
+// "Operation dispatch" section there).
 
 // C: #define nextOpDirect() M3_MUSTTAIL return nextOpImpl()
 // The operation has already written _pc/_sp/_mem/_r0/_fp0 back through its
@@ -162,16 +130,4 @@ def public nextOpDirect(var _pc : pc_t&; var _sp : m3stack_t&; var _mem : M3Memo
 def public jumpOpDirect(var _pc : pc_t&; var PC : pc_t) : M3Result {
     _pc = PC
     return m3Ret_nextOp
-}
-
-
-// ============================================================================
-// RunCode
-// ============================================================================
-
-
-// C: d_m3RetSig RunCode (d_m3OpSig) { nextOpDirect(); }
-[unsafe_deref]
-def public RunCode(var _pc : pc_t; var _sp : m3stack_t; var _mem : M3MemoryHeader?; var _r0 : m3reg_t; var _fp0 : f64) : M3Result {
-    return RunLoop(_pc, _sp, _mem, _r0, _fp0)
 }
