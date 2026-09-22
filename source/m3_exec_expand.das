@@ -661,7 +661,7 @@ class M3ExecDispatchPass : AstPassMacro {
         }
         // The operations per chain: "tree" the binary tree down to single
         // operations, "chain" one chain over all of them, "blocksN" a tree over
-        // chains of N, one jump table each (docs/execution-design.md section 6
+        // chains of N, one jump table each (docs/execution-design.md section 7
         // has the measurements).
         let isBlocks = form |> starts_with("blocks")
         let blockSpan = isBlocks ? to_int(slice(form, 6)) : 0
