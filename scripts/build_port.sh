@@ -10,7 +10,11 @@
 #   ctx   the standalone context: daslang emits the compiled program
 #         (<out>/ctx/wasm3.das.cpp + .h), compiled and linked with
 #         native/standalone_main.cpp the same way. The context is baked in
-#         and the daslang front end never runs at startup.
+#         and the daslang front end never runs at startup. The emitter runs
+#         from tmp/dasroot-ctx, an overlay of DASLANG_ROOT with the emitter
+#         patches of notes/upstream_cases/ctx_*.patch that DASLANG_ROOT does
+#         not carry yet applied to a copy of daslib/ (pending in the fork;
+#         WASM3DAS_CTX_EMITTER=stock builds without them).
 #         -> default out: tmp/native-ctx (tmp/native-ctx/bin/wasm3das)
 #
 #   exe   daslang's own standalone executable: `daslang -exe` runs the LLVM
@@ -73,14 +77,44 @@ if [[ "$variant" == "exe" ]]; then
     # the program, LLVM emits one object and daslang links it. The DLL cache
     # (.jitted_scripts/ under the working directory) is not involved; every
     # build regenerates the code, about ten seconds plus the codegen.
+    # WASM3DAS_EXE_OPTS carries options of the JIT's command-line schema
+    # (dasLLVM llvm_jit_cli, for example --jit-lto --jit-split-modules=-1 or
+    # --jit-size-level=1), whitespace separated; daslang reads them after the
+    # `--`, the way scripts/wasm3 passes WASM3DAS_JIT_OPTS.
+    exe_opts=()
+    if [[ -n "${WASM3DAS_EXE_OPTS:-}" ]]; then
+        # Deliberately unquoted: the variable carries several switches.
+        # shellcheck disable=SC2206
+        exe_opts=(${WASM3DAS_EXE_OPTS})
+    fi
     mkdir -p "$out/bin"
-    echo "build_port [exe]: daslang -exe"
-    (cd "$out" && "$DASLANG" -exe "$repo_root/app/wasm3.das" -output "$out/bin/wasm3das") \
+    echo "build_port [exe]: daslang -exe ${exe_opts[*]+"-- ${exe_opts[*]}"}"
+    (cd "$out" && "$DASLANG" -exe "$repo_root/app/wasm3.das" -output "$out/bin/wasm3das" \
+        ${exe_opts[@]+-- "${exe_opts[@]}"}) \
         | grep -v "shared_module\|failed to load\|^\s*$" || true
     binary="$out/bin/wasm3das.exe"
     if [[ ! -x "$binary" ]]; then
         echo "build_port [exe]: daslang -exe produced no executable at $binary" >&2
         exit 1
+    fi
+    # daslang links the object against the shared runtime
+    # (lib/liblibDaScriptDyn_runtime.so, 37 MB, 180 000 relative relocations
+    # at every start) and has no switch for the static one: -lib's
+    # --jit-lib-static makes an archive of the program, not a static
+    # executable, and the jit_path_to_shared_lib policy is reachable from no
+    # command line. So the object daslang leaves behind is linked again here,
+    # with the same driver, against lib/liblibDaScript_runtime.a, as a non-PIE
+    # executable with the C++ runtime inside (glibc stays shared): the start
+    # drops by about 4 ms of 21 (docs/native-build.md section 6).
+    # WASM3DAS_EXE_LINK=shared keeps daslang's own link. A split build
+    # (--jit-split-modules) leaves no single object, so it keeps it as well.
+    if [[ "${WASM3DAS_EXE_LINK:-static}" == "static" && -f "$out/bin/wasm3das.o" ]] && (( ! msvc )) \
+            && [[ "$(uname -s)" == "Linux" && -f "$DASLANG_ROOT/lib/liblibDaScript_runtime.a" ]]; then
+        echo "build_port [exe]: relink against the static runtime"
+        # shellcheck disable=SC2086
+        "$CXX" -no-pie -Wl,--gc-sections -static-libstdc++ -static-libgcc \
+            -o "$binary" "$out/bin/wasm3das.o" "$DASLANG_ROOT/lib/liblibDaScript_runtime.a" \
+            -lpthread -ldl ${EXTRA_LDFLAGS:-}
     fi
     rm -f "$out/bin/wasm3das.o"
     ls -la "$binary"
@@ -153,7 +187,14 @@ ctx)
     #   indirect call per wasm operation, so this is the only flag here that
     #   touches execution: 7.35 s vs 7.41 s (-0.9 %). It gives up the CET
     #   indirect-branch tracking the distro gcc enables by default.
-    cxxflags+=(-fno-pic -ffunction-sections -fdata-sections -fno-strict-aliasing)
+    # -falign-functions=64: the threaded operation chain is 500 small
+    #   functions reached by tail jumps, and their placement decides the
+    #   fetch behaviour of the hot loop. Measured 2026-09-22 (fib 35, pinned
+    #   to one core, six interleaved rounds): 0.55-0.58 s with gcc's default
+    #   alignment against 0.44-0.46 s with 64 (C wasm3 0.40); the 0.04 s
+    #   the used-modules emitter patch had "cost" on fib was this layout
+    #   shift, not the modules. docs/native-build.md, section 7.
+    cxxflags+=(-fno-pic -ffunction-sections -fdata-sections -fno-strict-aliasing -falign-functions=64)
     ldflags+=(-no-pie -Wl,--gc-sections)
     if [[ "$(uname -m)" == "x86_64" ]]; then
         cxxflags+=(-fcf-protection=none)
@@ -190,11 +231,70 @@ aot)
     sources=("$repo_root/native/wasm3das_main.cpp" "$out"/aot/*.cpp)
     ;;
 ctx)
+    # 0. The emitter patches (docs/upstream-status.md, the `-ctx` rows;
+    #    docs/native-build.md, section 7). Two changes to daslang's `-ctx`
+    #    emitter the port depends on, each a patch under notes/upstream_cases/
+    #    with a marker string that says whether DASLANG_ROOT already carries it:
+    #      ctx_direct_calls.patch  stock daslang emits every call into a
+    #          required module as a Context::fnByMangledName lookup plus
+    #          das_invoke_function although the context defines the callee
+    #          inline in the same unit; the patch calls it directly
+    #          (marker: directForeign)
+    #      ctx_used_modules.patch  stock daslang registers every default C++
+    #          module the compiler loaded, so the binary pays the constructors
+    #          of rtti_core and ast_core (loaded for a compile-time macro) at
+    #          every start; the patch registers the used modules and their
+    #          dependencies only (marker: the comment line of the patch)
+    #    The fork took the first on 2026-09-21 (d6dbcfd75, spelled
+    #    emitsForeignBody there); the second is pending (submitted the same
+    #    day). Neither is upstream.
+    #    A patch the dasroot lacks is applied to a private overlay under tmp/,
+    #    DASLANG_ROOT itself is never written: every top-level entry of the
+    #    overlay is a symlink into DASLANG_ROOT except daslib/, a copy with the
+    #    patched files. Only the AOT tool reads daslib, so the binary is
+    #    stock. Rollback is one variable: WASM3DAS_CTX_EMITTER=stock emits
+    #    with the unpatched dasroot. A patch the fork has taken is skipped
+    #    automatically through its marker.
+    emit_root="$DASLANG_ROOT"
+    if [[ "${WASM3DAS_CTX_EMITTER:-patched}" == "stock" ]]; then
+        echo "build_port [ctx]: emitter: stock dasroot (WASM3DAS_CTX_EMITTER=stock)"
+    else
+        pending=()
+        # the fork took the first change on 2026-09-21 (d6dbcfd75) under its own
+        # name, emitsForeignBody; directForeign is the patch's own spelling
+        grep -qE 'emitsForeignBody|directForeign' "$DASLANG_ROOT/daslib/aot_cpp.das" \
+            || pending+=(ctx_direct_calls.patch)
+        grep -q 'a default C++ module the runtime program never reaches' "$DASLANG_ROOT/daslib/aot_cpp.das" \
+            || pending+=(ctx_used_modules.patch)
+        if (( ${#pending[@]} == 0 )); then
+            echo "build_port [ctx]: emitter: dasroot already carries both emitter patches"
+        else
+            emit_root="$repo_root/tmp/dasroot-ctx"
+            echo "build_port [ctx]: emitter: overlay $emit_root with ${pending[*]}"
+            rm -rf "$emit_root"
+            mkdir -p "$emit_root"
+            for entry in "$DASLANG_ROOT"/* "$DASLANG_ROOT"/.[!.]*; do
+                [[ -e "$entry" ]] || continue
+                name="$(basename "$entry")"
+                [[ "$name" == "daslib" ]] && continue
+                ln -s "$entry" "$emit_root/$name"
+            done
+            cp -R "$DASLANG_ROOT/daslib" "$emit_root/daslib"
+            for p in "${pending[@]}"; do
+                if ! patch -p1 -s -d "$emit_root" < "$repo_root/notes/upstream_cases/$p"; then
+                    echo "build_port [ctx]: $p does not apply to $DASLANG_ROOT/daslib; set WASM3DAS_CTX_EMITTER=stock or refresh the patch" >&2
+                    exit 1
+                fi
+            done
+        fi
+    fi
+
     # 1. Emit: the compiled program as one standalone-context translation unit.
     echo "build_port [ctx]: emit the standalone context"
     mkdir -p "$out/ctx"
-    "$DASLANG" "$DASLANG_ROOT/utils/aot/main.das" -- -ctx app/wasm3.das "$out/ctx" \
+    DAS_ROOT="$emit_root" "$DASLANG" -dasroot "$emit_root" "$emit_root/utils/aot/main.das" -- -ctx app/wasm3.das "$out/ctx" \
         | grep -v "shared_module\|failed to load\|^\s*$" || true
+    echo "build_port [ctx]: $(grep -c fnByMangledName "$out/ctx/wasm3.das.cpp" || true) Context lookups in the emitted unit (310 with the patch, 1734 stock)"
     if [[ ! -f "$out/ctx/wasm3.das.cpp" ]]; then
         echo "build_port [ctx]: the emission produced no context" >&2
         exit 1

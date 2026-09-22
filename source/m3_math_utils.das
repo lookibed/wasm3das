@@ -116,6 +116,33 @@ def signbit(x : f64) : bool {
 
 
 /*
+    isnan
+
+    C's <math.h> classification macro, which the trap and min/max bodies
+    below call. `math::is_nan` tests the same thing, but the LLVM JIT reaches
+    it through the runtime's function-pointer table (llvm_jit_intrin.das has
+    no row for it), an opaque call on every float min/max and float-to-int
+    conversion. The bodies are musl's isnan, the bit test of the libc the
+    other helpers of this file follow: a NaN has every exponent bit set and a
+    non-zero mantissa, so its magnitude bits exceed those of infinity.
+*/
+
+[inline]
+def isnan(x : f32) : bool {
+    unsafe {
+        return (reinterpret<u32>(x) & 0x7fffffffu) > 0x7f800000u
+    }
+}
+
+[inline]
+def isnan(x : f64) : bool {
+    unsafe {
+        return (reinterpret<u64>(x) & 0x7ffffffffffffffful) > 0x7ff0000000000000ul
+    }
+}
+
+
+/*
     libm functions named by the C sources
 
     C m3_math_utils.h defines `rintf`/`rint` only under `#if defined(__AVR__)`,
@@ -530,7 +557,7 @@ def OP_TRUNC(
              RMIN;
              RMAX
              ) : M3Result {
-    if (is_nan(A)) {
+    if (isnan(A)) {
         return m3Err_trapIntegerConversion
     }
 
@@ -636,7 +663,7 @@ def OP_TRUNC_SAT(
                  IMIN : TT;
                  IMAX : TT
                  ) {
-    if (is_nan(A)) {
+    if (isnan(A)) {
         RES = TT(0)
 
     } elif (A <= RMIN) {
@@ -772,7 +799,7 @@ def _nan_f64() : f64 {
 
 
 def min_f32(a : f32; b : f32) : f32 {
-    if (is_nan(a) || is_nan(b)) {
+    if (isnan(a) || isnan(b)) {
         return _nan_f32()
     }
 
@@ -793,7 +820,7 @@ def min_f32(a : f32; b : f32) : f32 {
 
 
 def max_f32(a : f32; b : f32) : f32 {
-    if (is_nan(a) || is_nan(b)) {
+    if (isnan(a) || isnan(b)) {
         return _nan_f32()
     }
 
@@ -814,7 +841,7 @@ def max_f32(a : f32; b : f32) : f32 {
 
 
 def min_f64(a : f64; b : f64) : f64 {
-    if (is_nan(a) || is_nan(b)) {
+    if (isnan(a) || isnan(b)) {
         return _nan_f64()
     }
 
@@ -835,7 +862,7 @@ def min_f64(a : f64; b : f64) : f64 {
 
 
 def max_f64(a : f64; b : f64) : f64 {
-    if (is_nan(a) || is_nan(b)) {
+    if (isnan(a) || isnan(b)) {
         return _nan_f64()
     }
 
