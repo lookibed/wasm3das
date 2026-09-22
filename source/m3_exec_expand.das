@@ -478,13 +478,14 @@ class private ExpandReaders : AstVisitor {
     }
 }
 
-// EXPERIMENT (H1): which functions of m3_exec get the unsafeDeref flag -
-// "all" (the branch point), "readers", "ops", "ops_dispatch" or "none".
-def private unsafe_scope(prog : ProgramPtr) : string {
-    for (a in prog._options) {
-        if (a.name == "_m3_unsafe_scope" && a.basicType == Type.tString) return string(a.sValue)
-    }
-    return "all"
+// The functions on the operation path: every operation (`def public op_<name>
+// (d_m3OpSig)`, told apart by its five parameters, as M3ExecDispatchPass does)
+// and the dispatch between them - nextOpImpl/jumpOpImpl, C's macros, and
+// m3_DispatchOp, whose generated body splices m3_WordIndex and inlines the
+// small operations under the JIT.
+def private is_operation_path(var fn : FunctionPtr) : bool {
+    if ((fn.name |> starts_with("op_")) && length(fn.arguments) == 5) return true
+    return fn.name == "nextOpImpl" || fn.name == "jumpOpImpl" || fn.name == "m3_DispatchOp"
 }
 
 //! Expands the m3_exec operand readers at their use sites, the way the C
@@ -507,23 +508,21 @@ class M3ExecExpandPass : AstPassMacro {
         var expander = new ExpandReaders()
         expander.prog := prog
         var ok = true
-        let scope = unsafe_scope(prog)
         for_each_function(mod, "") $(var fn : FunctionPtr) {
             // C dereferences _pc, _sp and the memory pointers unchecked; the
-            // daslang backends test every pointer for null before a deref
-            // unless the function carries the unsafe_deref flag ([unsafe_deref]
-            // in source). Set here for the whole module - the operations, the
-            // operand readers and their helpers - so the JIT emits the C shape:
-            // three null tests fewer per executed operation (measured on the
-            // cached DLL with objdump, docs/native-build.md section 7, E7).
-            let isOp = (fn.name |> starts_with("op_")) && length(fn.arguments) == 5
-            let isReader = is_reader_name(string(fn.name))
-            let isDispatch = fn.name == "m3_DispatchOp" || fn.name == "nextOpImpl" || fn.name == "jumpOpImpl" || fn.name == "m3_WordIndex"
-            if (scope == "all" || (scope == "readers" && isReader) || (scope == "ops" && isOp) ||
-                    (scope == "ops_dispatch" && (isOp || isDispatch))) {
+            // daslang backends test a pointer for null before a deref unless
+            // the function being generated carries the unsafe_deref flag
+            // (what `[unsafe_deref]` in source sets). Set here on the
+            // operations and on the dispatch that chains them - the functions
+            // whose own code runs once per executed wasm instruction - and on
+            // nothing else of the module. Not on the readers: their bodies are
+            // cloned into the operations above, and the JIT tests the flag of
+            // the function it generates, so a reader's own flag would change
+            // no instruction (docs/native-build.md section 7, E11).
+            if (is_operation_path(fn)) {
                 fn.flags.unsafeDeref = true
             }
-            if (!isReader) return
+            if (!is_reader_name(string(fn.name))) return
             var r : Reader
             if (!split_reader(fn, r)) {
                 macro_sticky_error(prog, fn.at,
@@ -546,10 +545,7 @@ class M3ExecExpandPass : AstPassMacro {
             }
         }
         var result = false
-        // EXPERIMENT (H2): under the LLVM JIT the readers stay calls of
-        // [unsafe_deref] functions, which LLVM inlines without a null test
-        let expand = !prog.policies.jit_enabled || unsafe_scope(prog) != "none"
-        if (ok && expand && !empty(expander.readers)) {
+        if (ok && !empty(expander.readers)) {
             // pass 1 counts the readers of each statement and marks the statements
             // an advance may not simply follow; pass 2 rewrites with that decision
             expander.scanning = true
