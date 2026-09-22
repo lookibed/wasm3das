@@ -77,14 +77,44 @@ if [[ "$variant" == "exe" ]]; then
     # the program, LLVM emits one object and daslang links it. The DLL cache
     # (.jitted_scripts/ under the working directory) is not involved; every
     # build regenerates the code, about ten seconds plus the codegen.
+    # WASM3DAS_EXE_OPTS carries options of the JIT's command-line schema
+    # (dasLLVM llvm_jit_cli, for example --jit-lto --jit-split-modules=-1 or
+    # --jit-size-level=1), whitespace separated; daslang reads them after the
+    # `--`, the way scripts/wasm3 passes WASM3DAS_JIT_OPTS.
+    exe_opts=()
+    if [[ -n "${WASM3DAS_EXE_OPTS:-}" ]]; then
+        # Deliberately unquoted: the variable carries several switches.
+        # shellcheck disable=SC2206
+        exe_opts=(${WASM3DAS_EXE_OPTS})
+    fi
     mkdir -p "$out/bin"
-    echo "build_port [exe]: daslang -exe"
-    (cd "$out" && "$DASLANG" -exe "$repo_root/app/wasm3.das" -output "$out/bin/wasm3das") \
+    echo "build_port [exe]: daslang -exe ${exe_opts[*]+"-- ${exe_opts[*]}"}"
+    (cd "$out" && "$DASLANG" -exe "$repo_root/app/wasm3.das" -output "$out/bin/wasm3das" \
+        ${exe_opts[@]+-- "${exe_opts[@]}"}) \
         | grep -v "shared_module\|failed to load\|^\s*$" || true
     binary="$out/bin/wasm3das.exe"
     if [[ ! -x "$binary" ]]; then
         echo "build_port [exe]: daslang -exe produced no executable at $binary" >&2
         exit 1
+    fi
+    # daslang links the object against the shared runtime
+    # (lib/liblibDaScriptDyn_runtime.so, 37 MB, 180 000 relative relocations
+    # at every start) and has no switch for the static one: -lib's
+    # --jit-lib-static makes an archive of the program, not a static
+    # executable, and the jit_path_to_shared_lib policy is reachable from no
+    # command line. So the object daslang leaves behind is linked again here,
+    # with the same driver, against lib/liblibDaScript_runtime.a, as a non-PIE
+    # executable with the C++ runtime inside (glibc stays shared): the start
+    # drops by about 4 ms of 21 (docs/native-build.md section 6).
+    # WASM3DAS_EXE_LINK=shared keeps daslang's own link. A split build
+    # (--jit-split-modules) leaves no single object, so it keeps it as well.
+    if [[ "${WASM3DAS_EXE_LINK:-static}" == "static" && -f "$out/bin/wasm3das.o" ]] && (( ! msvc )) \
+            && [[ "$(uname -s)" == "Linux" && -f "$DASLANG_ROOT/lib/liblibDaScript_runtime.a" ]]; then
+        echo "build_port [exe]: relink against the static runtime"
+        # shellcheck disable=SC2086
+        "$CXX" -no-pie -Wl,--gc-sections -static-libstdc++ -static-libgcc \
+            -o "$binary" "$out/bin/wasm3das.o" "$DASLANG_ROOT/lib/liblibDaScript_runtime.a" \
+            -lpthread -ldl ${EXTRA_LDFLAGS:-}
     fi
     rm -f "$out/bin/wasm3das.o"
     ls -la "$binary"
