@@ -478,6 +478,15 @@ class private ExpandReaders : AstVisitor {
     }
 }
 
+// EXPERIMENT (H1): which functions of m3_exec get the unsafeDeref flag -
+// "all" (the branch point), "readers", "ops", "ops_dispatch" or "none".
+def private unsafe_scope(prog : ProgramPtr) : string {
+    for (a in prog._options) {
+        if (a.name == "_m3_unsafe_scope" && a.basicType == Type.tString) return string(a.sValue)
+    }
+    return "all"
+}
+
 //! Expands the m3_exec operand readers at their use sites, the way the C
 //! preprocessor expands immediate()/slot()/slot_ptr().
 class M3ExecExpandPass : AstPassMacro {
@@ -498,6 +507,7 @@ class M3ExecExpandPass : AstPassMacro {
         var expander = new ExpandReaders()
         expander.prog := prog
         var ok = true
+        let scope = unsafe_scope(prog)
         for_each_function(mod, "") $(var fn : FunctionPtr) {
             // C dereferences _pc, _sp and the memory pointers unchecked; the
             // daslang backends test every pointer for null before a deref
@@ -506,8 +516,14 @@ class M3ExecExpandPass : AstPassMacro {
             // operand readers and their helpers - so the JIT emits the C shape:
             // three null tests fewer per executed operation (measured on the
             // cached DLL with objdump, docs/native-build.md section 7, E7).
-            fn.flags.unsafeDeref = true
-            if (!is_reader_name(string(fn.name))) return
+            let isOp = (fn.name |> starts_with("op_")) && length(fn.arguments) == 5
+            let isReader = is_reader_name(string(fn.name))
+            let isDispatch = fn.name == "m3_DispatchOp" || fn.name == "nextOpImpl" || fn.name == "jumpOpImpl" || fn.name == "m3_WordIndex"
+            if (scope == "all" || (scope == "readers" && isReader) || (scope == "ops" && isOp) ||
+                    (scope == "ops_dispatch" && (isOp || isDispatch))) {
+                fn.flags.unsafeDeref = true
+            }
+            if (!isReader) return
             var r : Reader
             if (!split_reader(fn, r)) {
                 macro_sticky_error(prog, fn.at,
@@ -530,7 +546,10 @@ class M3ExecExpandPass : AstPassMacro {
             }
         }
         var result = false
-        if (ok && !empty(expander.readers)) {
+        // EXPERIMENT (H2): under the LLVM JIT the readers stay calls of
+        // [unsafe_deref] functions, which LLVM inlines without a null test
+        let expand = !prog.policies.jit_enabled || unsafe_scope(prog) != "none"
+        if (ok && expand && !empty(expander.readers)) {
             // pass 1 counts the readers of each statement and marks the statements
             // an advance may not simply follow; pass 2 rewrites with that decision
             expander.scanning = true
