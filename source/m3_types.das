@@ -106,8 +106,9 @@ require daslib/math_bits                           // Eden: bit views of the M3G
         absent, DESIGN section 4.2).
       - M3Environment keeps only what C keeps outside a runtime: the
         `funcTypes` list head and `pagesReleased` are absent (the interned
-        func types are rt.funcTypes, the code words rt.code, DESIGN section
-        4.1); retFuncTypes are handles into rt.funcTypes (-1 = NULL) and are
+        func types are rt.funcTypes, the code words rt.code, and the pool of
+        released pages is M3Runtime.pagesReleased, DESIGN section 4.1);
+        retFuncTypes are handles into rt.funcTypes (-1 = NULL) and are
         filled by m3_NewRuntime, which interns the basic types into the
         runtime it creates; customSectionHandler is a function value (null
         = none). The runtime embeds a copy of its environment
@@ -128,7 +129,9 @@ require daslib/math_bits                           // Eden: bit views of the M3G
         runtime.
       - M3Runtime: the C fields come first in C order (environment embedded,
         pagesOpen/pagesFull handles into the Eden field `codePages`, the
-        code-page arena m3_code manages; modules is the module arena; stack
+        code-page arena m3_code manages, followed by pagesReleased, C's
+        environment->pagesReleased, since the pool moved into the runtime;
+        modules is the module arena; stack
         is `array<u64>`, originStack an index into it; lastCalled a function
         handle; userdata an `int` token; the C `error_message[256]` buffer
         is absent because strings own their storage, as upstream), then the
@@ -460,8 +463,9 @@ struct M3Environment {
     // Eden: handles into rt.funcTypes, filled by m3_NewRuntime, -1 = NULL
     retFuncTypes : int[6] = fixed_array(-1, -1, -1, -1, -1, -1)   // these 'point' to elements in the interned list.
 
-    // Eden: `pagesReleased` (C: M3CodePage *) is absent; the code words are
-    // rt.code and the pages rt.codePages (DESIGN.md 4.1, 4.4).
+    // Eden: `pagesReleased` (C: M3CodePage *) is absent here; the page pool
+    // moved into the runtime with the code words (M3Runtime.pagesReleased,
+    // a handle into rt.codePages; DESIGN.md 4.1, 4.4).
 
     customSectionHandler : M3SectionHandler   // Eden: null = no handler (C: a NULL function pointer)
 }
@@ -572,6 +576,7 @@ struct M3Runtime {
     codePages : array<M3CodePage>  // Eden: the code-page arena m3_code manages; pagesOpen, pagesFull and M3CodePageHeader.next index it
     pagesOpen : IM3CodePage = -1   // linked list of code pages with writable space on them
     pagesFull : IM3CodePage = -1   // linked list of at-capacity pages
+    pagesReleased : IM3CodePage = -1   // Eden: C's M3Environment.pagesReleased; the page pool moved into the runtime (DESIGN.md 4.1), m3_code manages it
 
     numCodePages : u32 = 0u
     numActiveCodePages : u32 = 0u

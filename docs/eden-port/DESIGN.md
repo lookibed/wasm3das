@@ -25,6 +25,7 @@ with the probe cheats described in PIPELINE.md §7 when the editor updates.
 | Output | `print` lines reach `get_logs` (MCP) with a `file:line (function)` line after each; `get_logs` clears the buffer |
 | Entry points | `[export] on_initialize/on_update` and `[cheat]` functions in the project's `main.das`; cheats run asynchronously, results are read from the logs |
 | Cheat registry | keeps names of cheats removed by hot reload until the editor restarts (cosmetic) |
+| `try` / `recover` | works in the editor: a `panic` inside `try` is caught by `recover`, the game stays `Running` (measured with a probe cheat). Upstream tests that capture a `d_m3Assert` through `try/recover` port unchanged |
 
 The local stand-in for these rules is `scripts/eden/sandbox.das_project`
 (`daslang -no-dynamic-modules -project scripts/eden/sandbox.das_project`), run
