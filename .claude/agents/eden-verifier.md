@@ -23,6 +23,12 @@ Paste the last 3 lines of each stage into your report. A stage that did not
 run is a FAIL, not a pass. If the editor is unreachable (`eden_gate` exit 2),
 report `BLOCKED: editor` — that is the only non-code failure you may report.
 
+Also read the editor console the user watches: `scripts/eden/edenmcp get_game_status`
+and `scripts/eden/edenmcp get_logs` before and after the gate, plus
+`tmp/eden/editor_console.log` (where `eden_gate.sh` keeps what it read).
+Classify every `Compilation error` as superseded (a later reload without
+error) or current, and report it.
+
 ## 2. Test adequacy (the part scripts cannot do)
 
 Open `.upstream/tests/integration/<file>` for every entry in the module's

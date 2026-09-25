@@ -120,8 +120,9 @@ require daslib/math_bits                           // Eden: bit views of the M3G
       - M3Compilation: runtime/module/function are handles (runtime,
         moduleIdx, functionIdx), page is an IM3CodePage handle,
         wasm/wasmEnd/lastOpcodeStart are indices into the module's `wasm`,
-        `constants` is `u64[d_m3MaxConstantTableSize]` (one 64-bit word per
-        slot; C packs a 64-bit constant into two 32-bit slots), the slot
+        `constants` is `u64[d_m3MaxConstantTableSize]` (one entry per C
+        32-bit slot, a 64-bit constant fills a pair as in C; layout in
+        m3_compile's header and DESIGN 4.4a), the slot
         counters and slot arrays keep the upstream `int` widening;
         `scopeStack : array<M3CompilationScope>` (absent in C) holds the
         enclosing scopes C keeps on the native stack, indexed by

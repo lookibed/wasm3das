@@ -337,11 +337,18 @@ documented limit.
 - Patch chains: a forward-branch patch list is a chain of pc indices stored
   in the code words themselves (the upstream port's pointer chain with
   indices); `-1` ends the chain.
-- Constants: `numConstantBytes` keeps C's 4-byte-slot accounting; the
-  function's `constants` array holds one 64-bit word per constant **slot**
-  (a 64-bit constant occupies two entries, the second unused) so
-  `length(constants) == numConstantBytes / 4` and `op_Entry` copies them
-  slot for slot.
+- Constants: `numConstantBytes` keeps C's 4-byte-slot accounting.
+  `rt.compilation.constants` has one entry per C 32-bit slot, whose low 32
+  bits are that slot's value, so the table is searched and filled like C's
+  `m3slot_t` array. A 64-bit constant fills an aligned pair (low half, high
+  half); the 64-bit search reads a pair as one u64, the 32-bit search scans
+  every slot, halves of pairs included. The entry of a pair's first slot
+  holds the full 64-bit value (also written when a pair of i32 constants is
+  reused as a 64-bit constant, where C writes nothing); other entries hold
+  their 32-bit value zero-extended. Each entry is therefore the runtime
+  slot word: the function's `constants` array is a verbatim copy (one u64
+  per slot, `length(constants) == numConstantBytes / 4`) and `op_Entry`
+  copies it slot for slot; 32-bit slot readers use only the low 32 bits.
 - Emit: `EmitOp(rt, op name)` writes `m3_OpWord(name)`; immediates through
   `EmitWord`/`EmitWord32`/`EmitWord64` of `m3_code`; pcs and handles as
   `u64(int)` (DESIGN 4.4 table).

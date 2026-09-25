@@ -88,23 +88,33 @@ require daslib/math_bits                               // Eden: the bits of the 
         M3OP_RESERVED rows up to C's designated index 0xfc. GetOpInfo(opcode, o_opInfo) returns whether the row exists
         and copies it (C: a pointer into the table, NULL past it); the
         upstream IM3OpInfo pointer alias is not declared.
-      - constants (DESIGN section 4.4a): rt.compilation.constants and
-        M3Function.constants hold one 64-bit word per constant SLOT; a
-        64-bit constant occupies two entries (the second unused) so the
-        C slot accounting (numConstantBytes, slotMaxConstIndex) is
-        unchanged and length(constants) == numConstantBytes / 4. PushConst
-        reads a 64-bit constant as the word of its first slot and a 32-bit
-        one as the low 32 bits of its word (C: a memcpy of 8 or 4 bytes out
-        of the 32-bit slot table); C's 64-bit search, which reads two
-        adjacent 32-bit slots as one u64, therefore never matches two
-        adjacent i32 constants here; the value semantics are the same
-        because a slot is one word. CompileFunction copies the
-        numConstantSlots words into the function (C: m3_CopyMem of
-        numConstantBytes bytes; m3_CopyMem of m3_core takes an array<T> and
-        the table is a fixed array, so the copy is spelled out) after
-        dropping a previous table, which C leaves aliased and never reads
-        when numConstantBytes is 0 (op_Entry copies length(constants)
-        words here, so the invariant must hold after a recompilation).
+      - constants (DESIGN section 4.4a): rt.compilation.constants
+        (u64[d_m3MaxConstantTableSize]) has one entry per C 32-bit slot and
+        the low 32 bits of each entry are that C slot's value, so the table
+        is searched and filled exactly like C's m3slot_t array: a 64-bit
+        constant occupies two consecutive entries (low half, high half),
+        the 64-bit search reads the two 32-bit values of an aligned pair as
+        one u64 (ConstantTablePairWord; it can match two adjacent i32
+        constants, and it misses a pair whose halves differ from the
+        constant), the 32-bit search compares every entry's low 32 bits,
+        halves of 64-bit pairs included. numConstantBytes and
+        slotMaxConstIndex are therefore C's. The high 32 bits of an entry
+        carry the runtime encoding: the entry of the first slot of a pair
+        used as a 64-bit constant holds the full 64-bit value (written when
+        the constant is stored, and when the 64-bit search reuses a pair,
+        where C writes nothing), every other entry holds its 32-bit value
+        zero-extended. That entry is exactly the runtime slot word (DESIGN
+        4.3: one u64 per slot; 64-bit readers take the word, 32-bit readers
+        its low 32 bits), so CompileFunction copies the numConstantSlots
+        entries verbatim into M3Function.constants and op_Entry copies
+        them slot for slot; length(constants) == numConstantBytes / 4. An
+        i32 constant sharing the low half of a 64-bit pair reads the low
+        32 bits of the full word, as in C. The copy is spelled out (C:
+        m3_CopyMem of numConstantBytes bytes; m3_CopyMem of m3_core takes
+        an array<T> and the table is a fixed array) after dropping a
+        previous table, which C leaves aliased and never reads when
+        numConstantBytes is 0 (op_Entry copies length(constants) words
+        here, so the invariant must hold after a recompilation).
       - handles: a function is an IM3Function into rt.functions, a module
         an IM3Module into rt.modules, a func type an IM3FuncType into
         rt.funcTypes, a global an IM3Global into rt.globals, a code page an
@@ -883,6 +893,22 @@ def PushAllocatedSlot(var rt : M3Runtime; i_type : int) : M3Result {
 }
 
 
+// Eden: C's `memcpy (& constant, & o->constants [i], sizeof (u64))` out of the
+// table of 32-bit slots: the C slot values of entries i and i + 1 (the low 32
+// bits of each entry, see the header) read as one little-endian u64. An entry
+// past the table reads as 0; no reachable path reads there (the pair search
+// stops at slotMaxConstIndex - 1 and the one-slot 64-bit branch needs 64-bit
+// slots).
+def ConstantTablePairWord(rt : M3Runtime; i : int) : u64 {
+    let low = u64(u32(rt.compilation.constants[i]))
+    var high = 0ul
+    if (i + 1 < int(d_m3MaxConstantTableSize)) {
+        high = u64(u32(rt.compilation.constants[i + 1]))
+    }
+    return low | (high << 32ul)
+}
+
+
 def PushConst(var rt : M3Runtime; i_word : u64; i_type : int) : M3Result {
     if (rt.compilation.page == -1) {
         return m3Err_none
@@ -900,10 +926,16 @@ def PushConst(var rt : M3Runtime; i_word : u64; i_type : int) : M3Result {
         while (slot < rt.compilation.slotMaxConstIndex - 1) {
             if (IsSlotAllocated(rt, slot) && IsSlotAllocated(rt, slot + 1)) {
                 // C: memcpy (& constant, & o->constants [slot - o->slotFirstConstIndex], sizeof (u64))
-                // Eden: the word of the first slot of the pair (see the header)
-                let constant : u64 = rt.compilation.constants[slot - rt.compilation.slotFirstConstIndex]
+                // Eden: the two 32-bit slot values of the pair as one u64 (see the header)
+                let constIndex = slot - rt.compilation.slotFirstConstIndex
+                let constant : u64 = ConstantTablePairWord(rt, constIndex)
                 if (constant == i_word) {
                     matchFound = true
+                    // Eden: the pair may hold two i32 constants (C reuses them as
+                    // the i64); the first entry takes the full word so the
+                    // runtime slot word reads the i64 (its low 32 bits, the C
+                    // slot value, are unchanged); C writes nothing here
+                    rt.compilation.constants[constIndex] = i_word
                     let result = Push(rt, i_type, slot)
                     if (result != m3Err_none) {
                         return result
@@ -920,11 +952,11 @@ def PushConst(var rt : M3Runtime; i_word : u64; i_type : int) : M3Result {
             if (IsSlotAllocated(rt, slot)) {
                 var matches = false
                 if (is64BitType) {
-                    // C: memcpy (& constant, & o->constants [i], sizeof (u64)); Eden: the word
-                    let constant : u64 = rt.compilation.constants[i]
+                    // C: memcpy (& constant, & o->constants [i], sizeof (u64)); Eden: entries i and i + 1 as one u64
+                    let constant : u64 = ConstantTablePairWord(rt, i)
                     matches = constant == i_word
                 } else {
-                    // C: memcpy (& constant, & o->constants [i], sizeof (u32)); Eden: the low 32 bits of the word
+                    // C: memcpy (& constant, & o->constants [i], sizeof (u32)); Eden: the C slot value, the low 32 bits of the entry
                     let constant : u32 = u32(rt.compilation.constants[i])
                     // C: matches = (constant == i_word) compares the zero-extended u32
                     // with the full u64, so a sign-extended negative i32 never matches.
@@ -967,8 +999,12 @@ def PushConst(var rt : M3Runtime; i_word : u64; i_type : int) : M3Result {
         let constTableIndex = slot - rt.compilation.slotFirstConstIndex
         d_m3Assert(constTableIndex < int(d_m3MaxConstantTableSize))
         if (is64BitType) {
-            // C: memcpy (& o->constants [constTableIndex], & i_word, sizeof (u64)); Eden: the word of the first slot
+            // C: memcpy (& o->constants [constTableIndex], & i_word, sizeof (u64))
+            // Eden: the low half in the first slot, the high half in the second
+            // (the C slot values); the first entry keeps the full word, which
+            // is the runtime slot word the i64 is read from (see the header)
             rt.compilation.constants[constTableIndex] = i_word
+            rt.compilation.constants[constTableIndex + 1] = i_word >> 32ul
         } else {
             // C: memcpy (& o->constants [constTableIndex], & word32, sizeof (u32)); Eden: the low 32 bits, zero-extended
             let word32 = u32(i_word)
@@ -3130,7 +3166,8 @@ def public CompileFunction(var rt : M3Runtime; io_function : IM3Function) : M3Re
             m3_Free_Impl(rt.functions[io_function].constants)
             if (numConstantSlots != 0) {
                 // C: io_function->constants = m3_CopyMem (o->constants, io_function->numConstantBytes);
-                // Eden: one word per slot, numConstantSlots of them (DESIGN.md 4.4a, 4.7b);
+                // Eden: one runtime slot word per entry, numConstantSlots of them,
+                // copied verbatim (the header: an entry is its slot word) (DESIGN.md 4.4a, 4.7b);
                 // the table is a fixed array, so the copy of m3_CopyMem is spelled out
                 m3_Malloc_Impl(rt.functions[io_function].constants, numConstantSlots)
                 for (c in range(numConstantSlots)) {

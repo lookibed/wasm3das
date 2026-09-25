@@ -59,7 +59,19 @@ while true; do
     attempt=$((attempt + 1))
     mcp game_play '{"play": false}' >/dev/null || true
     sleep 1
-    mcp get_logs >/dev/null || true       # drop stale lines
+    # the console the user watches: show what the editor reported since the
+    # last read (hot reloads of earlier saves) before clearing it, and keep a
+    # copy, so no compilation error is lost by the gate
+    prior=$(mcp get_logs 2>/dev/null || true)
+    if [[ -n "$prior" && "$prior" != "No logs" ]]; then
+        mkdir -p "$repo/tmp/eden"
+        printf '%s\n' "$prior" >> "$repo/tmp/eden/editor_console.log"
+        errs=$(printf '%s\n' "$prior" | grep -A1 -E 'Compilation error|internal error' || true)
+        if [[ -n "$errs" ]]; then
+            echo "eden_gate: editor console since the last read had compilation errors (earlier saves; the restart below decides whether they still hold):"
+            printf '%s\n' "$errs" | sed 's/^/    /'
+        fi
+    fi
     start_out=$(mcp game_play '{"play": true}' 2>&1 || true)
     echo "$start_out"
     deadline=$((SECONDS + timeout_s))

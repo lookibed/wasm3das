@@ -42,7 +42,9 @@ require modules/wasm3das/source/m3_core
         same two bodies and the same numConstantBytes checks (8 for two
         i32.const -1, 4 for two i32.const 1), plus the Eden shape of the
         constant table (one word per slot, length == numConstantBytes / 4)
-        and the compiled function run.
+        and the compiled function run; the Eden-only
+        test_compile_constant_table_keeps_the_c_32bit_slots (below) checks
+        the table against C's 32-bit slots with mixed i32 / i64 constants.
       - test_compile_stack_top_after_unreachable: the same two bodies.
       - test_compile_rejects_reserved_and_unknown_opcodes: the same three
         bodies and error strings (0x06 reserved, 0xc5 DEBUG-only, 0xfd past
@@ -59,6 +61,11 @@ require modules/wasm3das/source/m3_core
         declared local, `i32.load` with an offset from a one-page memory
         (and its out-of-bounds trap), `call` of a second function, and
         `select`;
+      - test_compile_constant_table_keeps_the_c_32bit_slots: the
+        verifier's three mixed i32 / i64 bodies (numConstantBytes 8, 12, 16
+        as C, the constant words), the same layouts with the constants used
+        by the result, and a pair of i32 constants reused by an i64 (8
+        bytes, the runtime word holds the i64);
       - test_slot_and_type_stack: the slot and register accounting
         (AllocateSlots with alignment, MarkSlotAllocated / DeallocateSlot,
         Push / Pop / PopType / PushRegister, the register aliases, the
@@ -423,6 +430,94 @@ def test_compile_negative_i32_constants_keep_the_c_slot_behaviour(var t : TestRu
     equal(t, length(rt.functions[f].constants), 1, "one constant word for two 1")
     equal(t, rt.functions[f].constants[0], 1ul, "the constant word is 1")
     expect_value(t, rt, f, -5, -5, "positive constants body returns its argument")
+}
+
+
+// ============================================================================
+// Eden: the constant table keeps C's 32-bit slots
+// ============================================================================
+
+
+// C's constant table is an array of 32-bit slots: an i64 constant fills an
+// aligned pair (low half, high half), the 64-bit search reads a pair as one
+// u64 and the 32-bit search scans every slot, halves of pairs included. The
+// first three bodies are the verifier's cases (numConstantBytes as C: 8, 12,
+// 16), then the same layouts with the constants used, then a pair of i32
+// constants reused as an i64 (C: 8 bytes), whose runtime word must be the i64.
+def test_compile_constant_table_keeps_the_c_32bit_slots(var t : TestRun; fx : FixtureSource) {
+    var rt <- compile_runtime(64)
+    let f : IM3Function = 0
+
+    // A: i64.const 0x1_00000000; drop; i32.const 1; drop; local.get 0; end
+    // C: the pair holds (0, 1); the i32 search finds 1 in the high half -> 8 bytes
+    var a <- [u8(0x00), u8(0x42), u8(0x80), u8(0x80), u8(0x80), u8(0x80), u8(0x10), u8(0x1a), u8(0x41), u8(0x01), u8(0x1a), u8(0x20), u8(0x00), u8(0x0b)]
+    equal_str(t, compile_body(rt, f, a), m3Err_none, "compile A")
+    equal(t, int(rt.functions[f].numConstantBytes), 8, "A: the i32 1 reuses the high half of the i64 (C: 8)")
+    equal(t, length(rt.functions[f].constants), 2, "A: two constant words")
+    equal(t, rt.functions[f].constants[0], 0x100000000ul, "A: word 0 is the i64")
+    equal(t, rt.functions[f].constants[1], 1ul, "A: word 1 is the high half, the i32 1")
+    expect_value(t, rt, f, 9, 9, "A returns its argument")
+
+    // B: i64.const 0x1_00000002; drop; i32.const 0; drop; local.get 0; end
+    // C: the pair holds (2, 1); no slot holds 0 -> a third slot, 12 bytes
+    var b <- [u8(0x00), u8(0x42), u8(0x82), u8(0x80), u8(0x80), u8(0x80), u8(0x10), u8(0x1a), u8(0x41), u8(0x00), u8(0x1a), u8(0x20), u8(0x00), u8(0x0b)]
+    equal_str(t, compile_body(rt, f, b), m3Err_none, "compile B")
+    equal(t, int(rt.functions[f].numConstantBytes), 12, "B: the i32 0 matches no 32-bit slot (C: 12)")
+    equal(t, length(rt.functions[f].constants), 3, "B: three constant words")
+    equal(t, rt.functions[f].constants[0], 0x100000002ul, "B: word 0 is the i64")
+    equal(t, rt.functions[f].constants[1], 1ul, "B: word 1 is the high half")
+    equal(t, rt.functions[f].constants[2], 0ul, "B: word 2 is the i32 0")
+    expect_value(t, rt, f, 9, 9, "B returns its argument")
+
+    // C: i32.const 5; drop; i32.const 7; drop; i64.const 5; drop; local.get 0; end
+    // C: the 64-bit search reads (5, 7) as 0x0000000700000005 != 5 -> a new pair, 16 bytes
+    var c <- [u8(0x00), u8(0x41), u8(0x05), u8(0x1a), u8(0x41), u8(0x07), u8(0x1a), u8(0x42), u8(0x05), u8(0x1a), u8(0x20), u8(0x00), u8(0x0b)]
+    equal_str(t, compile_body(rt, f, c), m3Err_none, "compile C")
+    equal(t, int(rt.functions[f].numConstantBytes), 16, "C: the i64 5 does not match the pair (5, 7) (C: 16)")
+    equal(t, length(rt.functions[f].constants), 4, "C: four constant words")
+    equal(t, rt.functions[f].constants[0], 5ul, "C: word 0 is the i32 5")
+    equal(t, rt.functions[f].constants[1], 7ul, "C: word 1 is the i32 7")
+    equal(t, rt.functions[f].constants[2], 5ul, "C: word 2 is the i64 5")
+    equal(t, rt.functions[f].constants[3], 0ul, "C: word 3 is its high half")
+    expect_value(t, rt, f, 9, 9, "C returns its argument")
+
+    // A used: i64.const 0x1_00000000; local.get 0; i64.extend_i32_u; i64.shr_u;
+    // i32.wrap_i64; i32.const 1; i32.add; end -> (0x1_00000000 >> n) + 1
+    var aUsed <- [u8(0x00), u8(0x42), u8(0x80), u8(0x80), u8(0x80), u8(0x80), u8(0x10), u8(0x20), u8(0x00), u8(0xad), u8(0x88), u8(0xa7), u8(0x41), u8(0x01), u8(0x6a), u8(0x0b)]
+    equal_str(t, compile_body(rt, f, aUsed), m3Err_none, "compile A used")
+    equal(t, int(rt.functions[f].numConstantBytes), 8, "A used: 8 bytes")
+    expect_value(t, rt, f, 0, 1, "A used: low half 0, plus the i32 1")
+    expect_value(t, rt, f, 32, 2, "A used: high half 1, plus the i32 1")
+    expect_value(t, rt, f, 31, 3, "A used: bit 32 shifted to bit 1, plus the i32 1")
+
+    // B used: i64.const 0x1_00000002; local.get 0; i64.extend_i32_u; i64.shr_u;
+    // i32.wrap_i64; i32.const 0; i32.add; end -> (0x1_00000002 >> n) + 0
+    var bUsed <- [u8(0x00), u8(0x42), u8(0x82), u8(0x80), u8(0x80), u8(0x80), u8(0x10), u8(0x20), u8(0x00), u8(0xad), u8(0x88), u8(0xa7), u8(0x41), u8(0x00), u8(0x6a), u8(0x0b)]
+    equal_str(t, compile_body(rt, f, bUsed), m3Err_none, "compile B used")
+    equal(t, int(rt.functions[f].numConstantBytes), 12, "B used: 12 bytes")
+    expect_value(t, rt, f, 0, 2, "B used: low half 2")
+    expect_value(t, rt, f, 32, 1, "B used: high half 1")
+    expect_value(t, rt, f, 1, int(0x80000001), "B used: 0x1_00000002 >> 1")
+
+    // C used: i32.const 5; i32.const 7; i32.add; i64.const 5; local.get 0;
+    // i64.extend_i32_u; i64.shl; i32.wrap_i64; i32.add; end -> 12 + (5 << n)
+    var cUsed <- [u8(0x00), u8(0x41), u8(0x05), u8(0x41), u8(0x07), u8(0x6a), u8(0x42), u8(0x05), u8(0x20), u8(0x00), u8(0xad), u8(0x86), u8(0xa7), u8(0x6a), u8(0x0b)]
+    equal_str(t, compile_body(rt, f, cUsed), m3Err_none, "compile C used")
+    equal(t, int(rt.functions[f].numConstantBytes), 16, "C used: 16 bytes")
+    expect_value(t, rt, f, 0, 17, "C used: 5 + 7 + 5")
+    expect_value(t, rt, f, 2, 32, "C used: 5 + 7 + (5 << 2)")
+
+    // D: i32.const 5; i32.const 7; i32.add; i64.const 0x7_00000005; local.get 0;
+    // i64.extend_i32_u; i64.shr_u; i32.wrap_i64; i32.add; end -> 12 + (0x7_00000005 >> n)
+    // C: the 64-bit search reads (5, 7) as 0x0000000700000005 and reuses the pair -> 8 bytes
+    var d <- [u8(0x00), u8(0x41), u8(0x05), u8(0x41), u8(0x07), u8(0x6a), u8(0x42), u8(0x85), u8(0x80), u8(0x80), u8(0x80), u8(0xf0), u8(0x00), u8(0x20), u8(0x00), u8(0xad), u8(0x88), u8(0xa7), u8(0x6a), u8(0x0b)]
+    equal_str(t, compile_body(rt, f, d), m3Err_none, "compile D")
+    equal(t, int(rt.functions[f].numConstantBytes), 8, "D: the i64 reuses the pair of i32 constants (C: 8)")
+    equal(t, length(rt.functions[f].constants), 2, "D: two constant words")
+    equal(t, rt.functions[f].constants[0], 0x700000005ul, "D: word 0 is the i64 (its low half the i32 5)")
+    equal(t, rt.functions[f].constants[1], 7ul, "D: word 1 is the i32 7, the high half")
+    expect_value(t, rt, f, 0, 17, "D: 5 + 7 + low half 5")
+    expect_value(t, rt, f, 32, 19, "D: 5 + 7 + high half 7")
 }
 
 
@@ -942,6 +1037,8 @@ def public run_tests_m3_compile(var t : TestRun; fx : FixtureSource) {
     test_operation_tables_resolve(t, fx)
     begin_test(t, "test_compile_negative_i32_constants_keep_the_c_slot_behaviour")
     test_compile_negative_i32_constants_keep_the_c_slot_behaviour(t, fx)
+    begin_test(t, "test_compile_constant_table_keeps_the_c_32bit_slots")
+    test_compile_constant_table_keeps_the_c_32bit_slots(t, fx)
     begin_test(t, "test_compile_stack_top_after_unreachable")
     test_compile_stack_top_after_unreachable(t, fx)
     begin_test(t, "test_compile_rejects_reserved_and_unknown_opcodes")
