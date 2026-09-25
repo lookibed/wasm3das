@@ -116,34 +116,47 @@ require daslib/math_bits                                // Eden: the f32 / f64 v
       - RunFunctionCode(rt, f) is C's inline RunCode (function->compiled,
         runtime->stack, ...) of m3_RunStart and the calls: it saves rt.pc,
         rt.sp, rt.r0, rt.fp0 (C passes them by value, so a host function
-        re-entering m3_Call does not disturb its caller), starts at
+        re-entering m3_Call does not disturb its caller) and
+        rt.originStack, and restores all five on every path. The
+        originStack restore matters after a panic: op_CallRawFunction moves
+        originStack to the host frame for the call and puts it back only
+        when the host function returns, so a panicking host function would
+        leave every later m3_Call / m3_GetResults / EvaluateExpression on a
+        shifted base (C has no such path: a host function cannot unwind).
+        EvaluateExpression's guard restores it the same way. It starts at
         rt.pc = compiled, rt.sp = rt.originStack with cleared registers,
         resets rt.trap (DESIGN 4.4: nothing else clears it), runs RunCode
         and maps the protocol: M3_RETURN is m3Err_none, M3_TRAP is rt.trap.
       - m3_FindGlobal: the import test `moduleUtf8 and fieldUtf8` is the
         global's `imported` flag (an import has both names; "" cannot tell
-        C's NULL, DESIGN 4.1). The export test `g->name` remains
-        `!empty(name)`: M3Global carries no export flag, so a global
-        exported under the name "" is not found (C finds it). Noted for
-        m3_parse.
+        C's NULL, DESIGN 4.1). The export test `g->name` (non-NULL) is the
+        global's `isExported` flag (m3_types), which m3_parse sets with
+        the export name, so a global exported under the name "" is found
+        by "" and an unnamed global never is. (C's DEBUG-only
+        Module_GenerateNames, which would name every global, is compiled
+        out.)
       - v_FindFunction / m3_FindFunction, the NULL-vs-"" rule (DESIGN 4.1):
         C's `f->import.moduleUtf8 or f->import.fieldUtf8` is the function's
         position among the module's imports (index < numFuncImports: the
         parser adds every import first, and only imports, with both names
-        set); C's `f->export_name` non-NULL is FunctionIsExported: the
-        export section appends each export name to names[] and sets
-        export_name to it, so a function is exported when it has a name past
-        its import field name (names[0] of an import) whose last one is
-        export_name. `f->names[j]` for j < numNames is never NULL. So an
+        set); C's `f->export_name` non-NULL is FunctionIsExported, the
+        function's `isExported` flag (m3_types), which m3_parse sets with
+        export_name. No name comparison decides whether a function is
+        exported. `f->names[j]` for j < numNames is never NULL. So an
         import with field name "" is found neither as an export nor as an
-        internal function, and a function exported as "" is found by "".
+        internal function, a function exported as "" is found by "", and
+        an export named "" is found before a local function whose name
+        section entry is "".
       - m3_CallV / m3_CallVL take `array<M3TaggedValue>` (C: the variadic
         list; the upstream typed form, with its argument-count check).
         m3_Call(rt, f, i_args : array<u64>) is C's `i_argc, i_argptrs[]`:
         each argument is its value bits (the i32 / f32 ones in the low 32
         bits, the m3_bits_from_* helpers below build them) and argc is
         length(i_args). m3_CallArgv(rt, f, i_argv : array<string>) parses as
-        C (strtoul / strtoull / strtod, m3_strtoull / m3_strtod below).
+        C (strtoul / strtoull / strtod, m3_strtoull / m3_strtod below:
+        glibc's strtod in plain daslang, decimal through to_double with
+        overflow to +-inf and underflow to +-0, inf / nan (with glibc's
+        payload), and exact hexadecimal floats).
         The arguments go to rt.stack from GetStackPointerForArgs =
         rt.originStack + numRets * c_ioSlotCount (C: (u64 *) runtime->stack
         + numRets), one u64 cell = c_ioSlotCount slots per value (C: s += 8);
@@ -339,17 +352,273 @@ def private m3_strtoull(i_text : string) : u64 {
 }
 
 
-// C: strtod (i_text, NULL): leading white space, an optional sign, the
-// longest decimal float prefix (inf and nan included), 0 without digits.
-// Eden: to_double of the strings module (fast_float), after dropping a '+'
-// fast_float does not take; C's hexadecimal floats ("0x1p3") are not parsed
-// (they read as 0).
-def private m3_strtod(i_text : string) : f64 {
-    var text = strip_left(i_text)
-    if (length(text) > 0 && character_at(text, 0) == '+') {
-        text = slice(text, 1)
+// C: strtod (i_text, NULL) as glibc implements it: leading white space, an
+// optional sign, then the longest prefix of one of
+//   - a decimal float: digits with an optional '.', at least one digit, an
+//     optional exponent [eE][+-]digits (taken only when it has a digit);
+//   - a hexadecimal float: 0x / 0X, hex digits with an optional '.', at
+//     least one hex digit, an optional binary exponent [pP][+-]digits;
+//     without a hex digit only the "0" is read;
+//   - "inf" or "infinity", "nan" or "nan(n-char-sequence)", any case;
+// no conversion gives 0. A value too large gives +-HUGE_VAL (+-inf), one
+// too small +-0 or the denormal the rounding gives (ERANGE is not read by
+// m3_CallArgv). The sign applies to every form (-0, -inf, -nan).
+// Eden: the decimal digits are converted by to_double of the strings module
+// (fast_float, correctly rounded), which returns 0 for an out-of-range
+// value: a prefix with a nonzero digit that converts to 0 is overflow when
+// its leading digit's decimal exponent is >= 0 and underflow otherwise.
+// The hexadecimal form is exact: the leading 60 bits of the mantissa, a
+// sticky bit for the rest, rounded once to nearest-even into the double
+// (or denormal) bits. glibc's NaN payload (the n-char-sequence read as
+// strtoull base 0 when it is all digits, its low 51 bits) is kept.
+def private is_decimal_digit(c : int) : bool {
+    return c >= '0' && c <= '9'
+}
+
+
+// the value of a hex digit, -1 when `c` is not one
+def private hex_digit_value(c : int) : int {
+    if (c >= '0' && c <= '9') {
+        return c - '0'
+    } elif (c >= 'a' && c <= 'f') {
+        return c - 'a' + 10
+    } elif (c >= 'A' && c <= 'F') {
+        return c - 'A' + 10
     }
-    return to_double(text)
+    return -1
+}
+
+
+// true when `text` has `word` at `at`, ASCII case-insensitive
+def private has_word_at(text : string; at : int; word : string) : bool {
+    if (at + length(word) > length(text)) {
+        return false
+    }
+    for (i in range(length(word))) {
+        var c = character_at(text, at + i)
+        if (c >= 'A' && c <= 'Z') {
+            c += 'a' - 'A'
+        }
+        if (c != character_at(word, i)) {
+            return false
+        }
+    }
+    return true
+}
+
+
+// the optional exponent [+-]digits at `at` (after the 'e' or 'p'): its
+// value saturated at +-1000000 and the index past it; `at` itself (no
+// exponent) when there is no digit
+def private parse_exponent(text : string; at : int; var o_exponent : int&) : int {
+    var i = at
+    var negative = false
+    if (i < length(text) && (character_at(text, i) == '+' || character_at(text, i) == '-')) {
+        negative = character_at(text, i) == '-'
+        i++
+    }
+    if (i >= length(text) || !is_decimal_digit(character_at(text, i))) {
+        o_exponent = 0
+        return at
+    }
+    var value = 0
+    while (i < length(text) && is_decimal_digit(character_at(text, i))) {
+        if (value < 1000000) {
+            value = value * 10 + (character_at(text, i) - '0')
+        }
+        i++
+    }
+    o_exponent = negative ? -value : value
+    return i
+}
+
+
+// glibc's NaN payload: strtoull (seq, &end, 0) over the whole sequence
+// (0x.. hex, 0.. octal, decimal; ULLONG_MAX when out of range); false when
+// the sequence is not all consumed
+def private nan_payload(seq : string; var o_payload : u64&) : bool {
+    var i = 0
+    var base = 10ul
+    if (length(seq) >= 2 && character_at(seq, 0) == '0' && (character_at(seq, 1) == 'x' || character_at(seq, 1) == 'X') && length(seq) > 2 && hex_digit_value(character_at(seq, 2)) >= 0) {
+        base = 16ul
+        i = 2
+    } elif (length(seq) >= 1 && character_at(seq, 0) == '0') {
+        base = 8ul
+    }
+    if (i >= length(seq)) {
+        return false
+    }
+    var value = 0ul
+    var overflow = false
+    while (i < length(seq)) {
+        let d = hex_digit_value(character_at(seq, i))
+        if (d < 0 || u64(d) >= base) {
+            return false
+        }
+        if (value > (0xfffffffffffffffful - u64(d)) / base) {
+            overflow = true
+        } else {
+            value = value * base + u64(d)
+        }
+        i++
+    }
+    o_payload = overflow ? 0xfffffffffffffffful : value
+    return true
+}
+
+
+// the hexadecimal float after "0x" at `at` (see m3_strtod); false when it
+// has no hex digit
+def private parse_hex_float(text : string; at : int; var o_bits : u64&) : bool {
+    var i = at
+    var mantissa = 0ul       // the leading bits, below 2^64
+    var binaryExponent = 0   // value = (mantissa + sticky) * 2^binaryExponent
+    var sticky = false
+    var anyDigit = false
+    var inFraction = false
+    while (i < length(text)) {
+        let c = character_at(text, i)
+        if (c == '.' && !inFraction) {
+            inFraction = true
+            i++
+            continue
+        }
+        let d = hex_digit_value(c)
+        if (d < 0) {
+            break
+        }
+        anyDigit = true
+        if ((mantissa >> 60ul) == 0ul) {
+            mantissa = (mantissa << 4ul) | u64(d)
+            if (inFraction) {
+                binaryExponent -= 4
+            }
+        } else {
+            sticky = sticky || d != 0
+            if (!inFraction) {
+                binaryExponent += 4
+            }
+        }
+        i++
+    }
+    if (!anyDigit) {
+        return false
+    }
+    if (i < length(text) && (character_at(text, i) == 'p' || character_at(text, i) == 'P')) {
+        var exponent = 0
+        parse_exponent(text, i + 1, exponent)
+        binaryExponent += exponent
+    }
+    if (mantissa == 0ul) {
+        o_bits = 0ul
+        return true
+    }
+    var msb = 63   // the position of the mantissa's leading bit
+    while ((mantissa >> u64(msb)) == 0ul) {
+        msb--
+    }
+    let exponent = msb + binaryExponent   // the value is in [2^exponent, 2^(exponent+1))
+    if (exponent > 1023) {
+        o_bits = 0x7ff0000000000000ul
+        return true
+    }
+    // a normal keeps 53 bits; a denormal counts units of 2^-1074
+    let shift = max(msb - 52, -(binaryExponent + 1074))
+    var q = 0ul
+    if (shift <= 0) {
+        q = mantissa << u64(-shift)   // exact: the mantissa has at most 53 bits here
+    } elif (shift > 64) {
+        q = 0ul                       // below half of 2^-1074: rounds to 0
+    } else {
+        let half = 1ul << u64(shift - 1)
+        let rest = shift == 64 ? mantissa : (mantissa & ((1ul << u64(shift)) - 1ul))
+        q = shift == 64 ? 0ul : (mantissa >> u64(shift))
+        if (rest > half || (rest == half && (sticky || (q & 1ul) != 0ul))) {
+            q++
+        }
+    }
+    if (shift == msb - 52) {
+        // normal: the exponent field above the 52 fraction bits; a carry to
+        // 2^53 moves into the exponent (and 2^1024 is the inf bits)
+        o_bits = (u64(exponent + 1023) << 52ul) + (q - 0x10000000000000ul)
+    } else {
+        o_bits = q   // denormal (a carry to 2^52 is the smallest normal)
+    }
+    return true
+}
+
+
+def private m3_strtod(i_text : string) : f64 {
+    let text = strip_left(i_text)
+    var i = 0
+    var negative = false
+    if (length(text) > 0 && (character_at(text, 0) == '-' || character_at(text, 0) == '+')) {
+        negative = character_at(text, 0) == '-'
+        i = 1
+    }
+    let signBit = negative ? 0x8000000000000000ul : 0ul
+    // infinity / nan
+    if (has_word_at(text, i, "inf")) {
+        return uint64_bits_to_double(signBit | 0x7ff0000000000000ul)
+    }
+    if (has_word_at(text, i, "nan")) {
+        var bits = 0x7ff8000000000000ul
+        let open = i + 3
+        if (open < length(text) && character_at(text, open) == '(') {
+            let close = find(text, ')', open)
+            var payload = 0ul
+            if (close > open && nan_payload(slice(text, open + 1, close), payload)) {
+                bits |= payload & 0x7fffffffffffful
+            }
+        }
+        return uint64_bits_to_double(signBit | bits)
+    }
+    // hexadecimal
+    if (i + 1 < length(text) && character_at(text, i) == '0' && (character_at(text, i + 1) == 'x' || character_at(text, i + 1) == 'X')) {
+        var bits = 0ul
+        if (parse_hex_float(text, i + 2, bits)) {
+            return uint64_bits_to_double(signBit | bits)
+        }
+        return negative ? -0.0lf : 0.0lf   // only the "0" is read
+    }
+    // decimal
+    let start = i
+    var firstNonZero = -1      // the index of the leading nonzero digit
+    var point = -1             // the index of the '.'
+    var digits = 0
+    while (i < length(text)) {
+        let c = character_at(text, i)
+        if (c == '.' && point == -1) {
+            point = i
+        } elif (is_decimal_digit(c)) {
+            digits++
+            if (c != '0' && firstNonZero == -1) {
+                firstNonZero = i
+            }
+        } else {
+            break
+        }
+        i++
+    }
+    if (digits == 0) {
+        return 0.0lf   // no conversion
+    }
+    let digitsEnd = i
+    var exponent = 0
+    if (i < length(text) && (character_at(text, i) == 'e' || character_at(text, i) == 'E')) {
+        let after = parse_exponent(text, i + 1, exponent)
+        if (after != i + 1) {
+            i = after   // an 'e' without a digit is not read
+        }
+    }
+    var value = to_double(slice(text, start, i))
+    if (value == 0.0lf && firstNonZero != -1) {
+        // out of range: the decimal exponent of the leading nonzero digit
+        let pointAt = point == -1 ? digitsEnd : point
+        let leading = (firstNonZero < pointAt ? pointAt - firstNonZero - 1 : pointAt - firstNonZero) + exponent
+        value = leading >= 0 ? uint64_bits_to_double(0x7ff0000000000000ul) : 0.0lf
+    }
+    return negative ? -value : value
 }
 
 
@@ -602,11 +871,13 @@ def public EvaluateExpression(var rt : M3Runtime; i_module : IM3Module; var o_ex
 
         let m3code = GetPagePC(rt, rt.compilation.page)
 
-        // Eden: the registers (C: RunCode's by-value arguments)
+        // Eden: the registers (C: RunCode's by-value arguments) and the
+        // frame base a host function moves (op_CallRawFunction)
         let savedPC = rt.pc
         let savedSP = rt.sp
         let savedR0 = rt.r0
         let savedFP0 = rt.fp0
+        let savedOriginStack = rt.originStack
 
         // Eden: the panic guard (see the header)
         try {
@@ -643,6 +914,7 @@ def public EvaluateExpression(var rt : M3Runtime; i_module : IM3Module; var o_ex
         rt.sp = savedSP
         rt.r0 = savedR0
         rt.fp0 = savedFP0
+        rt.originStack = savedOriginStack   // Eden: a panic inside a host function skipped op_CallRawFunction's restore
 
         // TODO: EraseCodePage (...) see OPTZ above
         ReleaseCodePage(rt, rt.compilation.page)
@@ -897,13 +1169,15 @@ def private GuardedCompileFunction(var rt : M3Runtime; i_function : IM3Function)
 // runtime->memory.mallocated, d_m3OpDefaultArgs). d_m3OpDefaultArgs is
 // r0 = 0, fp0 = 0.0 under d_m3HasFloat; the profiling/tracing variant with
 // d_m3BaseCstr is compiled out.
-// Eden: the registers are saved and restored, rt.trap is reset, the run is
-// guarded and the protocol mapped to an M3Result (see the header)
+// Eden: the registers and rt.originStack are saved and restored, rt.trap is
+// reset, the run is guarded and the protocol mapped to an M3Result (see the
+// header)
 def public RunFunctionCode(var rt : M3Runtime; i_function : IM3Function) : M3Result {
     let savedPC = rt.pc
     let savedSP = rt.sp
     let savedR0 = rt.r0
     let savedFP0 = rt.fp0
+    let savedOriginStack = rt.originStack
     let activePages = rt.numActiveCodePages
 
     rt.pc = rt.functions[i_function].compiled
@@ -934,6 +1208,7 @@ def public RunFunctionCode(var rt : M3Runtime; i_function : IM3Function) : M3Res
     rt.sp = savedSP
     rt.r0 = savedR0
     rt.fp0 = savedFP0
+    rt.originStack = savedOriginStack   // Eden: a panic inside a host function skipped op_CallRawFunction's restore
     return result
 }
 
@@ -1040,8 +1315,8 @@ def public m3_FindGlobal(i_runtime : M3Runtime; io_module : IM3Module; i_globalN
     // Search exports
     for (i in range(int(i_runtime.modules[io_module].numGlobals))) {
         let g : IM3Global = i_runtime.modules[io_module].globals[i]
-        // C: g->name and strcmp (g->name, i_globalName) == 0; Eden: see the header
-        if (!empty(i_runtime.globals[g].name) && i_runtime.globals[g].name == i_globalName) {
+        // C: g->name and strcmp (g->name, i_globalName) == 0; Eden: `g->name` non-NULL is the isExported flag (see the header)
+        if (i_runtime.globals[g].isExported && i_runtime.globals[g].name == i_globalName) {
             return g
         }
     }
@@ -1124,16 +1399,10 @@ def private FunctionIsImported(i_runtime : M3Runtime; i_module : IM3Module; i_in
 }
 
 
-// Eden: C's `f->export_name` is not NULL (see the header): the export
-// section appended a name past an import's field name (names[0]) and
-// export_name is the last one
-def private FunctionIsExported(i_runtime : M3Runtime; i_function : IM3Function; i_isImported : bool) : bool {
-    let numNames = int(i_runtime.functions[i_function].numNames)
-    let firstExportName = i_isImported ? 1 : 0
-    if (numNames <= firstExportName) {
-        return false
-    }
-    return i_runtime.functions[i_function].export_name == i_runtime.functions[i_function].names[numNames - 1]
+// Eden: C's `f->export_name` is not NULL: the isExported flag the export
+// section sets with export_name (see the header)
+def private FunctionIsExported(i_runtime : M3Runtime; i_function : IM3Function) : bool {
+    return i_runtime.functions[i_function].isExported
 }
 
 
@@ -1142,8 +1411,7 @@ def public v_FindFunction(var i_runtime : M3Runtime; i_module : IM3Module; i_nam
     for (i in range(int(i_runtime.modules[i_module].numFunctions))) {
         let f : IM3Function = i_runtime.modules[i_module].functions[i]
         // C: f->export_name and strcmp (f->export_name, i_name) == 0
-        let isExported = FunctionIsExported(i_runtime, f, FunctionIsImported(i_runtime, i_module, i))
-        if (isExported && i_runtime.functions[f].export_name == i_name) {
+        if (FunctionIsExported(i_runtime, f) && i_runtime.functions[f].export_name == i_name) {
             return f
         }
     }

@@ -57,7 +57,8 @@ require modules/wasm3das/source/m3_core
         c_ioSlotCount stride, a four-result function read back as bits and
         as tagged values, the i32 / i64 / f32 / f64 identity functions
         through m3_Call, m3_CallV and m3_CallArgv (strtoul / strtoull /
-        strtod rules);
+        strtod rules, glibc's strtod bits for range errors, inf / nan and
+        hexadecimal floats);
       - test_env_trap_and_stack_overflow: `unreachable` and deep recursion on
         a small stack give "[trap] unreachable executed" and
         "[trap] stack overflow" as the m3_Call result; lastCalled is cleared;
@@ -68,7 +69,14 @@ require modules/wasm3das/source/m3_core
       - test_env_find_function_names: the NULL-vs-"" rule (DESIGN 4.1): an
         import with field name "" is not found by "", a function exported
         as "" is, an internal name is found, a re-exported import is found
-        (and fails to compile, it has no body);
+        (and fails to compile, it has no body), an export "" wins over a
+        local function whose name section entry is "" (C tests
+        export_name != NULL: isExported), m3_FindGlobal finds a global
+        exported as "" and not an unexported one;
+      - test_env_host_panic_restores_origin_stack: a host function
+        (CompileRawFunction) that panics makes m3_Call return
+        m3Err_panicRunCode with rt.originStack back at its base; the next
+        m3_Call / m3_GetResults work;
       - test_env_invalid_body_panics_to_result: a body that panics the
         compiler (local.set on an empty stack) returns
         m3Err_panicCompileFunction from m3_FindFunction / m3_CompileModule,
@@ -183,22 +191,34 @@ def private add_function(var rt : M3Runtime; m : IM3Module; typeIndex : u32; bod
 }
 
 
-// ParseSection_Export for a function
+// ParseSection_Export for a function; Eden: isExported with export_name
+// (C: export_name != NULL)
 def private export_function(var rt : M3Runtime; f : IM3Function; name : string) {
     let n = int(rt.functions[f].numNames)
     rt.functions[f].names[n] = name
     rt.functions[f].numNames = u16(n + 1)
     rt.functions[f].export_name = name
+    rt.functions[f].isExported = true
 }
 
 
-// ParseSection_Global: a global with its init expression (ending in `end`)
-def private add_global(var rt : M3Runtime; m : IM3Module; t : u8; mutable : bool; initExpr : array<u8>; name : string) : IM3Global {
+// ParseSection_Global: a global with its init expression (ending in `end`),
+// not exported
+def private add_unexported_global(var rt : M3Runtime; m : IM3Module; t : u8; mutable : bool; initExpr : array<u8>) : IM3Global {
     var g : IM3Global = -1
     Module_AddGlobal(rt, m, g, t, mutable, false)
     rt.globals[g].initExpr = append_bytes(rt, m, initExpr)
     rt.globals[g].initExprSize = u32(length(initExpr))
+    return g
+}
+
+
+// the same global exported as `name` (ParseSection_Export; Eden: isExported
+// with the name, C: name != NULL)
+def private add_global(var rt : M3Runtime; m : IM3Module; t : u8; mutable : bool; initExpr : array<u8>; name : string) : IM3Global {
+    let g = add_unexported_global(rt, m, t, mutable, initExpr)
     rt.globals[g].name = name
+    rt.globals[g].isExported = true
     return g
 }
 
@@ -843,9 +863,38 @@ def test_env_call_typed_values(var t : TestRun; fx : FixtureSource) {
         is_ok(t, m3_GetResults(rt, idF64, 1u, bits), "id_f64 results")
         equal(t, m3_bits_to_f64(bits[0]), c._1, "strtod(\"{c._0}\")")
     }
+    // strtod as glibc: the expected bits are glibc's (strtod compiled and
+    // run on the C side): range errors, inf / nan, hexadecimal floats
+    let f64BitsCases = [
+        ("1e400", 0x7ff0000000000000ul), ("-1e400", 0xfff0000000000000ul),
+        ("1e309", 0x7ff0000000000000ul), ("1.8e308", 0x7ff0000000000000ul),
+        ("1.7976931348623157e308", 0x7feffffffffffffful),
+        ("1e-400", 0ul), ("-1e-400", 0x8000000000000000ul),
+        ("4.9e-324", 1ul), ("2e-324", 0ul),
+        ("0x1p3", 0x4020000000000000ul), ("0x10", 0x4030000000000000ul),
+        ("-0x10", 0xc030000000000000ul), ("0x1.8p1", 0x4008000000000000ul),
+        ("0X1P-2", 0x3fd0000000000000ul), ("0x.8", 0x3fe0000000000000ul),
+        ("0xAbC.dEp-4", 0x406579bc00000000ul), (" 0x1P+4x", 0x4030000000000000ul),
+        ("0x", 0ul), ("-0x", 0x8000000000000000ul), ("0x1p", 0x3ff0000000000000ul),
+        ("0x1p1024", 0x7ff0000000000000ul), ("0x1p-1074", 1ul), ("0x1p-1075", 0ul),
+        ("0x3p-1076", 1ul), ("0x1.fffffffffffff8p1023", 0x7ff0000000000000ul),
+        ("0x1.00000000000008p0", 0x3ff0000000000000ul), ("0x1.000000000000081p0", 0x3ff0000000000001ul),
+        ("0x123456789abcdef123p0", 0x44323456789abcdful),
+        ("INF", 0x7ff0000000000000ul), ("-infinity", 0xfff0000000000000ul), ("infx", 0x7ff0000000000000ul),
+        ("NAN", 0x7ff8000000000000ul), ("-nan", 0xfff8000000000000ul),
+        ("nan(123)", 0x7ff800000000007bul), ("nan(0x7b)", 0x7ff800000000007bul), ("nan(abc_1)", 0x7ff8000000000000ul),
+        ("1e", 0x3ff0000000000000ul), ("1.5e3x", 0x4097700000000000ul), ("+-1", 0ul), ("5.", 0x4014000000000000ul)]
+    for (c in f64BitsCases) {
+        is_ok(t, m3_CallArgv(rt, idF64, [c._0]), "id_f64(\"{c._0}\")")
+        is_ok(t, m3_GetResults(rt, idF64, 1u, bits), "id_f64 results")
+        equal(t, bits[0], c._1, "strtod(\"{c._0}\") bits")
+    }
     is_ok(t, m3_CallArgv(rt, idF32, ["0.1"]), "id_f32(\"0.1\")")
     is_ok(t, m3_GetResults(rt, idF32, 1u, bits), "id_f32 results")
     equal(t, m3_bits_to_f32(bits[0]), f32(0.1lf), "f32 of strtod (C: the double narrowed)")
+    is_ok(t, m3_CallArgv(rt, idF32, ["-1e400"]), "id_f32(\"-1e400\")")
+    is_ok(t, m3_GetResults(rt, idF32, 1u, bits), "id_f32 results")
+    equal(t, bits[0], 0xff800000ul, "f32 of strtod(\"-1e400\") is -inf")
     is_err(t, m3_CallArgv(rt, idF32, ["1", "2"]), m3Err_argumentCountMismatch, "m3_CallArgv argc")
 
     m3_FreeRuntime(rt)
@@ -1001,6 +1050,88 @@ def test_env_find_function_names(var t : TestRun; fx : FixtureSource) {
     is_ok(t, m3_FindFunction(rt2, g, "x"), "m3_FindFunction x")
     equal(t, g, x, "x found")
     m3_FreeRuntime(rt2)
+
+    // a local function named "" by the name section only, before the
+    // function exported as "": C returns the export (the export loop tests
+    // export_name != NULL, the name section sets no export)
+    var rt3 <- new_runtime(64u * 1024u)
+    let m3 = add_module(rt3, "names3")
+    let t3 = add_type(rt3, m3, [T_I32], no_types())
+    let named = add_function(rt3, m3, t3, [0x00u8, 0x41u8, 0x04u8, 0x0bu8])
+    let exported = add_function(rt3, m3, t3, [0x00u8, 0x41u8, 0x05u8, 0x0bu8])
+    rt3.functions[named].names[0] = ""                               // ParseSection_Name
+    rt3.functions[named].numNames = u16(1)
+    export_function(rt3, exported, "")                               // (export "" (func 1))
+    check(t, !rt3.functions[named].isExported, "a name section entry is no export")
+    is_ok(t, m3_LoadModule(rt3, m3), "m3_LoadModule names3")
+    equal(t, v_FindFunction(rt3, m3, ""), exported, "v_FindFunction(\"\") is the export (C), not the named function")
+    rt3.functions[exported].isExported = false                       // no export at all: the name section entry
+    equal(t, v_FindFunction(rt3, m3, ""), named, "without the export, the first name \"\" (names[] loop)")
+    rt3.functions[exported].isExported = true
+
+    // m3_FindGlobal: C's `g->name != NULL` is isExported
+    let gEmpty = add_global(rt3, m3, T_I32, false, [0x41u8, 0x07u8, 0x0bu8], "")   // (export "" (global 0))
+    let gHidden = add_unexported_global(rt3, m3, T_I32, false, [0x41u8, 0x08u8, 0x0bu8])
+    let gNamed = add_global(rt3, m3, T_I32, false, [0x41u8, 0x09u8, 0x0bu8], "g")
+    equal(t, m3_FindGlobal(rt3, m3, ""), gEmpty, "a global exported as \"\" is found by \"\"")
+    equal(t, m3_FindGlobal(rt3, m3, "g"), gNamed, "a named export is found")
+    rt3.globals[gEmpty].isExported = false
+    equal(t, m3_FindGlobal(rt3, m3, ""), -1, "an unexported global is not found by \"\"")
+    check(t, gHidden != -1 && !rt3.globals[gHidden].isExported, "the unexported global has no export flag")
+    m3_FreeRuntime(rt3)
+}
+
+
+// ============================================================================
+// Eden: a panicking host function leaves rt.originStack where it was
+// ============================================================================
+
+
+// a host function that panics (an array bound, as a host reading a bad index)
+def private host_panics(var rt : M3Runtime; ctx : M3ImportContext; sp : int) : M3Result {
+    var none : array<int>
+    let x = none[sp]
+    return "never {x}"
+}
+
+
+def private host_ok(var rt : M3Runtime; ctx : M3ImportContext; sp : int) : M3Result {
+    return m3Err_none
+}
+
+
+def test_env_host_panic_restores_origin_stack(var t : TestRun; fx : FixtureSource) {
+    var rt <- new_runtime(64u * 1024u)
+    let m = add_module(rt, "host")
+    let t0 = add_type(rt, m, no_types(), no_types())
+    let t1 = add_type(rt, m, [T_I32], no_types())
+    let host = add_import(rt, m, t0, "env", "host")
+    let run = add_function(rt, m, t0, [0x00u8, 0x10u8, 0x00u8, 0x0bu8])   // call 0
+    let five = add_function(rt, m, t1, [0x00u8, 0x41u8, 0x05u8, 0x0bu8])  // i32.const 5
+    export_function(rt, run, "run")
+    export_function(rt, five, "five")
+    is_ok(t, m3_LoadModule(rt, m), "m3_LoadModule host")
+    push(rt.rawCalls, @@host_panics)
+    is_ok(t, CompileRawFunction(rt, m, host, length(rt.rawCalls) - 1, 0), "link the host function")
+
+    var f : IM3Function = -1
+    is_ok(t, m3_FindFunction(rt, f, "run"), "m3_FindFunction run")
+    let origin = rt.originStack
+    var none : array<u64>
+    is_err(t, m3_Call(rt, f, none), m3Err_panicRunCode, "a panicking host function")
+    equal(t, rt.originStack, origin, "rt.originStack restored after the panic")
+
+    // the next calls work from the right base
+    is_ok(t, m3_FindFunction(rt, f, "five"), "m3_FindFunction five")
+    is_ok(t, m3_Call(rt, f, none), "a call after the panic")
+    var bits : array<u64>
+    is_ok(t, m3_GetResults(rt, f, 1u, bits), "results after the panic")
+    equal(t, m3_bits_to_i32(bits[0]), 5, "five() == 5")
+    rt.rawCalls[length(rt.rawCalls) - 1] = @@host_ok
+    is_ok(t, m3_FindFunction(rt, f, "run"), "m3_FindFunction run again")
+    is_ok(t, m3_Call(rt, f, none), "the host call succeeds once it does not panic")
+    equal(t, rt.originStack, origin, "rt.originStack after a normal host call")
+    m3_FreeRuntime(rt)
 }
 
 
@@ -1167,6 +1298,8 @@ def public run_tests_m3_env(var t : TestRun; fx : FixtureSource) {
     test_env_memory_grow(t, fx)
     begin_test(t, "test_env_find_function_names")
     test_env_find_function_names(t, fx)
+    begin_test(t, "test_env_host_panic_restores_origin_stack")
+    test_env_host_panic_restores_origin_stack(t, fx)
     begin_test(t, "test_env_invalid_body_panics_to_result")
     test_env_invalid_body_panics_to_result(t, fx)
     begin_test(t, "test_env_evaluate_expression_and_interning")

@@ -72,7 +72,13 @@ require daslib/math_bits                           // Eden: bit views of the M3G
         = not compiled), wasm/wasmEnd are indices into the owning module's
         `wasm` array, `constants` is `array<u64>` (C: `void *`, the copied
         constant table: one 64-bit word per slot, DESIGN section 4.3;
-        numConstantBytes keeps its C name and meaning).
+        numConstantBytes keeps its C name and meaning). The added
+        `isExported` flag is C's `export_name != NULL`, which a cstr_t
+        ("" = NULL) cannot express: a function may be exported as "" (DESIGN
+        4.1); m3_parse sets it with export_name, m3_env's lookups test it.
+      - M3Global: the added `isExported` flag is C's `name != NULL` (a
+        global may be exported as ""); m3_parse sets it with the export
+        name, m3_FindGlobal tests it.
       - M3Module: `runtime` is an IM3Runtime handle; `environment` is absent
         (the runtime embeds its environment, see M3Runtime); the module owns
         `wasm : array<u8>`, a copy of the binary (DESIGN section 4.1), and
@@ -243,6 +249,7 @@ struct M3Global {
     _type : u8 = 0u8               // C field `type`; `type` is a gen2 keyword
     imported : bool = false
     isMutable : bool = false
+    isExported : bool = false      // Eden: C's `name != NULL` (cstr_t "" cannot tell NULL, DESIGN 4.1); set with every export name
 }
 
 
@@ -261,6 +268,7 @@ struct M3Function {
 
     names : cstr_t[d_m3MaxDuplicateFunctionImpl]
     export_name : cstr_t = ""      // should be a part of "names"
+    isExported : bool = false      // Eden: C's `export_name != NULL` (cstr_t "" cannot tell NULL, DESIGN 4.1); set with every export_name
     numNames : u16 = u16(0)
 
     funcTypeIdx : IM3FuncType = -1 // C field `funcType`; Eden: handle into rt.funcTypes (DESIGN.md 4.1)

@@ -187,10 +187,11 @@ Decisions fixed by `m3_types` (the struct table is in its header):
   `M3TaggedValue`s, `m3_GetResults` fills `array<u64>`); `m3_GetMemory`
   returns an index into `rt.mem`. A panic inside load, compile or run
   becomes `"wasm3 panic in <where>"` (recover cannot read the message).
-  A global exported as `""`: `M3Global` needs an explicit export flag
-  (C tests `global->name != NULL`); `m3_parse` adds `isExported : bool`
-  to `M3Global` (with an `// Eden:` note in `m3_types`) and `m3_FindGlobal`
-  uses it.
+  Exports: `M3Function.isExported` and `M3Global.isExported` (added by the
+  `m3_env` round 2) stand for C's `export_name != NULL` / `name != NULL`;
+  `m3_parse` sets them on every export, and the lookups never compare
+  names to decide whether something is exported. Every `try/recover`
+  guard that runs code restores `rt.originStack` as well as pc/sp/r0/fp0.
 - `M3Module.startFunction : i32 = -1` from construction (C callocs 0 and
   sets -1 in `m3_parse.c` before use; `m3_LoadModule` runs any index >= 0).
 - `cstr_t = string` cannot tell C's `NULL` from `""`. C relies on the
