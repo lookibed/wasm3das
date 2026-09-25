@@ -10,10 +10,11 @@ require modules/wasm3das/source/m3_function   // AllocFuncType for the CallIndir
 require modules/wasm3das/source/m3_types
 require modules/wasm3das/source/m3_core       // the arena allocator helpers, the error strings
 require daslib/math_bits
+require strings                               // starts_with / ends_with / find: the op-name forms of test_arithmetic_families
 
 /*
     test_m3_exec.das: Eden counterpart of
-    .upstream/tests/integration/test_m3_exec.das (PART 1 of 3).
+    .upstream/tests/integration/test_m3_exec.das (parts 1 and 2 of 3).
 
     The upstream tests load fib32.wasm, replace the body of its (i32) -> i32
     function with hand-written WebAssembly bytes, compile them and call the
@@ -27,18 +28,31 @@ require daslib/math_bits
     numRetAndArgSlots = 2 for (i32) -> i32). The checks are the upstream
     ones: the values and the trap strings.
 
-    Coverage of the upstream [test]s in this part:
-      - test_exec_control_flow: the if/else (op_If_r, op_Branch), select
-        (op_Select_i32_sss) and unreachable (op_Unreachable) cases are
-        assembled; the loop-sum case needs op_i32_Add_* / op_i32_Subtract_*
-        and waits for part 2 (marked inside the test).
-      - the three other upstream tests exercise only the arithmetic and
-        conversion families of parts 2 and 3 and are marked below.
+    Coverage of the upstream [test]s after part 2:
+      - test_exec_control_flow: all four cases (the loop sum through
+        op_Loop / op_ContinueLoopIf with op_i32_Add_ss / op_i32_Subtract_ss,
+        the if/else, the select and the unreachable) are assembled.
+      - test_exec_operand_order_and_integer_arithmetic: the same programs
+        and expected values; the i64.extend_i32_s / i32.wrap_i64 pair of
+        the three 64-bit cases belongs to part 3 and is stood in for by the
+        frame itself (see the PART 3 notes inside the test).
+      - test_exec_division_traps_and_rem_s_quirk: the same programs and
+        expected values.
+      - test_exec_float_unary_ops needs the Reinterpret / Trunc conversions
+        of part 3 to read the bit patterns back and is marked below.
     Tests added for the Eden shape (no upstream counterpart):
-      - test_op_table: the registration count of this part, the
+      - test_op_table: the registration count after this part, the
         m3_OpAt(m3_OpWord(name)) round trip, the registration order, the
         idempotent rebuild, and the d_m3Assert panic on an unknown name
         (caught with try / recover, DESIGN.md section 1);
+      - test_arithmetic_families: every operation of part 2 once through
+        the dispatcher (a table of op name, operands and expected register
+        bits, the operands installed as the operation's form reads them),
+        with the operand order of the _rs / _sr / _ss forms, the traps of
+        the integer division, the wasm NaN / signed-zero rules of min /
+        max, and the sign / zero extension of a 32-bit result into rt.r0;
+        the table must name every word of the part-2 range, so a missing
+        registration or a missing row fails;
       - test_nested_call: op_Entry -> op_Call -> op_Return with rt.sp, rt.pc
         and the registers restored by Call (the protocol of the m3_exec
         header), a trap unwinding two levels with rt.sp restored, the
@@ -62,11 +76,6 @@ require daslib/math_bits
 */
 
 
-// PART 2: test_exec_operand_order_and_integer_arithmetic (needs the i32/i64
-// Add, Subtract, Multiply, ShiftLeft, Rotl, Clz, Ctz, Popcnt, Extend and
-// Wrap operations of the arithmetic families)
-// PART 2: test_exec_division_traps_and_rem_s_quirk (needs the i32 Divide
-// and Remainder operations)
 // PART 3: test_exec_float_unary_ops (needs the f32/f64 Floor, Ceil, Nearest,
 // Abs operations of part 2 and the Reinterpret / Trunc conversions of part 3)
 
@@ -76,9 +85,12 @@ require daslib/math_bits
 // ============================================================================
 
 
-// the number of operations this part registers (the `def public op_` count
-// of source/m3_exec.das after part 1)
-let PART1_OP_COUNT = 128
+// the number of operations registered after part 2 (the `def public op_`
+// count of source/m3_exec.das: 128 of part 1 and 250 of part 2), and the
+// words of the part-2 range, registered right after op_NoOp in file order
+let PART2_OP_COUNT = 378
+let PART2_FIRST_WORD = 1
+let PART2_LAST_WORD = 250
 
 
 // Eden: a function variable cannot be assigned `null`; an empty value of the
@@ -200,9 +212,39 @@ def private expect_trap(var t : TestRun; var rt : M3Runtime; f : IM3Function; n 
 def test_exec_control_flow(var t : TestRun; fx : FixtureSource) {
     var rt <- exec_runtime(64)
 
-    // PART 2: sum 1..n with a loop and br_if (op_Loop, op_ContinueLoopIf,
-    // local.set/tee) needs op_i32_Add_ss / op_i32_Subtract_ss; the loop
-    // machinery itself is covered by test_loops_and_branches below.
+    // sum 1..n with a loop and br_if: op_Loop, op_ContinueLoopIf, local.set/tee.
+    // locals: one i32 (sum). loop { sum += i; i -= 1; br_if i } ; sum
+    // Eden: the compiler's shape: sum is slot 2 (zeroed by op_Entry), the
+    // constant 1 sits in slot 3; op_i32_Add_ss leaves sum + i in the
+    // register and op_SetSlot_i32 is the local.set; op_i32_Subtract_ss
+    // leaves i - 1 in the register, op_SetSlot_i32 is the local.tee (the
+    // register keeps the value) and op_ContinueLoopIf tests it; the exit
+    // copies sum into the result slot.
+    let loopPC = emit_op(rt, "op_Entry")
+    let loopFunc = fixture_function(rt, loopPC, 2)
+    emit_int(rt, loopFunc)
+    emit_op(rt, "op_Const32")
+    emit_u32(rt, 1u)
+    emit_int(rt, 3)
+    emit_op(rt, "op_Loop")
+    let loopBodyPC = emit_op(rt, "op_i32_Add_ss")
+    emit_int(rt, 1)   // operand2: i
+    emit_int(rt, 2)   // operand1: sum
+    emit_op(rt, "op_SetSlot_i32")
+    emit_int(rt, 2)
+    emit_op(rt, "op_i32_Subtract_ss")
+    emit_int(rt, 3)   // operand2: the constant 1
+    emit_int(rt, 1)   // operand1: i
+    emit_op(rt, "op_SetSlot_i32")
+    emit_int(rt, 1)
+    emit_op(rt, "op_ContinueLoopIf")
+    emit_int(rt, loopBodyPC)
+    emit_op(rt, "op_CopySlot_32")
+    emit_int(rt, 0)   // the result slot
+    emit_int(rt, 2)   // sum
+    emit_op(rt, "op_Return")
+    expect_value(t, rt, loopFunc, 10, 55, "loop sum")
+    expect_value(t, rt, loopFunc, 100, 5050, "loop sum")
 
     // local.get 0; if (result i32) { 1 } else { 2 }: op_If, the else page and op_Branch back.
     // Eden: the compiler's shape: the condition moves to the register
@@ -263,19 +305,205 @@ def test_exec_control_flow(var t : TestRun; fx : FixtureSource) {
 
 
 // ============================================================================
+// Upstream: test_exec_operand_order_and_integer_arithmetic
+// ============================================================================
+
+
+// local.get 0; <op> ; the result into the return slot: the shape of the
+// unary cases (clz, ctz, popcnt and their 64-bit forms). Eden: the operation
+// reads the arg slot (its _s form) and op_SetSlot_i32 stores the register.
+def private unary_on_arg(var rt : M3Runtime; op : string) : IM3Function {
+    let pc = emit_op(rt, "op_Entry")
+    let f = fixture_function(rt, pc, 0)
+    emit_int(rt, f)
+    emit_op(rt, op)
+    emit_int(rt, 1)
+    emit_op(rt, "op_SetSlot_i32")
+    emit_int(rt, 0)
+    emit_op(rt, "op_Return")
+    return f
+}
+
+
+def test_exec_operand_order_and_integer_arithmetic(var t : TestRun; fx : FixtureSource) {
+    var rt <- exec_runtime(64)
+
+    // local.get 0; i32.const 3; i32.sub -> the slot operand is the left side.
+    // Eden: the constant lands in slot 2; op_i32_Subtract_ss reads operand2
+    // (the constant) then operand1 (the arg) and op_SetSlot_i32 stores the
+    // register into the result slot.
+    let subPC = emit_op(rt, "op_Entry")
+    let subFunc = fixture_function(rt, subPC, 1)
+    emit_int(rt, subFunc)
+    emit_op(rt, "op_Const32")
+    emit_u32(rt, 3u)
+    emit_int(rt, 2)
+    emit_op(rt, "op_i32_Subtract_ss")
+    emit_int(rt, 2)   // operand2: 3
+    emit_int(rt, 1)   // operand1: the arg
+    emit_op(rt, "op_SetSlot_i32")
+    emit_int(rt, 0)
+    emit_op(rt, "op_Return")
+    expect_value(t, rt, subFunc, 10, 7, "sub")
+    expect_value(t, rt, subFunc, 0, -3, "sub")
+
+    // i32.const 1; i32.const 33; i32.shl -> OP_SHL_32 masks the count to 5 bits.
+    let shlPC = emit_op(rt, "op_Entry")
+    let shlFunc = fixture_function(rt, shlPC, 2)
+    emit_int(rt, shlFunc)
+    emit_op(rt, "op_Const32")
+    emit_u32(rt, 1u)
+    emit_int(rt, 2)
+    emit_op(rt, "op_Const32")
+    emit_u32(rt, 33u)
+    emit_int(rt, 3)
+    emit_op(rt, "op_u32_ShiftLeft_ss")
+    emit_int(rt, 3)   // operand2: the count
+    emit_int(rt, 2)   // operand1: 1
+    emit_op(rt, "op_SetSlot_i32")
+    emit_int(rt, 0)
+    emit_op(rt, "op_Return")
+    expect_value(t, rt, shlFunc, 0, 2, "shl")
+
+    // i32.const 0x80000000; i32.const 1; i32.rotl -> 1.
+    let rotlPC = emit_op(rt, "op_Entry")
+    let rotlFunc = fixture_function(rt, rotlPC, 2)
+    emit_int(rt, rotlFunc)
+    emit_op(rt, "op_Const32")
+    emit_u32(rt, 0x80000000u)
+    emit_int(rt, 2)
+    emit_op(rt, "op_Const32")
+    emit_u32(rt, 1u)
+    emit_int(rt, 3)
+    emit_op(rt, "op_u32_Rotl_ss")
+    emit_int(rt, 3)   // operand2: the count
+    emit_int(rt, 2)   // operand1: 0x80000000
+    emit_op(rt, "op_SetSlot_i32")
+    emit_int(rt, 0)
+    emit_op(rt, "op_Return")
+    expect_value(t, rt, rotlFunc, 0, 1, "rotl")
+
+    // OP_CLZ_32 / OP_CTZ_32 special-case zero: clz(0) = ctz(0) = 32; popcnt(0) = 0.
+    // local.get 0 feeds each unary op so the argument chooses the value.
+    let clzFunc = unary_on_arg(rt, "op_u32_Clz_s")
+    expect_value(t, rt, clzFunc, 0, 32, "clz")
+    expect_value(t, rt, clzFunc, 1, 31, "clz")
+    expect_value(t, rt, clzFunc, -1, 0, "clz")
+    let ctzFunc = unary_on_arg(rt, "op_u32_Ctz_s")
+    expect_value(t, rt, ctzFunc, 0, 32, "ctz")
+    expect_value(t, rt, ctzFunc, 8, 3, "ctz")
+    expect_value(t, rt, ctzFunc, -1, 0, "ctz")
+    let popFunc = unary_on_arg(rt, "op_u32_Popcnt_s")
+    expect_value(t, rt, popFunc, 0, 0, "popcnt")
+    expect_value(t, rt, popFunc, 7, 3, "popcnt")
+    expect_value(t, rt, popFunc, -1, 32, "popcnt")
+
+    // 64-bit clz/ctz of zero through extend + wrap: i64.clz(0) = i64.ctz(0) = 64.
+    // PART 3: i64.extend_i32_s (op_i64_Extend_i32_s) and i32.wrap_i64
+    // (op_i32_Wrap_i64_r) are conversion operations of part 3. Until then
+    // the frame stands in for them: the arg slot holds the i32 zero-extended
+    // in its word (call_i32's set_stack_i32), which the 64-bit operation
+    // reads as the extended value for these non-negative arguments, and
+    // op_SetSlot_i32 keeps the low 32 bits of the register, which is what
+    // the wrap yields.
+    let clz64Func = unary_on_arg(rt, "op_u64_Clz_s")
+    expect_value(t, rt, clz64Func, 0, 64, "clz64")
+    expect_value(t, rt, clz64Func, 1, 63, "clz64")
+    let ctz64Func = unary_on_arg(rt, "op_u64_Ctz_s")
+    expect_value(t, rt, ctz64Func, 0, 64, "ctz64")
+    expect_value(t, rt, ctz64Func, 16, 4, "ctz64")
+
+    // local.get 0; i64.extend_i32_s; i64.const 3; i64.mul; i32.wrap_i64.
+    // PART 3: the extend and the wrap as above; the sign of the extension
+    // does not reach the wrapped product (the low 32 bits of (n + k * 2^32)
+    // * 3 are those of n * 3), so op_i64_Multiply_ss on the arg word and
+    // op_SetSlot_i32 give the upstream values for both arguments.
+    let i64PC = emit_op(rt, "op_Entry")
+    let i64Func = fixture_function(rt, i64PC, 2)
+    emit_int(rt, i64Func)
+    emit_op(rt, "op_Const64")
+    emit(rt, 3ul)
+    emit_int(rt, 2)
+    emit_op(rt, "op_i64_Multiply_ss")
+    emit_int(rt, 2)   // operand2: 3
+    emit_int(rt, 1)   // operand1: the arg word
+    emit_op(rt, "op_SetSlot_i32")
+    emit_int(rt, 0)
+    emit_op(rt, "op_Return")
+    expect_value(t, rt, i64Func, 10, 30, "i64 mul wrap")
+    expect_value(t, rt, i64Func, -4, -12, "i64 mul wrap")
+}
+
+
+// ============================================================================
+// Upstream: test_exec_division_traps_and_rem_s_quirk
+// ============================================================================
+
+
+// i32.const a; i32.const b; <op> (or local.get 0 in place of a when
+// `argIsLeft`): the two operands in slots 2 and 3, the _ss form, the
+// register into the result slot
+def private binary_const(var rt : M3Runtime; op : string; argIsLeft : bool; a : u32; b : u32) : IM3Function {
+    let pc = emit_op(rt, "op_Entry")
+    let f = fixture_function(rt, pc, 2)
+    emit_int(rt, f)
+    if (!argIsLeft) {
+        emit_op(rt, "op_Const32")
+        emit_u32(rt, a)
+        emit_int(rt, 2)
+    }
+    emit_op(rt, "op_Const32")
+    emit_u32(rt, b)
+    emit_int(rt, 3)
+    emit_op(rt, op)
+    emit_int(rt, 3)                   // operand2: b
+    emit_int(rt, argIsLeft ? 1 : 2)   // operand1: the arg or a
+    emit_op(rt, "op_SetSlot_i32")
+    emit_int(rt, 0)
+    emit_op(rt, "op_Return")
+    return f
+}
+
+
+def test_exec_division_traps_and_rem_s_quirk(var t : TestRun; fx : FixtureSource) {
+    var rt <- exec_runtime(64)
+
+    // local.get 0; i32.const 0; i32.div_s -> OP_DIV_S traps on a zero divisor.
+    let divZero = binary_const(rt, "op_i32_Divide_ss", true, 0u, 0u)
+    expect_trap(t, rt, divZero, 7, m3Err_trapDivisionByZero, "div_s by zero")
+
+    // i32.const INT32_MIN; i32.const -1; i32.div_s -> OP_DIV_S integer overflow.
+    let divMin = binary_const(rt, "op_i32_Divide_ss", false, 0x80000000u, 0xffffffffu)
+    expect_trap(t, rt, divMin, 0, m3Err_trapIntegerOverflow, "div_s overflow")
+
+    // i32.const INT32_MIN; i32.const -1; i32.rem_s -> OP_REM_S yields 0 instead of trapping.
+    let remMin = binary_const(rt, "op_i32_Remainder_ss", false, 0x80000000u, 0xffffffffu)
+    expect_value(t, rt, remMin, 0, 0, "rem_s INT_MIN % -1")
+
+    // local.get 0; i32.const 7; i32.rem_u -> unsigned remainder.
+    let remU = binary_const(rt, "op_u32_Remainder_ss", true, 0u, 7u)
+    expect_value(t, rt, remU, 30, 2, "rem_u")
+}
+
+
+// ============================================================================
 // Eden: the op table
 // ============================================================================
 
 
 def test_op_table(var t : TestRun; fx : FixtureSource) {
     m3_build_op_table()
-    equal(t, m3_OpCount(), PART1_OP_COUNT, "part 1 registers {PART1_OP_COUNT} operations")
+    equal(t, m3_OpCount(), PART2_OP_COUNT, "parts 1 and 2 register {PART2_OP_COUNT} operations")
     equal(t, length(g_ops), length(g_opIndex), "one index entry per operation")
 
     // the registration order is the index: op_NoOp first, then file order
+    // (the part-2 families precede the part-1 operations in the upstream file)
     equal(t, m3_OpWord("op_NoOp"), 0ul, "op_NoOp is word 0")
-    equal(t, m3_OpWord("op_GetGlobal_s32"), 1ul, "op_GetGlobal_s32 follows op_NoOp (part 1 order)")
-    equal(t, m3_OpWord("op_i64_Store_i64_ss"), u64(PART1_OP_COUNT - 1), "op_i64_Store_i64_ss is the last word of part 1")
+    equal(t, m3_OpWord("op_i32_Equal_rs"), u64(PART2_FIRST_WORD), "op_i32_Equal_rs follows op_NoOp (file order)")
+    equal(t, m3_OpWord("op_u64_Popcnt_s"), u64(PART2_LAST_WORD), "op_u64_Popcnt_s is the last word of part 2")
+    equal(t, m3_OpWord("op_GetGlobal_s32"), u64(PART2_LAST_WORD + 1), "op_GetGlobal_s32 follows the part-2 range")
+    equal(t, m3_OpWord("op_i64_Store_i64_ss"), u64(PART2_OP_COUNT - 1), "op_i64_Store_i64_ss is the last word")
+    check(t, m3_OpWord("op_i32_Add_rs") < m3_OpWord("op_u32_Divide_sr"), "op_i32_Add_rs precedes op_u32_Divide_sr")
     check(t, m3_OpWord("op_Entry") < m3_OpWord("op_Loop"), "op_Entry precedes op_Loop")
     check(t, m3_OpWord("op_Return") < m3_OpWord("op_Const32"), "op_Return precedes op_Const32")
 
@@ -296,7 +524,7 @@ def test_op_table(var t : TestRun; fx : FixtureSource) {
     // idempotent: a rebuild gives the same table
     let entryBefore = m3_OpWord("op_Entry")
     m3_build_op_table()
-    equal(t, m3_OpCount(), PART1_OP_COUNT, "a rebuild registers the same count")
+    equal(t, m3_OpCount(), PART2_OP_COUNT, "a rebuild registers the same count")
     equal(t, m3_OpWord("op_Entry"), entryBefore, "a rebuild keeps the words")
 
     // an unknown name is a d_m3Assert panic (the header's decision)
@@ -308,6 +536,425 @@ def test_op_table(var t : TestRun; fx : FixtureSource) {
         panicked = true
     }
     check(t, panicked, "m3_OpWord panics on an unknown name")
+}
+
+
+// ============================================================================
+// Eden: every operation of part 2 once through the dispatcher
+// ============================================================================
+
+
+// One row of the table: the operation, its operands as register / slot
+// words (a 32-bit integer zero-extended, an i64 / u64 its bits, an f32 its
+// float bits, an f64 its double bits), the expected result word (the same
+// encoding) or the trap string. `a` is the LEFT operand of the C macro
+// (`a OP b`): the slot of an _rs form, the register of an _sr form,
+// operand1 of an _ss form, the single operand of a unary form.
+struct OpCase {
+    name : string
+    a : u64 = 0ul
+    b : u64 = 0ul
+    want : u64 = 0ul
+    trap : string = ""
+}
+
+
+def private oc(name : string; a : u64; b : u64; want : u64) : OpCase {
+    return OpCase(name = name, a = a, b = b, want = want)
+}
+
+
+def private oct(name : string; a : u64; b : u64; trap : string) : OpCase {
+    return OpCase(name = name, a = a, b = b, trap = trap)
+}
+
+
+// Runs one operation: installs the operands as the operation's form reads
+// them (the register for the _r side, slot 2 / slot 3 of a frame at sp = 4
+// with the slot immediates emitted in the order the body reads them), then
+// checks the register the C macro family writes: fp0 for a float result
+// (bit-exact), r0 for the rest with the extension convention of the
+// m3_exec header (an i32 result sign-extended, a u32 / bit-count result
+// zero-extended, a compare 0 / 1, a 64-bit result its bits).
+def private run_op_case(var t : TestRun; var rt : M3Runtime; c : OpCase) {
+    let name = c.name
+    let isF32 = starts_with(name, "op_f32_")
+    let isF64 = starts_with(name, "op_f64_")
+    let isI32 = starts_with(name, "op_i32_")
+    let isU32 = starts_with(name, "op_u32_")
+    let isCompare = find(name, "Equal") >= 0 || find(name, "LessThan") >= 0 || find(name, "GreaterThan") >= 0
+    let floatResult = (isF32 || isF64) && !isCompare
+
+    for (i in range(length(rt.stack))) {
+        rt.stack[i] = 0xfffffffffffffffful
+    }
+    rt.sp = 4
+    rt.r0 = 0ul
+    rt.fp0 = 0.0lf
+    rt.trap = m3Err_none
+    clear(rt.code)
+    var regWord = 0ul
+    var hasReg = false
+    if (ends_with(name, "_ss")) {
+        rt.stack[rt.sp + 2] = c.a
+        rt.stack[rt.sp + 3] = c.b
+        emit_int(rt, 3)   // operand2, read first
+        emit_int(rt, 2)   // operand1
+    } elif (ends_with(name, "_rs")) {
+        rt.stack[rt.sp + 2] = c.a   // the slot operand is the left side
+        regWord = c.b
+        hasReg = true
+        emit_int(rt, 2)
+    } elif (ends_with(name, "_sr")) {
+        regWord = c.a               // the register is the left side
+        hasReg = true
+        rt.stack[rt.sp + 2] = c.b
+        emit_int(rt, 2)
+    } elif (ends_with(name, "_r")) {
+        regWord = c.a
+        hasReg = true
+    } else {
+        rt.stack[rt.sp + 2] = c.a   // the _s form
+        emit_int(rt, 2)
+    }
+    if (hasReg) {
+        if (isF32) {
+            rt.fp0 = f64(uint_bits_to_float(u32(regWord)))
+        } elif (isF64) {
+            rt.fp0 = uint64_bits_to_double(regWord)
+        } else {
+            rt.r0 = regWord
+        }
+    }
+    rt.pc = 0
+    let op = m3_OpAt(int(m3_OpWord(name)))
+    let r = invoke(op, rt)
+    if (c.trap != "") {
+        equal(t, r, M3_TRAP, "{name} traps")
+        equal_str(t, rt.trap, c.trap, "{name} trap string")
+        return
+    }
+    equal(t, r, M3_NEXT, "{name} continues")
+    equal(t, rt.pc, length(rt.code), "{name} consumed its immediates")
+    if (floatResult) {
+        if (isF32) {
+            equal(t, float_bits_to_uint(f32(rt.fp0)), u32(c.want), "{name} f32 result bits")
+        } else {
+            equal(t, double_bits_to_uint64(rt.fp0), c.want, "{name} f64 result bits")
+        }
+    } elif (isI32 && !isCompare) {
+        equal(t, rt.r0, u64(i64(i32(u32(c.want)))), "{name} i32 result, sign-extended")
+    } elif (isU32 && !isCompare) {
+        equal(t, rt.r0, u64(u32(c.want)), "{name} u32 result, zero-extended")
+    } else {
+        equal(t, rt.r0, c.want, "{name} result")
+    }
+}
+
+
+def test_arithmetic_families(var t : TestRun; fx : FixtureSource) {
+    var rt <- exec_runtime(16)
+    var cases : array<OpCase>
+
+    // the compares: -2 against 3 as signed words, the same words unsigned
+    // (0xfffffffe against 3), 1.5 / -2.0 / 3.0 and a NaN as floats; the
+    // operands are asymmetric so a swapped _rs / _sr order fails
+    push(cases, oc("op_i32_Equal_rs", 5ul, 5ul, 1ul))
+    push(cases, oc("op_i32_Equal_ss", 5ul, 6ul, 0ul))
+    push(cases, oc("op_i32_NotEqual_rs", 5ul, 6ul, 1ul))
+    push(cases, oc("op_i32_NotEqual_ss", 5ul, 5ul, 0ul))
+    push(cases, oc("op_i32_LessThan_sr", 0xfffffffeul, 3ul, 1ul))
+    push(cases, oc("op_i32_LessThan_rs", 3ul, 0xfffffffeul, 0ul))
+    push(cases, oc("op_i32_LessThan_ss", 0xfffffffeul, 3ul, 1ul))
+    push(cases, oc("op_i32_GreaterThan_sr", 0xfffffffeul, 3ul, 0ul))
+    push(cases, oc("op_i32_GreaterThan_rs", 3ul, 0xfffffffeul, 1ul))
+    push(cases, oc("op_i32_GreaterThan_ss", 3ul, 0xfffffffeul, 1ul))
+    push(cases, oc("op_i32_LessThanOrEqual_sr", 0xfffffffeul, 3ul, 1ul))
+    push(cases, oc("op_i32_LessThanOrEqual_rs", 3ul, 0xfffffffeul, 0ul))
+    push(cases, oc("op_i32_LessThanOrEqual_ss", 3ul, 3ul, 1ul))
+    push(cases, oc("op_i32_GreaterThanOrEqual_sr", 0xfffffffeul, 3ul, 0ul))
+    push(cases, oc("op_i32_GreaterThanOrEqual_rs", 3ul, 0xfffffffeul, 1ul))
+    push(cases, oc("op_i32_GreaterThanOrEqual_ss", 3ul, 3ul, 1ul))
+    push(cases, oc("op_i64_Equal_rs", 5ul, 5ul, 1ul))
+    push(cases, oc("op_i64_Equal_ss", 5ul, 6ul, 0ul))
+    push(cases, oc("op_i64_NotEqual_rs", 5ul, 6ul, 1ul))
+    push(cases, oc("op_i64_NotEqual_ss", 5ul, 5ul, 0ul))
+    push(cases, oc("op_i64_LessThan_sr", 0xfffffffffffffffeul, 3ul, 1ul))
+    push(cases, oc("op_i64_LessThan_rs", 3ul, 0xfffffffffffffffeul, 0ul))
+    push(cases, oc("op_i64_LessThan_ss", 0xfffffffffffffffeul, 3ul, 1ul))
+    push(cases, oc("op_i64_GreaterThan_sr", 0xfffffffffffffffeul, 3ul, 0ul))
+    push(cases, oc("op_i64_GreaterThan_rs", 3ul, 0xfffffffffffffffeul, 1ul))
+    push(cases, oc("op_i64_GreaterThan_ss", 3ul, 0xfffffffffffffffeul, 1ul))
+    push(cases, oc("op_i64_LessThanOrEqual_sr", 0xfffffffffffffffeul, 3ul, 1ul))
+    push(cases, oc("op_i64_LessThanOrEqual_rs", 3ul, 0xfffffffffffffffeul, 0ul))
+    push(cases, oc("op_i64_LessThanOrEqual_ss", 3ul, 3ul, 1ul))
+    push(cases, oc("op_i64_GreaterThanOrEqual_sr", 0xfffffffffffffffeul, 3ul, 0ul))
+    push(cases, oc("op_i64_GreaterThanOrEqual_rs", 3ul, 0xfffffffffffffffeul, 1ul))
+    push(cases, oc("op_i64_GreaterThanOrEqual_ss", 3ul, 3ul, 1ul))
+    push(cases, oc("op_u32_LessThan_sr", 0xfffffffeul, 3ul, 0ul))
+    push(cases, oc("op_u32_LessThan_rs", 3ul, 0xfffffffeul, 1ul))
+    push(cases, oc("op_u32_LessThan_ss", 0xfffffffeul, 3ul, 0ul))
+    push(cases, oc("op_u32_GreaterThan_sr", 0xfffffffeul, 3ul, 1ul))
+    push(cases, oc("op_u32_GreaterThan_rs", 3ul, 0xfffffffeul, 0ul))
+    push(cases, oc("op_u32_GreaterThan_ss", 0xfffffffeul, 3ul, 1ul))
+    push(cases, oc("op_u32_LessThanOrEqual_sr", 0xfffffffeul, 3ul, 0ul))
+    push(cases, oc("op_u32_LessThanOrEqual_rs", 3ul, 0xfffffffeul, 1ul))
+    push(cases, oc("op_u32_LessThanOrEqual_ss", 3ul, 3ul, 1ul))
+    push(cases, oc("op_u32_GreaterThanOrEqual_sr", 0xfffffffeul, 3ul, 1ul))
+    push(cases, oc("op_u32_GreaterThanOrEqual_rs", 3ul, 0xfffffffeul, 0ul))
+    push(cases, oc("op_u32_GreaterThanOrEqual_ss", 3ul, 3ul, 1ul))
+    push(cases, oc("op_u64_LessThan_sr", 0xfffffffffffffffeul, 3ul, 0ul))
+    push(cases, oc("op_u64_LessThan_rs", 3ul, 0xfffffffffffffffeul, 1ul))
+    push(cases, oc("op_u64_LessThan_ss", 0xfffffffffffffffeul, 3ul, 0ul))
+    push(cases, oc("op_u64_GreaterThan_sr", 0xfffffffffffffffeul, 3ul, 1ul))
+    push(cases, oc("op_u64_GreaterThan_rs", 3ul, 0xfffffffffffffffeul, 0ul))
+    push(cases, oc("op_u64_GreaterThan_ss", 0xfffffffffffffffeul, 3ul, 1ul))
+    push(cases, oc("op_u64_LessThanOrEqual_sr", 0xfffffffffffffffeul, 3ul, 0ul))
+    push(cases, oc("op_u64_LessThanOrEqual_rs", 3ul, 0xfffffffffffffffeul, 1ul))
+    push(cases, oc("op_u64_LessThanOrEqual_ss", 3ul, 3ul, 1ul))
+    push(cases, oc("op_u64_GreaterThanOrEqual_sr", 0xfffffffffffffffeul, 3ul, 1ul))
+    push(cases, oc("op_u64_GreaterThanOrEqual_rs", 3ul, 0xfffffffffffffffeul, 0ul))
+    push(cases, oc("op_u64_GreaterThanOrEqual_ss", 3ul, 3ul, 1ul))
+    // f32: 1.5 = 0x3fc00000, -2.0 = 0xc0000000, 3.0 = 0x40400000, NaN = 0x7fc00000
+    push(cases, oc("op_f32_Equal_rs", 0x3fc00000ul, 0x3fc00000ul, 1ul))
+    push(cases, oc("op_f32_Equal_ss", 0x7fc00000ul, 0x7fc00000ul, 0ul))   // NaN == NaN is false
+    push(cases, oc("op_f32_NotEqual_rs", 0x7fc00000ul, 0x7fc00000ul, 1ul))   // NaN != NaN is true
+    push(cases, oc("op_f32_NotEqual_ss", 0x3fc00000ul, 0x3fc00000ul, 0ul))
+    push(cases, oc("op_f32_LessThan_sr", 0xc0000000ul, 0x40400000ul, 1ul))
+    push(cases, oc("op_f32_LessThan_rs", 0x40400000ul, 0xc0000000ul, 0ul))
+    push(cases, oc("op_f32_LessThan_ss", 0xc0000000ul, 0x40400000ul, 1ul))
+    push(cases, oc("op_f32_GreaterThan_sr", 0xc0000000ul, 0x40400000ul, 0ul))
+    push(cases, oc("op_f32_GreaterThan_rs", 0x40400000ul, 0xc0000000ul, 1ul))
+    push(cases, oc("op_f32_GreaterThan_ss", 0x40400000ul, 0xc0000000ul, 1ul))
+    push(cases, oc("op_f32_LessThanOrEqual_sr", 0xc0000000ul, 0x40400000ul, 1ul))
+    push(cases, oc("op_f32_LessThanOrEqual_rs", 0x40400000ul, 0xc0000000ul, 0ul))
+    push(cases, oc("op_f32_LessThanOrEqual_ss", 0x40400000ul, 0x40400000ul, 1ul))
+    push(cases, oc("op_f32_GreaterThanOrEqual_sr", 0xc0000000ul, 0x40400000ul, 0ul))
+    push(cases, oc("op_f32_GreaterThanOrEqual_rs", 0x40400000ul, 0xc0000000ul, 1ul))
+    push(cases, oc("op_f32_GreaterThanOrEqual_ss", 0x40400000ul, 0x40400000ul, 1ul))
+    // f64: 1.5 = 0x3ff8..., -2.0 = 0xc000..., 3.0 = 0x4008..., NaN = 0x7ff8...
+    push(cases, oc("op_f64_Equal_rs", 0x3ff8000000000000ul, 0x3ff8000000000000ul, 1ul))
+    push(cases, oc("op_f64_Equal_ss", 0x7ff8000000000000ul, 0x7ff8000000000000ul, 0ul))
+    push(cases, oc("op_f64_NotEqual_rs", 0x7ff8000000000000ul, 0x7ff8000000000000ul, 1ul))
+    push(cases, oc("op_f64_NotEqual_ss", 0x3ff8000000000000ul, 0x3ff8000000000000ul, 0ul))
+    push(cases, oc("op_f64_LessThan_sr", 0xc000000000000000ul, 0x4008000000000000ul, 1ul))
+    push(cases, oc("op_f64_LessThan_rs", 0x4008000000000000ul, 0xc000000000000000ul, 0ul))
+    push(cases, oc("op_f64_LessThan_ss", 0xc000000000000000ul, 0x4008000000000000ul, 1ul))
+    push(cases, oc("op_f64_GreaterThan_sr", 0xc000000000000000ul, 0x4008000000000000ul, 0ul))
+    push(cases, oc("op_f64_GreaterThan_rs", 0x4008000000000000ul, 0xc000000000000000ul, 1ul))
+    push(cases, oc("op_f64_GreaterThan_ss", 0x4008000000000000ul, 0xc000000000000000ul, 1ul))
+    push(cases, oc("op_f64_LessThanOrEqual_sr", 0xc000000000000000ul, 0x4008000000000000ul, 1ul))
+    push(cases, oc("op_f64_LessThanOrEqual_rs", 0x4008000000000000ul, 0xc000000000000000ul, 0ul))
+    push(cases, oc("op_f64_LessThanOrEqual_ss", 0x4008000000000000ul, 0x4008000000000000ul, 1ul))
+    push(cases, oc("op_f64_GreaterThanOrEqual_sr", 0xc000000000000000ul, 0x4008000000000000ul, 0ul))
+    push(cases, oc("op_f64_GreaterThanOrEqual_rs", 0x4008000000000000ul, 0xc000000000000000ul, 1ul))
+    push(cases, oc("op_f64_GreaterThanOrEqual_ss", 0x4008000000000000ul, 0x4008000000000000ul, 1ul))
+
+    // the integer arithmetic: wrapping add / multiply, the operand order
+    // of subtract, the masked shift counts, the arithmetic shift of a
+    // negative value
+    push(cases, oc("op_i32_Add_rs", 0x7ffffffful, 1ul, 0x80000000ul))
+    push(cases, oc("op_i32_Add_ss", 2ul, 3ul, 5ul))
+    push(cases, oc("op_i64_Add_rs", 0x7ffffffffffffffful, 1ul, 0x8000000000000000ul))
+    push(cases, oc("op_i64_Add_ss", 2ul, 3ul, 5ul))
+    push(cases, oc("op_i32_Multiply_rs", 0x10000ul, 0x10000ul, 0ul))
+    push(cases, oc("op_i32_Multiply_ss", 0xfffffffdul, 4ul, 0xfffffff4ul))
+    push(cases, oc("op_i64_Multiply_rs", 0x100000000ul, 0x100000000ul, 0ul))
+    push(cases, oc("op_i64_Multiply_ss", 0xfffffffffffffffdul, 4ul, 0xfffffffffffffff4ul))
+    push(cases, oc("op_i32_Subtract_sr", 10ul, 3ul, 7ul))
+    push(cases, oc("op_i32_Subtract_rs", 3ul, 10ul, 0xfffffff9ul))
+    push(cases, oc("op_i32_Subtract_ss", 0ul, 1ul, 0xfffffffful))
+    push(cases, oc("op_i64_Subtract_sr", 10ul, 3ul, 7ul))
+    push(cases, oc("op_i64_Subtract_rs", 3ul, 10ul, 0xfffffffffffffff9ul))
+    push(cases, oc("op_i64_Subtract_ss", 0ul, 1ul, 0xfffffffffffffffful))
+    push(cases, oc("op_u32_ShiftLeft_sr", 1ul, 33ul, 2ul))
+    push(cases, oc("op_u32_ShiftLeft_rs", 1ul, 4ul, 16ul))
+    push(cases, oc("op_u32_ShiftLeft_ss", 0x80000001ul, 1ul, 2ul))
+    push(cases, oc("op_u64_ShiftLeft_sr", 1ul, 65ul, 2ul))
+    push(cases, oc("op_u64_ShiftLeft_rs", 1ul, 40ul, 0x10000000000ul))
+    push(cases, oc("op_u64_ShiftLeft_ss", 0x8000000000000001ul, 1ul, 2ul))
+    push(cases, oc("op_i32_ShiftRight_sr", 0xfffffff8ul, 1ul, 0xfffffffcul))
+    push(cases, oc("op_i32_ShiftRight_rs", 0xfffffff8ul, 33ul, 0xfffffffcul))
+    push(cases, oc("op_i32_ShiftRight_ss", 0x80000000ul, 31ul, 0xfffffffful))
+    push(cases, oc("op_i64_ShiftRight_sr", 0xfffffffffffffff8ul, 1ul, 0xfffffffffffffffcul))
+    push(cases, oc("op_i64_ShiftRight_rs", 0xfffffffffffffff8ul, 65ul, 0xfffffffffffffffcul))
+    push(cases, oc("op_i64_ShiftRight_ss", 0x8000000000000000ul, 63ul, 0xfffffffffffffffful))
+    push(cases, oc("op_u32_ShiftRight_sr", 0x80000000ul, 31ul, 1ul))
+    push(cases, oc("op_u32_ShiftRight_rs", 0xfffffff8ul, 1ul, 0x7ffffffcul))
+    push(cases, oc("op_u32_ShiftRight_ss", 0x80000000ul, 33ul, 0x40000000ul))
+    push(cases, oc("op_u64_ShiftRight_sr", 0x8000000000000000ul, 63ul, 1ul))
+    push(cases, oc("op_u64_ShiftRight_rs", 0xfffffffffffffff8ul, 1ul, 0x7ffffffffffffffcul))
+    push(cases, oc("op_u64_ShiftRight_ss", 0x8000000000000000ul, 65ul, 0x4000000000000000ul))
+    push(cases, oc("op_u32_And_rs", 0xff00ff00ul, 0x0ff00ff0ul, 0x0f000f00ul))
+    push(cases, oc("op_u32_And_ss", 0xfffffffful, 0x12345678ul, 0x12345678ul))
+    push(cases, oc("op_u32_Or_rs", 0xff00ul, 0x00fful, 0xfffful))
+    push(cases, oc("op_u32_Or_ss", 0x80000000ul, 1ul, 0x80000001ul))
+    push(cases, oc("op_u32_Xor_rs", 0xfffffffful, 0x0f0f0f0ful, 0xf0f0f0f0ul))
+    push(cases, oc("op_u32_Xor_ss", 0x1234ul, 0x1234ul, 0ul))
+    push(cases, oc("op_u64_And_rs", 0xff00ff00ff00ff00ul, 0x0ff00ff00ff00ff0ul, 0x0f000f000f000f00ul))
+    push(cases, oc("op_u64_And_ss", 0xfffffffffffffffful, 0x123456789abcdef0ul, 0x123456789abcdef0ul))
+    push(cases, oc("op_u64_Or_rs", 0xff00000000000000ul, 0xfful, 0xff000000000000fful))
+    push(cases, oc("op_u64_Or_ss", 0x8000000000000000ul, 1ul, 0x8000000000000001ul))
+    push(cases, oc("op_u64_Xor_rs", 0xfffffffffffffffful, 0x0f0f0f0f0f0f0f0ful, 0xf0f0f0f0f0f0f0f0ul))
+    push(cases, oc("op_u64_Xor_ss", 0x123456789abcdef0ul, 0x123456789abcdef0ul, 0ul))
+
+    // the float arithmetic, bit-exact: 1.5 + 3.0 = 4.5, 1.5 + -2.0 = -0.5,
+    // -2.0 * 3.0 = -6.0, 1.5 - 3.0 = -1.5, -2.0 - 3.0 = -5.0, 3.0 / -2.0 =
+    // -1.5, 1.5 / 3.0 = 0.5, 1.0 / 0.0 = +inf
+    push(cases, oc("op_f32_Add_rs", 0x3fc00000ul, 0x40400000ul, 0x40900000ul))
+    push(cases, oc("op_f32_Add_ss", 0x3fc00000ul, 0xc0000000ul, 0xbf000000ul))
+    push(cases, oc("op_f32_Multiply_rs", 0x3fc00000ul, 0x40400000ul, 0x40900000ul))
+    push(cases, oc("op_f32_Multiply_ss", 0xc0000000ul, 0x40400000ul, 0xc0c00000ul))
+    push(cases, oc("op_f32_Subtract_sr", 0x3fc00000ul, 0x40400000ul, 0xbfc00000ul))
+    push(cases, oc("op_f32_Subtract_rs", 0x40400000ul, 0x3fc00000ul, 0x3fc00000ul))
+    push(cases, oc("op_f32_Subtract_ss", 0xc0000000ul, 0x40400000ul, 0xc0a00000ul))
+    push(cases, oc("op_f32_Divide_sr", 0x40400000ul, 0xc0000000ul, 0xbfc00000ul))
+    push(cases, oc("op_f32_Divide_rs", 0x3fc00000ul, 0x40400000ul, 0x3f000000ul))
+    push(cases, oc("op_f32_Divide_ss", 0x3f800000ul, 0ul, 0x7f800000ul))
+    push(cases, oc("op_f64_Add_rs", 0x3ff8000000000000ul, 0x4008000000000000ul, 0x4012000000000000ul))
+    push(cases, oc("op_f64_Add_ss", 0x3ff8000000000000ul, 0xc000000000000000ul, 0xbfe0000000000000ul))
+    push(cases, oc("op_f64_Multiply_rs", 0x3ff8000000000000ul, 0x4008000000000000ul, 0x4012000000000000ul))
+    push(cases, oc("op_f64_Multiply_ss", 0xc000000000000000ul, 0x4008000000000000ul, 0xc018000000000000ul))
+    push(cases, oc("op_f64_Subtract_sr", 0x3ff8000000000000ul, 0x4008000000000000ul, 0xbff8000000000000ul))
+    push(cases, oc("op_f64_Subtract_rs", 0x4008000000000000ul, 0x3ff8000000000000ul, 0x3ff8000000000000ul))
+    push(cases, oc("op_f64_Subtract_ss", 0xc000000000000000ul, 0x4008000000000000ul, 0xc014000000000000ul))
+    push(cases, oc("op_f64_Divide_sr", 0x4008000000000000ul, 0xc000000000000000ul, 0xbff8000000000000ul))
+    push(cases, oc("op_f64_Divide_rs", 0x3ff8000000000000ul, 0x4008000000000000ul, 0x3fe0000000000000ul))
+    push(cases, oc("op_f64_Divide_ss", 0x3ff0000000000000ul, 0ul, 0x7ff0000000000000ul))
+
+    // the rotations, the count masked to the width
+    push(cases, oc("op_u32_Rotl_sr", 0x80000000ul, 1ul, 1ul))
+    push(cases, oc("op_u32_Rotl_rs", 0x80000000ul, 33ul, 1ul))
+    push(cases, oc("op_u32_Rotl_ss", 0x12345678ul, 4ul, 0x23456781ul))
+    push(cases, oc("op_u32_Rotr_sr", 1ul, 1ul, 0x80000000ul))
+    push(cases, oc("op_u32_Rotr_rs", 1ul, 33ul, 0x80000000ul))
+    push(cases, oc("op_u32_Rotr_ss", 0x12345678ul, 4ul, 0x81234567ul))
+    push(cases, oc("op_u64_Rotl_sr", 0x8000000000000000ul, 1ul, 1ul))
+    push(cases, oc("op_u64_Rotl_rs", 0x8000000000000000ul, 65ul, 1ul))
+    push(cases, oc("op_u64_Rotl_ss", 0x123456789abcdef0ul, 8ul, 0x3456789abcdef012ul))
+    push(cases, oc("op_u64_Rotr_sr", 1ul, 1ul, 0x8000000000000000ul))
+    push(cases, oc("op_u64_Rotr_rs", 1ul, 65ul, 0x8000000000000000ul))
+    push(cases, oc("op_u64_Rotr_ss", 0x123456789abcdef0ul, 8ul, 0xf0123456789abcdeul))
+
+    // the division: truncation toward zero, the zero-divisor trap on every
+    // width, the INT_MIN / -1 overflow trap and the INT_MIN % -1 = 0 quirk
+    push(cases, oc("op_u32_Divide_sr", 7ul, 2ul, 3ul))
+    push(cases, oc("op_u32_Divide_rs", 0xfffffffeul, 2ul, 0x7ffffffful))
+    push(cases, oct("op_u32_Divide_ss", 1ul, 0ul, m3Err_trapDivisionByZero))
+    push(cases, oc("op_u32_Remainder_sr", 7ul, 3ul, 1ul))
+    push(cases, oc("op_u32_Remainder_rs", 0xfffffffful, 16ul, 15ul))
+    push(cases, oct("op_u32_Remainder_ss", 5ul, 0ul, m3Err_trapDivisionByZero))
+    push(cases, oc("op_i32_Divide_sr", 0xfffffff9ul, 2ul, 0xfffffffdul))
+    push(cases, oct("op_i32_Divide_rs", 0x80000000ul, 0xfffffffful, m3Err_trapIntegerOverflow))
+    push(cases, oc("op_i32_Divide_ss", 7ul, 0xfffffffeul, 0xfffffffdul))
+    push(cases, oc("op_i32_Remainder_sr", 0xfffffff9ul, 2ul, 0xfffffffful))
+    push(cases, oc("op_i32_Remainder_rs", 0x80000000ul, 0xfffffffful, 0ul))
+    push(cases, oct("op_i32_Remainder_ss", 7ul, 0ul, m3Err_trapDivisionByZero))
+    push(cases, oc("op_u64_Divide_sr", 7ul, 2ul, 3ul))
+    push(cases, oc("op_u64_Divide_rs", 0xfffffffffffffffeul, 2ul, 0x7ffffffffffffffful))
+    push(cases, oct("op_u64_Divide_ss", 1ul, 0ul, m3Err_trapDivisionByZero))
+    push(cases, oc("op_u64_Remainder_sr", 7ul, 3ul, 1ul))
+    push(cases, oc("op_u64_Remainder_rs", 0xfffffffffffffffful, 16ul, 15ul))
+    push(cases, oct("op_u64_Remainder_ss", 5ul, 0ul, m3Err_trapDivisionByZero))
+    push(cases, oc("op_i64_Divide_sr", 0xfffffffffffffff9ul, 2ul, 0xfffffffffffffffdul))
+    push(cases, oct("op_i64_Divide_rs", 0x8000000000000000ul, 0xfffffffffffffffful, m3Err_trapIntegerOverflow))
+    push(cases, oc("op_i64_Divide_ss", 7ul, 0xfffffffffffffffeul, 0xfffffffffffffffdul))
+    push(cases, oc("op_i64_Remainder_sr", 0xfffffffffffffff9ul, 2ul, 0xfffffffffffffffful))
+    push(cases, oc("op_i64_Remainder_rs", 0x8000000000000000ul, 0xfffffffffffffffful, 0ul))
+    push(cases, oct("op_i64_Remainder_ss", 7ul, 0ul, m3Err_trapDivisionByZero))
+
+    // min / max with the wasm signed-zero rule (min(+0, -0) = -0, max(-0,
+    // +0) = +0), copysign as a bit copy (the sign of -0.0 is copied)
+    push(cases, oc("op_f32_Min_sr", 0x3fc00000ul, 0xc0000000ul, 0xc0000000ul))
+    push(cases, oc("op_f32_Min_rs", 0ul, 0x80000000ul, 0x80000000ul))
+    push(cases, oc("op_f32_Min_ss", 0x40400000ul, 0x3fc00000ul, 0x3fc00000ul))
+    push(cases, oc("op_f32_Max_sr", 0x3fc00000ul, 0xc0000000ul, 0x3fc00000ul))
+    push(cases, oc("op_f32_Max_rs", 0x80000000ul, 0ul, 0ul))
+    push(cases, oc("op_f32_Max_ss", 0x40400000ul, 0x3fc00000ul, 0x40400000ul))
+    push(cases, oc("op_f32_CopySign_sr", 0x3fc00000ul, 0xc0000000ul, 0xbfc00000ul))
+    push(cases, oc("op_f32_CopySign_rs", 0xc0000000ul, 0x3fc00000ul, 0x40000000ul))
+    push(cases, oc("op_f32_CopySign_ss", 0x40400000ul, 0x80000000ul, 0xc0400000ul))
+    push(cases, oc("op_f64_Min_sr", 0x3ff8000000000000ul, 0xc000000000000000ul, 0xc000000000000000ul))
+    push(cases, oc("op_f64_Min_rs", 0ul, 0x8000000000000000ul, 0x8000000000000000ul))
+    push(cases, oc("op_f64_Min_ss", 0x4008000000000000ul, 0x3ff8000000000000ul, 0x3ff8000000000000ul))
+    push(cases, oc("op_f64_Max_sr", 0x3ff8000000000000ul, 0xc000000000000000ul, 0x3ff8000000000000ul))
+    push(cases, oc("op_f64_Max_rs", 0x8000000000000000ul, 0ul, 0ul))
+    push(cases, oc("op_f64_Max_ss", 0x4008000000000000ul, 0x3ff8000000000000ul, 0x4008000000000000ul))
+    push(cases, oc("op_f64_CopySign_sr", 0x3ff8000000000000ul, 0xc000000000000000ul, 0xbff8000000000000ul))
+    push(cases, oc("op_f64_CopySign_rs", 0xc000000000000000ul, 0x3ff8000000000000ul, 0x4000000000000000ul))
+    push(cases, oc("op_f64_CopySign_ss", 0x4008000000000000ul, 0x8000000000000000ul, 0xc008000000000000ul))
+
+    // the unary float operations: the signed zero of ceil(-0.5),
+    // floor(-0.0), nearest(-0.5) and negate(0.0), the half-to-even of
+    // nearest(2.5), trunc(-1.5) = -1.0, sqrt(2.25) = 1.5
+    push(cases, oc("op_f32_Abs_r", 0xc0000000ul, 0ul, 0x40000000ul))
+    push(cases, oc("op_f32_Abs_s", 0x80000000ul, 0ul, 0ul))
+    push(cases, oc("op_f32_Ceil_r", 0xbf000000ul, 0ul, 0x80000000ul))
+    push(cases, oc("op_f32_Ceil_s", 0x3fc00000ul, 0ul, 0x40000000ul))
+    push(cases, oc("op_f32_Floor_r", 0x80000000ul, 0ul, 0x80000000ul))
+    push(cases, oc("op_f32_Floor_s", 0x3fc00000ul, 0ul, 0x3f800000ul))
+    push(cases, oc("op_f32_Trunc_r", 0xbfc00000ul, 0ul, 0xbf800000ul))
+    push(cases, oc("op_f32_Trunc_s", 0x3fc00000ul, 0ul, 0x3f800000ul))
+    push(cases, oc("op_f32_Sqrt_r", 0x40800000ul, 0ul, 0x40000000ul))
+    push(cases, oc("op_f32_Sqrt_s", 0x40100000ul, 0ul, 0x3fc00000ul))
+    push(cases, oc("op_f32_Nearest_r", 0x40200000ul, 0ul, 0x40000000ul))
+    push(cases, oc("op_f32_Nearest_s", 0xbf000000ul, 0ul, 0x80000000ul))
+    push(cases, oc("op_f32_Negate_r", 0x3fc00000ul, 0ul, 0xbfc00000ul))
+    push(cases, oc("op_f32_Negate_s", 0ul, 0ul, 0x80000000ul))
+    push(cases, oc("op_f64_Abs_r", 0xc000000000000000ul, 0ul, 0x4000000000000000ul))
+    push(cases, oc("op_f64_Abs_s", 0x8000000000000000ul, 0ul, 0ul))
+    push(cases, oc("op_f64_Ceil_r", 0xbfe0000000000000ul, 0ul, 0x8000000000000000ul))
+    push(cases, oc("op_f64_Ceil_s", 0x3ff8000000000000ul, 0ul, 0x4000000000000000ul))
+    push(cases, oc("op_f64_Floor_r", 0x8000000000000000ul, 0ul, 0x8000000000000000ul))
+    push(cases, oc("op_f64_Floor_s", 0x3ff8000000000000ul, 0ul, 0x3ff0000000000000ul))
+    push(cases, oc("op_f64_Trunc_r", 0xbff8000000000000ul, 0ul, 0xbff0000000000000ul))
+    push(cases, oc("op_f64_Trunc_s", 0x3ff8000000000000ul, 0ul, 0x3ff0000000000000ul))
+    push(cases, oc("op_f64_Sqrt_r", 0x4010000000000000ul, 0ul, 0x4000000000000000ul))
+    push(cases, oc("op_f64_Sqrt_s", 0x4002000000000000ul, 0ul, 0x3ff8000000000000ul))
+    push(cases, oc("op_f64_Nearest_r", 0x4004000000000000ul, 0ul, 0x4000000000000000ul))
+    push(cases, oc("op_f64_Nearest_s", 0xbfe0000000000000ul, 0ul, 0x8000000000000000ul))
+    push(cases, oc("op_f64_Negate_r", 0x3ff8000000000000ul, 0ul, 0xbff8000000000000ul))
+    push(cases, oc("op_f64_Negate_s", 0ul, 0ul, 0x8000000000000000ul))
+
+    // eqz on the full width (a 64-bit value with a zero low half is not
+    // zero), the bit counts with their zero guards
+    push(cases, oc("op_i32_EqualToZero_r", 0ul, 0ul, 1ul))
+    push(cases, oc("op_i32_EqualToZero_s", 5ul, 0ul, 0ul))
+    push(cases, oc("op_i64_EqualToZero_r", 0x100000000ul, 0ul, 0ul))
+    push(cases, oc("op_i64_EqualToZero_s", 0ul, 0ul, 1ul))
+    push(cases, oc("op_u32_Clz_r", 0ul, 0ul, 32ul))
+    push(cases, oc("op_u32_Clz_s", 1ul, 0ul, 31ul))
+    push(cases, oc("op_u32_Ctz_r", 0ul, 0ul, 32ul))
+    push(cases, oc("op_u32_Ctz_s", 8ul, 0ul, 3ul))
+    push(cases, oc("op_u32_Popcnt_r", 0xfffffffful, 0ul, 32ul))
+    push(cases, oc("op_u32_Popcnt_s", 7ul, 0ul, 3ul))
+    push(cases, oc("op_u64_Clz_r", 0ul, 0ul, 64ul))
+    push(cases, oc("op_u64_Clz_s", 1ul, 0ul, 63ul))
+    push(cases, oc("op_u64_Ctz_r", 0ul, 0ul, 64ul))
+    push(cases, oc("op_u64_Ctz_s", 16ul, 0ul, 4ul))
+    push(cases, oc("op_u64_Popcnt_r", 0xfffffffffffffffful, 0ul, 64ul))
+    push(cases, oc("op_u64_Popcnt_s", 7ul, 0ul, 3ul))
+
+    var invoked : table<string; bool>
+    for (c in cases) {
+        run_op_case(t, rt, c)
+        invoked[c.name] = true
+    }
+
+    // every word of the part-2 range ran: a missing row (or a registration
+    // the table does not know) fails here, a missing registration panics
+    // in m3_OpWord above
+    var missing = 0
+    for (name, idx in keys(g_opIndex), values(g_opIndex)) {
+        if (idx >= PART2_FIRST_WORD && idx <= PART2_LAST_WORD) {
+            if (!(invoked?[name] ?? false)) {
+                check(t, false, "no case for {name}")
+                missing++
+            }
+        }
+    }
+    equal(t, missing, 0, "every part-2 operation has a case")
+    equal(t, length(invoked), PART2_LAST_WORD - PART2_FIRST_WORD + 1, "the table names exactly the part-2 range")
 }
 
 
@@ -1585,8 +2232,14 @@ def test_call_indirect_and_compile(var t : TestRun; fx : FixtureSource) {
 def public run_tests_m3_exec(var t : TestRun; fx : FixtureSource) {
     begin_test(t, "test_exec_control_flow")
     test_exec_control_flow(t, fx)
+    begin_test(t, "test_exec_operand_order_and_integer_arithmetic")
+    test_exec_operand_order_and_integer_arithmetic(t, fx)
+    begin_test(t, "test_exec_division_traps_and_rem_s_quirk")
+    test_exec_division_traps_and_rem_s_quirk(t, fx)
     begin_test(t, "test_op_table")
     test_op_table(t, fx)
+    begin_test(t, "test_arithmetic_families")
+    test_arithmetic_families(t, fx)
     begin_test(t, "test_nested_call")
     test_nested_call(t, fx)
     begin_test(t, "test_loops_and_branches")

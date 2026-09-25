@@ -126,11 +126,23 @@ require daslib/math_bits                               // Eden: bit casts of cop
       - op_Loop's body, op_BranchTable's target read (C: branches
         [branchIndex], a word past the numTargets immediate) and op_Branch's
         `* _pc` peek read rt.code directly where C indexes the code page.
-      - the file is ported in three parts (DESIGN 4.4): this part holds the
+      - the file is ported in three parts (DESIGN 4.4): part 1 holds the
         infrastructure, the calls and the control, slot, global and memory
-        operations; the compare, arithmetic and conversion families of the
-        upstream file (op_i32_Equal_rs ... op_f64_Reinterpret_i64_s_s) follow
-        at the PART 2 / PART 3 markers in file order.
+        operations; part 2 the compare, arithmetic, bit and float families
+        of the upstream file (op_i32_Equal_rs ... op_u64_Popcnt_s, in file
+        order around the OP_* helpers, as upstream); the conversion
+        families (op_i32_Wrap_i64_r ... op_f64_Reinterpret_i64_s_s) follow
+        at the PART 3 marker in file order.
+      - part 2's register conventions: a compare stores bool_reg, an i32
+        result u64(i64(v)) (sign-extended, C's m3reg_t conversion of an
+        i32), a u32 / bit-count result u64(v) (zero-extended, as C converts
+        a u32), an i64 / u64 result its bits, an f32 result f64(v) in
+        rt.fp0 (C: the f64 register holds the widened f32). The trapping
+        integer division reads the M3Result of OP_DIV_U / OP_REM_U /
+        OP_DIV_S / OP_REM_S (m3_math_utils) and raises it with newTrap (C:
+        the macro's own newTrap); the signed ShiftRight spells C's
+        OP_SHR_32 / OP_SHR_64 on a signed X inline (an arithmetic shift by
+        the masked count), as the upstream file does.
     Everything else (names, order, control flow, checks, trap strings) is
     the C of m3_exec.h.
 */
@@ -377,12 +389,664 @@ def public Call(var rt : M3Runtime; _pc : pc_t; _sp : m3stack_t; _r0 : m3reg_t; 
 // ============================================================================
 
 
-// PART 2: the compare, arithmetic, bit and float families of the upstream
-// file (op_i32_Equal_rs ... op_f64_CopySign_ss, upstream lines 621 - 2894)
-// go here, in file order: the compare operations (upstream 621 - 1180)
-// before the OP_* helpers below, which upstream places at 1185 - 1216, and
-// the arithmetic, bit and float operations (upstream 1218 - 2894) after
-// them.
+// PART 2 (the compare, arithmetic, bit and float families of the upstream
+// file, op_i32_Equal_rs ... op_u64_Popcnt_s, upstream lines 621 - 2282):
+// the compare operations (C: d_m3CommutativeOp_i / d_m3Op_i for the
+// integers, d_m3CommutativeCmpOp_f / d_m3CompareOp_f for the floats, the
+// result is a bool in _r0) precede the OP_* helpers as in the upstream
+// file; the arithmetic, bit and float operations follow them.
+// Eden: the register reads spell C's (TYPE) REG casts on rt.r0 / rt.fp0
+// (i32(u32(rt.r0)), i64(rt.r0), u32(rt.r0), f32(rt.fp0)); the operand
+// order of every body is the C one (_rs: slot OP register, _sr: register
+// OP slot, _ss: operand1 OP operand2).
+
+
+def public op_i32_Equal_rs(var rt : M3Runtime) : m3ret_t {
+    let operand = slot_i32(rt)
+    rt.r0 = bool_reg(operand == i32(u32(rt.r0)))
+    return nextOpDirect(rt)
+}
+
+
+def public op_i32_Equal_ss(var rt : M3Runtime) : m3ret_t {
+    let operand2 = slot_i32(rt)
+    let operand1 = slot_i32(rt)
+    rt.r0 = bool_reg(operand1 == operand2)
+    return nextOpDirect(rt)
+}
+
+
+def public op_i32_NotEqual_rs(var rt : M3Runtime) : m3ret_t {
+    let operand = slot_i32(rt)
+    rt.r0 = bool_reg(operand != i32(u32(rt.r0)))
+    return nextOpDirect(rt)
+}
+
+
+def public op_i32_NotEqual_ss(var rt : M3Runtime) : m3ret_t {
+    let operand2 = slot_i32(rt)
+    let operand1 = slot_i32(rt)
+    rt.r0 = bool_reg(operand1 != operand2)
+    return nextOpDirect(rt)
+}
+
+
+def public op_i32_LessThan_sr(var rt : M3Runtime) : m3ret_t {
+    let operand = slot_i32(rt)
+    rt.r0 = bool_reg(i32(u32(rt.r0)) < operand)
+    return nextOpDirect(rt)
+}
+
+
+def public op_i32_LessThan_rs(var rt : M3Runtime) : m3ret_t {
+    let operand = slot_i32(rt)
+    rt.r0 = bool_reg(operand < i32(u32(rt.r0)))
+    return nextOpDirect(rt)
+}
+
+
+def public op_i32_LessThan_ss(var rt : M3Runtime) : m3ret_t {
+    let operand2 = slot_i32(rt)
+    let operand1 = slot_i32(rt)
+    rt.r0 = bool_reg(operand1 < operand2)
+    return nextOpDirect(rt)
+}
+
+
+def public op_i32_GreaterThan_sr(var rt : M3Runtime) : m3ret_t {
+    let operand = slot_i32(rt)
+    rt.r0 = bool_reg(i32(u32(rt.r0)) > operand)
+    return nextOpDirect(rt)
+}
+
+
+def public op_i32_GreaterThan_rs(var rt : M3Runtime) : m3ret_t {
+    let operand = slot_i32(rt)
+    rt.r0 = bool_reg(operand > i32(u32(rt.r0)))
+    return nextOpDirect(rt)
+}
+
+
+def public op_i32_GreaterThan_ss(var rt : M3Runtime) : m3ret_t {
+    let operand2 = slot_i32(rt)
+    let operand1 = slot_i32(rt)
+    rt.r0 = bool_reg(operand1 > operand2)
+    return nextOpDirect(rt)
+}
+
+
+def public op_i32_LessThanOrEqual_sr(var rt : M3Runtime) : m3ret_t {
+    let operand = slot_i32(rt)
+    rt.r0 = bool_reg(i32(u32(rt.r0)) <= operand)
+    return nextOpDirect(rt)
+}
+
+
+def public op_i32_LessThanOrEqual_rs(var rt : M3Runtime) : m3ret_t {
+    let operand = slot_i32(rt)
+    rt.r0 = bool_reg(operand <= i32(u32(rt.r0)))
+    return nextOpDirect(rt)
+}
+
+
+def public op_i32_LessThanOrEqual_ss(var rt : M3Runtime) : m3ret_t {
+    let operand2 = slot_i32(rt)
+    let operand1 = slot_i32(rt)
+    rt.r0 = bool_reg(operand1 <= operand2)
+    return nextOpDirect(rt)
+}
+
+
+def public op_i32_GreaterThanOrEqual_sr(var rt : M3Runtime) : m3ret_t {
+    let operand = slot_i32(rt)
+    rt.r0 = bool_reg(i32(u32(rt.r0)) >= operand)
+    return nextOpDirect(rt)
+}
+
+
+def public op_i32_GreaterThanOrEqual_rs(var rt : M3Runtime) : m3ret_t {
+    let operand = slot_i32(rt)
+    rt.r0 = bool_reg(operand >= i32(u32(rt.r0)))
+    return nextOpDirect(rt)
+}
+
+
+def public op_i32_GreaterThanOrEqual_ss(var rt : M3Runtime) : m3ret_t {
+    let operand2 = slot_i32(rt)
+    let operand1 = slot_i32(rt)
+    rt.r0 = bool_reg(operand1 >= operand2)
+    return nextOpDirect(rt)
+}
+
+
+def public op_i64_Equal_rs(var rt : M3Runtime) : m3ret_t {
+    let operand = slot_i64(rt)
+    rt.r0 = bool_reg(operand == i64(rt.r0))
+    return nextOpDirect(rt)
+}
+
+
+def public op_i64_Equal_ss(var rt : M3Runtime) : m3ret_t {
+    let operand2 = slot_i64(rt)
+    let operand1 = slot_i64(rt)
+    rt.r0 = bool_reg(operand1 == operand2)
+    return nextOpDirect(rt)
+}
+
+
+def public op_i64_NotEqual_rs(var rt : M3Runtime) : m3ret_t {
+    let operand = slot_i64(rt)
+    rt.r0 = bool_reg(operand != i64(rt.r0))
+    return nextOpDirect(rt)
+}
+
+
+def public op_i64_NotEqual_ss(var rt : M3Runtime) : m3ret_t {
+    let operand2 = slot_i64(rt)
+    let operand1 = slot_i64(rt)
+    rt.r0 = bool_reg(operand1 != operand2)
+    return nextOpDirect(rt)
+}
+
+
+def public op_i64_LessThan_sr(var rt : M3Runtime) : m3ret_t {
+    let operand = slot_i64(rt)
+    rt.r0 = bool_reg(i64(rt.r0) < operand)
+    return nextOpDirect(rt)
+}
+
+
+def public op_i64_LessThan_rs(var rt : M3Runtime) : m3ret_t {
+    let operand = slot_i64(rt)
+    rt.r0 = bool_reg(operand < i64(rt.r0))
+    return nextOpDirect(rt)
+}
+
+
+def public op_i64_LessThan_ss(var rt : M3Runtime) : m3ret_t {
+    let operand2 = slot_i64(rt)
+    let operand1 = slot_i64(rt)
+    rt.r0 = bool_reg(operand1 < operand2)
+    return nextOpDirect(rt)
+}
+
+
+def public op_i64_GreaterThan_sr(var rt : M3Runtime) : m3ret_t {
+    let operand = slot_i64(rt)
+    rt.r0 = bool_reg(i64(rt.r0) > operand)
+    return nextOpDirect(rt)
+}
+
+
+def public op_i64_GreaterThan_rs(var rt : M3Runtime) : m3ret_t {
+    let operand = slot_i64(rt)
+    rt.r0 = bool_reg(operand > i64(rt.r0))
+    return nextOpDirect(rt)
+}
+
+
+def public op_i64_GreaterThan_ss(var rt : M3Runtime) : m3ret_t {
+    let operand2 = slot_i64(rt)
+    let operand1 = slot_i64(rt)
+    rt.r0 = bool_reg(operand1 > operand2)
+    return nextOpDirect(rt)
+}
+
+
+def public op_i64_LessThanOrEqual_sr(var rt : M3Runtime) : m3ret_t {
+    let operand = slot_i64(rt)
+    rt.r0 = bool_reg(i64(rt.r0) <= operand)
+    return nextOpDirect(rt)
+}
+
+
+def public op_i64_LessThanOrEqual_rs(var rt : M3Runtime) : m3ret_t {
+    let operand = slot_i64(rt)
+    rt.r0 = bool_reg(operand <= i64(rt.r0))
+    return nextOpDirect(rt)
+}
+
+
+def public op_i64_LessThanOrEqual_ss(var rt : M3Runtime) : m3ret_t {
+    let operand2 = slot_i64(rt)
+    let operand1 = slot_i64(rt)
+    rt.r0 = bool_reg(operand1 <= operand2)
+    return nextOpDirect(rt)
+}
+
+
+def public op_i64_GreaterThanOrEqual_sr(var rt : M3Runtime) : m3ret_t {
+    let operand = slot_i64(rt)
+    rt.r0 = bool_reg(i64(rt.r0) >= operand)
+    return nextOpDirect(rt)
+}
+
+
+def public op_i64_GreaterThanOrEqual_rs(var rt : M3Runtime) : m3ret_t {
+    let operand = slot_i64(rt)
+    rt.r0 = bool_reg(operand >= i64(rt.r0))
+    return nextOpDirect(rt)
+}
+
+
+def public op_i64_GreaterThanOrEqual_ss(var rt : M3Runtime) : m3ret_t {
+    let operand2 = slot_i64(rt)
+    let operand1 = slot_i64(rt)
+    rt.r0 = bool_reg(operand1 >= operand2)
+    return nextOpDirect(rt)
+}
+
+
+def public op_u32_LessThan_sr(var rt : M3Runtime) : m3ret_t {
+    let operand = slot_u32(rt)
+    rt.r0 = bool_reg(u32(rt.r0) < operand)
+    return nextOpDirect(rt)
+}
+
+
+def public op_u32_LessThan_rs(var rt : M3Runtime) : m3ret_t {
+    let operand = slot_u32(rt)
+    rt.r0 = bool_reg(operand < u32(rt.r0))
+    return nextOpDirect(rt)
+}
+
+
+def public op_u32_LessThan_ss(var rt : M3Runtime) : m3ret_t {
+    let operand2 = slot_u32(rt)
+    let operand1 = slot_u32(rt)
+    rt.r0 = bool_reg(operand1 < operand2)
+    return nextOpDirect(rt)
+}
+
+
+def public op_u32_GreaterThan_sr(var rt : M3Runtime) : m3ret_t {
+    let operand = slot_u32(rt)
+    rt.r0 = bool_reg(u32(rt.r0) > operand)
+    return nextOpDirect(rt)
+}
+
+
+def public op_u32_GreaterThan_rs(var rt : M3Runtime) : m3ret_t {
+    let operand = slot_u32(rt)
+    rt.r0 = bool_reg(operand > u32(rt.r0))
+    return nextOpDirect(rt)
+}
+
+
+def public op_u32_GreaterThan_ss(var rt : M3Runtime) : m3ret_t {
+    let operand2 = slot_u32(rt)
+    let operand1 = slot_u32(rt)
+    rt.r0 = bool_reg(operand1 > operand2)
+    return nextOpDirect(rt)
+}
+
+
+def public op_u32_LessThanOrEqual_sr(var rt : M3Runtime) : m3ret_t {
+    let operand = slot_u32(rt)
+    rt.r0 = bool_reg(u32(rt.r0) <= operand)
+    return nextOpDirect(rt)
+}
+
+
+def public op_u32_LessThanOrEqual_rs(var rt : M3Runtime) : m3ret_t {
+    let operand = slot_u32(rt)
+    rt.r0 = bool_reg(operand <= u32(rt.r0))
+    return nextOpDirect(rt)
+}
+
+
+def public op_u32_LessThanOrEqual_ss(var rt : M3Runtime) : m3ret_t {
+    let operand2 = slot_u32(rt)
+    let operand1 = slot_u32(rt)
+    rt.r0 = bool_reg(operand1 <= operand2)
+    return nextOpDirect(rt)
+}
+
+
+def public op_u32_GreaterThanOrEqual_sr(var rt : M3Runtime) : m3ret_t {
+    let operand = slot_u32(rt)
+    rt.r0 = bool_reg(u32(rt.r0) >= operand)
+    return nextOpDirect(rt)
+}
+
+
+def public op_u32_GreaterThanOrEqual_rs(var rt : M3Runtime) : m3ret_t {
+    let operand = slot_u32(rt)
+    rt.r0 = bool_reg(operand >= u32(rt.r0))
+    return nextOpDirect(rt)
+}
+
+
+def public op_u32_GreaterThanOrEqual_ss(var rt : M3Runtime) : m3ret_t {
+    let operand2 = slot_u32(rt)
+    let operand1 = slot_u32(rt)
+    rt.r0 = bool_reg(operand1 >= operand2)
+    return nextOpDirect(rt)
+}
+
+
+def public op_u64_LessThan_sr(var rt : M3Runtime) : m3ret_t {
+    let operand = slot_u64(rt)
+    rt.r0 = bool_reg(rt.r0 < operand)
+    return nextOpDirect(rt)
+}
+
+
+def public op_u64_LessThan_rs(var rt : M3Runtime) : m3ret_t {
+    let operand = slot_u64(rt)
+    rt.r0 = bool_reg(operand < rt.r0)
+    return nextOpDirect(rt)
+}
+
+
+def public op_u64_LessThan_ss(var rt : M3Runtime) : m3ret_t {
+    let operand2 = slot_u64(rt)
+    let operand1 = slot_u64(rt)
+    rt.r0 = bool_reg(operand1 < operand2)
+    return nextOpDirect(rt)
+}
+
+
+def public op_u64_GreaterThan_sr(var rt : M3Runtime) : m3ret_t {
+    let operand = slot_u64(rt)
+    rt.r0 = bool_reg(rt.r0 > operand)
+    return nextOpDirect(rt)
+}
+
+
+def public op_u64_GreaterThan_rs(var rt : M3Runtime) : m3ret_t {
+    let operand = slot_u64(rt)
+    rt.r0 = bool_reg(operand > rt.r0)
+    return nextOpDirect(rt)
+}
+
+
+def public op_u64_GreaterThan_ss(var rt : M3Runtime) : m3ret_t {
+    let operand2 = slot_u64(rt)
+    let operand1 = slot_u64(rt)
+    rt.r0 = bool_reg(operand1 > operand2)
+    return nextOpDirect(rt)
+}
+
+
+def public op_u64_LessThanOrEqual_sr(var rt : M3Runtime) : m3ret_t {
+    let operand = slot_u64(rt)
+    rt.r0 = bool_reg(rt.r0 <= operand)
+    return nextOpDirect(rt)
+}
+
+
+def public op_u64_LessThanOrEqual_rs(var rt : M3Runtime) : m3ret_t {
+    let operand = slot_u64(rt)
+    rt.r0 = bool_reg(operand <= rt.r0)
+    return nextOpDirect(rt)
+}
+
+
+def public op_u64_LessThanOrEqual_ss(var rt : M3Runtime) : m3ret_t {
+    let operand2 = slot_u64(rt)
+    let operand1 = slot_u64(rt)
+    rt.r0 = bool_reg(operand1 <= operand2)
+    return nextOpDirect(rt)
+}
+
+
+def public op_u64_GreaterThanOrEqual_sr(var rt : M3Runtime) : m3ret_t {
+    let operand = slot_u64(rt)
+    rt.r0 = bool_reg(rt.r0 >= operand)
+    return nextOpDirect(rt)
+}
+
+
+def public op_u64_GreaterThanOrEqual_rs(var rt : M3Runtime) : m3ret_t {
+    let operand = slot_u64(rt)
+    rt.r0 = bool_reg(operand >= rt.r0)
+    return nextOpDirect(rt)
+}
+
+
+def public op_u64_GreaterThanOrEqual_ss(var rt : M3Runtime) : m3ret_t {
+    let operand2 = slot_u64(rt)
+    let operand1 = slot_u64(rt)
+    rt.r0 = bool_reg(operand1 >= operand2)
+    return nextOpDirect(rt)
+}
+
+
+def public op_f32_Equal_rs(var rt : M3Runtime) : m3ret_t {
+    let operand = slot_f32(rt)
+    rt.r0 = bool_reg(operand == f32(rt.fp0))
+    return nextOpDirect(rt)
+}
+
+
+def public op_f32_Equal_ss(var rt : M3Runtime) : m3ret_t {
+    let operand2 = slot_f32(rt)
+    let operand1 = slot_f32(rt)
+    rt.r0 = bool_reg(operand1 == operand2)
+    return nextOpDirect(rt)
+}
+
+
+def public op_f32_NotEqual_rs(var rt : M3Runtime) : m3ret_t {
+    let operand = slot_f32(rt)
+    rt.r0 = bool_reg(operand != f32(rt.fp0))
+    return nextOpDirect(rt)
+}
+
+
+def public op_f32_NotEqual_ss(var rt : M3Runtime) : m3ret_t {
+    let operand2 = slot_f32(rt)
+    let operand1 = slot_f32(rt)
+    rt.r0 = bool_reg(operand1 != operand2)
+    return nextOpDirect(rt)
+}
+
+
+def public op_f32_LessThan_sr(var rt : M3Runtime) : m3ret_t {
+    let operand = slot_f32(rt)
+    rt.r0 = bool_reg(f32(rt.fp0) < operand)
+    return nextOpDirect(rt)
+}
+
+
+def public op_f32_LessThan_rs(var rt : M3Runtime) : m3ret_t {
+    let operand = slot_f32(rt)
+    rt.r0 = bool_reg(operand < f32(rt.fp0))
+    return nextOpDirect(rt)
+}
+
+
+def public op_f32_LessThan_ss(var rt : M3Runtime) : m3ret_t {
+    let operand2 = slot_f32(rt)
+    let operand1 = slot_f32(rt)
+    rt.r0 = bool_reg(operand1 < operand2)
+    return nextOpDirect(rt)
+}
+
+
+def public op_f32_GreaterThan_sr(var rt : M3Runtime) : m3ret_t {
+    let operand = slot_f32(rt)
+    rt.r0 = bool_reg(f32(rt.fp0) > operand)
+    return nextOpDirect(rt)
+}
+
+
+def public op_f32_GreaterThan_rs(var rt : M3Runtime) : m3ret_t {
+    let operand = slot_f32(rt)
+    rt.r0 = bool_reg(operand > f32(rt.fp0))
+    return nextOpDirect(rt)
+}
+
+
+def public op_f32_GreaterThan_ss(var rt : M3Runtime) : m3ret_t {
+    let operand2 = slot_f32(rt)
+    let operand1 = slot_f32(rt)
+    rt.r0 = bool_reg(operand1 > operand2)
+    return nextOpDirect(rt)
+}
+
+
+def public op_f32_LessThanOrEqual_sr(var rt : M3Runtime) : m3ret_t {
+    let operand = slot_f32(rt)
+    rt.r0 = bool_reg(f32(rt.fp0) <= operand)
+    return nextOpDirect(rt)
+}
+
+
+def public op_f32_LessThanOrEqual_rs(var rt : M3Runtime) : m3ret_t {
+    let operand = slot_f32(rt)
+    rt.r0 = bool_reg(operand <= f32(rt.fp0))
+    return nextOpDirect(rt)
+}
+
+
+def public op_f32_LessThanOrEqual_ss(var rt : M3Runtime) : m3ret_t {
+    let operand2 = slot_f32(rt)
+    let operand1 = slot_f32(rt)
+    rt.r0 = bool_reg(operand1 <= operand2)
+    return nextOpDirect(rt)
+}
+
+
+def public op_f32_GreaterThanOrEqual_sr(var rt : M3Runtime) : m3ret_t {
+    let operand = slot_f32(rt)
+    rt.r0 = bool_reg(f32(rt.fp0) >= operand)
+    return nextOpDirect(rt)
+}
+
+
+def public op_f32_GreaterThanOrEqual_rs(var rt : M3Runtime) : m3ret_t {
+    let operand = slot_f32(rt)
+    rt.r0 = bool_reg(operand >= f32(rt.fp0))
+    return nextOpDirect(rt)
+}
+
+
+def public op_f32_GreaterThanOrEqual_ss(var rt : M3Runtime) : m3ret_t {
+    let operand2 = slot_f32(rt)
+    let operand1 = slot_f32(rt)
+    rt.r0 = bool_reg(operand1 >= operand2)
+    return nextOpDirect(rt)
+}
+
+
+def public op_f64_Equal_rs(var rt : M3Runtime) : m3ret_t {
+    let operand = slot_f64(rt)
+    rt.r0 = bool_reg(operand == rt.fp0)
+    return nextOpDirect(rt)
+}
+
+
+def public op_f64_Equal_ss(var rt : M3Runtime) : m3ret_t {
+    let operand2 = slot_f64(rt)
+    let operand1 = slot_f64(rt)
+    rt.r0 = bool_reg(operand1 == operand2)
+    return nextOpDirect(rt)
+}
+
+
+def public op_f64_NotEqual_rs(var rt : M3Runtime) : m3ret_t {
+    let operand = slot_f64(rt)
+    rt.r0 = bool_reg(operand != rt.fp0)
+    return nextOpDirect(rt)
+}
+
+
+def public op_f64_NotEqual_ss(var rt : M3Runtime) : m3ret_t {
+    let operand2 = slot_f64(rt)
+    let operand1 = slot_f64(rt)
+    rt.r0 = bool_reg(operand1 != operand2)
+    return nextOpDirect(rt)
+}
+
+
+def public op_f64_LessThan_sr(var rt : M3Runtime) : m3ret_t {
+    let operand = slot_f64(rt)
+    rt.r0 = bool_reg(rt.fp0 < operand)
+    return nextOpDirect(rt)
+}
+
+
+def public op_f64_LessThan_rs(var rt : M3Runtime) : m3ret_t {
+    let operand = slot_f64(rt)
+    rt.r0 = bool_reg(operand < rt.fp0)
+    return nextOpDirect(rt)
+}
+
+
+def public op_f64_LessThan_ss(var rt : M3Runtime) : m3ret_t {
+    let operand2 = slot_f64(rt)
+    let operand1 = slot_f64(rt)
+    rt.r0 = bool_reg(operand1 < operand2)
+    return nextOpDirect(rt)
+}
+
+
+def public op_f64_GreaterThan_sr(var rt : M3Runtime) : m3ret_t {
+    let operand = slot_f64(rt)
+    rt.r0 = bool_reg(rt.fp0 > operand)
+    return nextOpDirect(rt)
+}
+
+
+def public op_f64_GreaterThan_rs(var rt : M3Runtime) : m3ret_t {
+    let operand = slot_f64(rt)
+    rt.r0 = bool_reg(operand > rt.fp0)
+    return nextOpDirect(rt)
+}
+
+
+def public op_f64_GreaterThan_ss(var rt : M3Runtime) : m3ret_t {
+    let operand2 = slot_f64(rt)
+    let operand1 = slot_f64(rt)
+    rt.r0 = bool_reg(operand1 > operand2)
+    return nextOpDirect(rt)
+}
+
+
+def public op_f64_LessThanOrEqual_sr(var rt : M3Runtime) : m3ret_t {
+    let operand = slot_f64(rt)
+    rt.r0 = bool_reg(rt.fp0 <= operand)
+    return nextOpDirect(rt)
+}
+
+
+def public op_f64_LessThanOrEqual_rs(var rt : M3Runtime) : m3ret_t {
+    let operand = slot_f64(rt)
+    rt.r0 = bool_reg(operand <= rt.fp0)
+    return nextOpDirect(rt)
+}
+
+
+def public op_f64_LessThanOrEqual_ss(var rt : M3Runtime) : m3ret_t {
+    let operand2 = slot_f64(rt)
+    let operand1 = slot_f64(rt)
+    rt.r0 = bool_reg(operand1 <= operand2)
+    return nextOpDirect(rt)
+}
+
+
+def public op_f64_GreaterThanOrEqual_sr(var rt : M3Runtime) : m3ret_t {
+    let operand = slot_f64(rt)
+    rt.r0 = bool_reg(rt.fp0 >= operand)
+    return nextOpDirect(rt)
+}
+
+
+def public op_f64_GreaterThanOrEqual_rs(var rt : M3Runtime) : m3ret_t {
+    let operand = slot_f64(rt)
+    rt.r0 = bool_reg(operand >= rt.fp0)
+    return nextOpDirect(rt)
+}
+
+
+def public op_f64_GreaterThanOrEqual_ss(var rt : M3Runtime) : m3ret_t {
+    let operand2 = slot_f64(rt)
+    let operand1 = slot_f64(rt)
+    rt.r0 = bool_reg(operand1 >= operand2)
+    return nextOpDirect(rt)
+}
 
 
 // C m3_math_utils.h spells these as preprocessor macros, so they cost nothing
@@ -461,8 +1125,1317 @@ def OP_CTZ_64(x : u64) : u64 {
 }
 
 
-// PART 3: the conversion families of the upstream file (op_i32_Extend8_s_r
-// ... op_f64_Reinterpret_i64_s_s, upstream lines 2899 - 3220) go here, in
+// C: d_m3CommutativeOpFunc_i / d_m3OpFunc_i (i32, i64: Add, Multiply,
+// Subtract) through the OP_ADD/MUL/SUB macros above. Eden: an i32 result is
+// stored sign-extended (u64(i64(v)), C's m3reg_t conversion of an i32), an
+// i64 result as its bits.
+def public op_i32_Add_rs(var rt : M3Runtime) : m3ret_t {
+    let operand = slot_i32(rt)
+    rt.r0 = u64(i64(OP_ADD_32(operand, i32(u32(rt.r0)))))
+    return nextOpDirect(rt)
+}
+
+
+def public op_i32_Add_ss(var rt : M3Runtime) : m3ret_t {
+    let operand2 = slot_i32(rt)
+    let operand1 = slot_i32(rt)
+    rt.r0 = u64(i64(OP_ADD_32(operand1, operand2)))
+    return nextOpDirect(rt)
+}
+
+
+def public op_i64_Add_rs(var rt : M3Runtime) : m3ret_t {
+    let operand = slot_i64(rt)
+    rt.r0 = u64(OP_ADD_64(operand, i64(rt.r0)))
+    return nextOpDirect(rt)
+}
+
+
+def public op_i64_Add_ss(var rt : M3Runtime) : m3ret_t {
+    let operand2 = slot_i64(rt)
+    let operand1 = slot_i64(rt)
+    rt.r0 = u64(OP_ADD_64(operand1, operand2))
+    return nextOpDirect(rt)
+}
+
+
+def public op_i32_Multiply_rs(var rt : M3Runtime) : m3ret_t {
+    let operand = slot_i32(rt)
+    rt.r0 = u64(i64(OP_MUL_32(operand, i32(u32(rt.r0)))))
+    return nextOpDirect(rt)
+}
+
+
+def public op_i32_Multiply_ss(var rt : M3Runtime) : m3ret_t {
+    let operand2 = slot_i32(rt)
+    let operand1 = slot_i32(rt)
+    rt.r0 = u64(i64(OP_MUL_32(operand1, operand2)))
+    return nextOpDirect(rt)
+}
+
+
+def public op_i64_Multiply_rs(var rt : M3Runtime) : m3ret_t {
+    let operand = slot_i64(rt)
+    rt.r0 = u64(OP_MUL_64(operand, i64(rt.r0)))
+    return nextOpDirect(rt)
+}
+
+
+def public op_i64_Multiply_ss(var rt : M3Runtime) : m3ret_t {
+    let operand2 = slot_i64(rt)
+    let operand1 = slot_i64(rt)
+    rt.r0 = u64(OP_MUL_64(operand1, operand2))
+    return nextOpDirect(rt)
+}
+
+
+def public op_i32_Subtract_sr(var rt : M3Runtime) : m3ret_t {
+    let operand = slot_i32(rt)
+    rt.r0 = u64(i64(OP_SUB_32(i32(u32(rt.r0)), operand)))
+    return nextOpDirect(rt)
+}
+
+
+def public op_i32_Subtract_rs(var rt : M3Runtime) : m3ret_t {
+    let operand = slot_i32(rt)
+    rt.r0 = u64(i64(OP_SUB_32(operand, i32(u32(rt.r0)))))
+    return nextOpDirect(rt)
+}
+
+
+def public op_i32_Subtract_ss(var rt : M3Runtime) : m3ret_t {
+    let operand2 = slot_i32(rt)
+    let operand1 = slot_i32(rt)
+    rt.r0 = u64(i64(OP_SUB_32(operand1, operand2)))
+    return nextOpDirect(rt)
+}
+
+
+def public op_i64_Subtract_sr(var rt : M3Runtime) : m3ret_t {
+    let operand = slot_i64(rt)
+    rt.r0 = u64(OP_SUB_64(i64(rt.r0), operand))
+    return nextOpDirect(rt)
+}
+
+
+def public op_i64_Subtract_rs(var rt : M3Runtime) : m3ret_t {
+    let operand = slot_i64(rt)
+    rt.r0 = u64(OP_SUB_64(operand, i64(rt.r0)))
+    return nextOpDirect(rt)
+}
+
+
+def public op_i64_Subtract_ss(var rt : M3Runtime) : m3ret_t {
+    let operand2 = slot_i64(rt)
+    let operand1 = slot_i64(rt)
+    rt.r0 = u64(OP_SUB_64(operand1, operand2))
+    return nextOpDirect(rt)
+}
+
+
+// C: d_m3OpFunc_i (u32/u64 ShiftLeft, i32/i64/u32/u64 ShiftRight) through
+// OP_SHL_* / OP_SHR_*, the count masked to the width. Eden: a u32 result is
+// stored zero-extended (C's m3reg_t conversion of a u32); the signed
+// ShiftRight keeps the upstream spelling of C's OP_SHR_32 / OP_SHR_64 on a
+// signed X (an arithmetic shift by the masked count), as the u32 / u64
+// helpers above take the unsigned X of the other rows.
+def public op_u32_ShiftLeft_sr(var rt : M3Runtime) : m3ret_t {
+    let operand = slot_u32(rt)
+    rt.r0 = u64(OP_SHL_32(u32(rt.r0), operand))
+    return nextOpDirect(rt)
+}
+
+
+def public op_u32_ShiftLeft_rs(var rt : M3Runtime) : m3ret_t {
+    let operand = slot_u32(rt)
+    rt.r0 = u64(OP_SHL_32(operand, u32(rt.r0)))
+    return nextOpDirect(rt)
+}
+
+
+def public op_u32_ShiftLeft_ss(var rt : M3Runtime) : m3ret_t {
+    let operand2 = slot_u32(rt)
+    let operand1 = slot_u32(rt)
+    rt.r0 = u64(OP_SHL_32(operand1, operand2))
+    return nextOpDirect(rt)
+}
+
+
+def public op_u64_ShiftLeft_sr(var rt : M3Runtime) : m3ret_t {
+    let operand = slot_u64(rt)
+    rt.r0 = OP_SHL_64(rt.r0, operand)
+    return nextOpDirect(rt)
+}
+
+
+def public op_u64_ShiftLeft_rs(var rt : M3Runtime) : m3ret_t {
+    let operand = slot_u64(rt)
+    rt.r0 = OP_SHL_64(operand, rt.r0)
+    return nextOpDirect(rt)
+}
+
+
+def public op_u64_ShiftLeft_ss(var rt : M3Runtime) : m3ret_t {
+    let operand2 = slot_u64(rt)
+    let operand1 = slot_u64(rt)
+    rt.r0 = OP_SHL_64(operand1, operand2)
+    return nextOpDirect(rt)
+}
+
+
+def public op_i32_ShiftRight_sr(var rt : M3Runtime) : m3ret_t {
+    let operand = slot_i32(rt)
+    rt.r0 = u64(i64(i32(u32(rt.r0)) >> i32(u32(operand) % 32u)))   // C: OP_SHR_32 (i32 X)
+    return nextOpDirect(rt)
+}
+
+
+def public op_i32_ShiftRight_rs(var rt : M3Runtime) : m3ret_t {
+    let operand = slot_i32(rt)
+    rt.r0 = u64(i64(operand >> i32(u32(rt.r0) % 32u)))   // C: OP_SHR_32 (i32 X)
+    return nextOpDirect(rt)
+}
+
+
+def public op_i32_ShiftRight_ss(var rt : M3Runtime) : m3ret_t {
+    let operand2 = slot_i32(rt)
+    let operand1 = slot_i32(rt)
+    rt.r0 = u64(i64(operand1 >> i32(u32(operand2) % 32u)))   // C: OP_SHR_32 (i32 X)
+    return nextOpDirect(rt)
+}
+
+
+def public op_i64_ShiftRight_sr(var rt : M3Runtime) : m3ret_t {
+    let operand = slot_i64(rt)
+    rt.r0 = u64(i64(rt.r0) >> i64(u64(operand) % 64ul))   // C: OP_SHR_64 (i64 X)
+    return nextOpDirect(rt)
+}
+
+
+def public op_i64_ShiftRight_rs(var rt : M3Runtime) : m3ret_t {
+    let operand = slot_i64(rt)
+    rt.r0 = u64(operand >> i64(rt.r0 % 64ul))   // C: OP_SHR_64 (i64 X)
+    return nextOpDirect(rt)
+}
+
+
+def public op_i64_ShiftRight_ss(var rt : M3Runtime) : m3ret_t {
+    let operand2 = slot_i64(rt)
+    let operand1 = slot_i64(rt)
+    rt.r0 = u64(operand1 >> i64(u64(operand2) % 64ul))   // C: OP_SHR_64 (i64 X)
+    return nextOpDirect(rt)
+}
+
+
+def public op_u32_ShiftRight_sr(var rt : M3Runtime) : m3ret_t {
+    let operand = slot_u32(rt)
+    rt.r0 = u64(OP_SHR_32(u32(rt.r0), operand))
+    return nextOpDirect(rt)
+}
+
+
+def public op_u32_ShiftRight_rs(var rt : M3Runtime) : m3ret_t {
+    let operand = slot_u32(rt)
+    rt.r0 = u64(OP_SHR_32(operand, u32(rt.r0)))
+    return nextOpDirect(rt)
+}
+
+
+def public op_u32_ShiftRight_ss(var rt : M3Runtime) : m3ret_t {
+    let operand2 = slot_u32(rt)
+    let operand1 = slot_u32(rt)
+    rt.r0 = u64(OP_SHR_32(operand1, operand2))
+    return nextOpDirect(rt)
+}
+
+
+def public op_u64_ShiftRight_sr(var rt : M3Runtime) : m3ret_t {
+    let operand = slot_u64(rt)
+    rt.r0 = OP_SHR_64(rt.r0, operand)
+    return nextOpDirect(rt)
+}
+
+
+def public op_u64_ShiftRight_rs(var rt : M3Runtime) : m3ret_t {
+    let operand = slot_u64(rt)
+    rt.r0 = OP_SHR_64(operand, rt.r0)
+    return nextOpDirect(rt)
+}
+
+
+def public op_u64_ShiftRight_ss(var rt : M3Runtime) : m3ret_t {
+    let operand2 = slot_u64(rt)
+    let operand1 = slot_u64(rt)
+    rt.r0 = OP_SHR_64(operand1, operand2)
+    return nextOpDirect(rt)
+}
+
+
+// C: d_m3CommutativeOp_i (u32 / u64 And, Or, Xor)
+def public op_u32_And_rs(var rt : M3Runtime) : m3ret_t {
+    let operand = slot_u32(rt)
+    rt.r0 = u64(operand & u32(rt.r0))
+    return nextOpDirect(rt)
+}
+
+
+def public op_u32_And_ss(var rt : M3Runtime) : m3ret_t {
+    let operand2 = slot_u32(rt)
+    let operand1 = slot_u32(rt)
+    rt.r0 = u64(operand1 & operand2)
+    return nextOpDirect(rt)
+}
+
+
+def public op_u32_Or_rs(var rt : M3Runtime) : m3ret_t {
+    let operand = slot_u32(rt)
+    rt.r0 = u64(operand | u32(rt.r0))
+    return nextOpDirect(rt)
+}
+
+
+def public op_u32_Or_ss(var rt : M3Runtime) : m3ret_t {
+    let operand2 = slot_u32(rt)
+    let operand1 = slot_u32(rt)
+    rt.r0 = u64(operand1 | operand2)
+    return nextOpDirect(rt)
+}
+
+
+def public op_u32_Xor_rs(var rt : M3Runtime) : m3ret_t {
+    let operand = slot_u32(rt)
+    rt.r0 = u64(operand ^ u32(rt.r0))
+    return nextOpDirect(rt)
+}
+
+
+def public op_u32_Xor_ss(var rt : M3Runtime) : m3ret_t {
+    let operand2 = slot_u32(rt)
+    let operand1 = slot_u32(rt)
+    rt.r0 = u64(operand1 ^ operand2)
+    return nextOpDirect(rt)
+}
+
+
+def public op_u64_And_rs(var rt : M3Runtime) : m3ret_t {
+    let operand = slot_u64(rt)
+    rt.r0 = operand & rt.r0
+    return nextOpDirect(rt)
+}
+
+
+def public op_u64_And_ss(var rt : M3Runtime) : m3ret_t {
+    let operand2 = slot_u64(rt)
+    let operand1 = slot_u64(rt)
+    rt.r0 = operand1 & operand2
+    return nextOpDirect(rt)
+}
+
+
+def public op_u64_Or_rs(var rt : M3Runtime) : m3ret_t {
+    let operand = slot_u64(rt)
+    rt.r0 = operand | rt.r0
+    return nextOpDirect(rt)
+}
+
+
+def public op_u64_Or_ss(var rt : M3Runtime) : m3ret_t {
+    let operand2 = slot_u64(rt)
+    let operand1 = slot_u64(rt)
+    rt.r0 = operand1 | operand2
+    return nextOpDirect(rt)
+}
+
+
+def public op_u64_Xor_rs(var rt : M3Runtime) : m3ret_t {
+    let operand = slot_u64(rt)
+    rt.r0 = operand ^ rt.r0
+    return nextOpDirect(rt)
+}
+
+
+def public op_u64_Xor_ss(var rt : M3Runtime) : m3ret_t {
+    let operand2 = slot_u64(rt)
+    let operand1 = slot_u64(rt)
+    rt.r0 = operand1 ^ operand2
+    return nextOpDirect(rt)
+}
+
+
+// C: d_m3CommutativeOp_f / d_m3Op_f (f32 / f64 Add, Multiply, Subtract,
+// Divide); an f32 result widens into _fp0 (C: the f64 register)
+def public op_f32_Add_rs(var rt : M3Runtime) : m3ret_t {
+    let operand = slot_f32(rt)
+    rt.fp0 = f64(operand + f32(rt.fp0))
+    return nextOpDirect(rt)
+}
+
+
+def public op_f32_Add_ss(var rt : M3Runtime) : m3ret_t {
+    let operand2 = slot_f32(rt)
+    let operand1 = slot_f32(rt)
+    rt.fp0 = f64(operand1 + operand2)
+    return nextOpDirect(rt)
+}
+
+
+def public op_f32_Multiply_rs(var rt : M3Runtime) : m3ret_t {
+    let operand = slot_f32(rt)
+    rt.fp0 = f64(operand * f32(rt.fp0))
+    return nextOpDirect(rt)
+}
+
+
+def public op_f32_Multiply_ss(var rt : M3Runtime) : m3ret_t {
+    let operand2 = slot_f32(rt)
+    let operand1 = slot_f32(rt)
+    rt.fp0 = f64(operand1 * operand2)
+    return nextOpDirect(rt)
+}
+
+
+def public op_f32_Subtract_sr(var rt : M3Runtime) : m3ret_t {
+    let operand = slot_f32(rt)
+    rt.fp0 = f64(f32(rt.fp0) - operand)
+    return nextOpDirect(rt)
+}
+
+
+def public op_f32_Subtract_rs(var rt : M3Runtime) : m3ret_t {
+    let operand = slot_f32(rt)
+    rt.fp0 = f64(operand - f32(rt.fp0))
+    return nextOpDirect(rt)
+}
+
+
+def public op_f32_Subtract_ss(var rt : M3Runtime) : m3ret_t {
+    let operand2 = slot_f32(rt)
+    let operand1 = slot_f32(rt)
+    rt.fp0 = f64(operand1 - operand2)
+    return nextOpDirect(rt)
+}
+
+
+def public op_f32_Divide_sr(var rt : M3Runtime) : m3ret_t {
+    let operand = slot_f32(rt)
+    rt.fp0 = f64(f32(rt.fp0) / operand)
+    return nextOpDirect(rt)
+}
+
+
+def public op_f32_Divide_rs(var rt : M3Runtime) : m3ret_t {
+    let operand = slot_f32(rt)
+    rt.fp0 = f64(operand / f32(rt.fp0))
+    return nextOpDirect(rt)
+}
+
+
+def public op_f32_Divide_ss(var rt : M3Runtime) : m3ret_t {
+    let operand2 = slot_f32(rt)
+    let operand1 = slot_f32(rt)
+    rt.fp0 = f64(operand1 / operand2)
+    return nextOpDirect(rt)
+}
+
+
+def public op_f64_Add_rs(var rt : M3Runtime) : m3ret_t {
+    let operand = slot_f64(rt)
+    rt.fp0 = (operand + rt.fp0)
+    return nextOpDirect(rt)
+}
+
+
+def public op_f64_Add_ss(var rt : M3Runtime) : m3ret_t {
+    let operand2 = slot_f64(rt)
+    let operand1 = slot_f64(rt)
+    rt.fp0 = (operand1 + operand2)
+    return nextOpDirect(rt)
+}
+
+
+def public op_f64_Multiply_rs(var rt : M3Runtime) : m3ret_t {
+    let operand = slot_f64(rt)
+    rt.fp0 = (operand * rt.fp0)
+    return nextOpDirect(rt)
+}
+
+
+def public op_f64_Multiply_ss(var rt : M3Runtime) : m3ret_t {
+    let operand2 = slot_f64(rt)
+    let operand1 = slot_f64(rt)
+    rt.fp0 = (operand1 * operand2)
+    return nextOpDirect(rt)
+}
+
+
+def public op_f64_Subtract_sr(var rt : M3Runtime) : m3ret_t {
+    let operand = slot_f64(rt)
+    rt.fp0 = (rt.fp0 - operand)
+    return nextOpDirect(rt)
+}
+
+
+def public op_f64_Subtract_rs(var rt : M3Runtime) : m3ret_t {
+    let operand = slot_f64(rt)
+    rt.fp0 = (operand - rt.fp0)
+    return nextOpDirect(rt)
+}
+
+
+def public op_f64_Subtract_ss(var rt : M3Runtime) : m3ret_t {
+    let operand2 = slot_f64(rt)
+    let operand1 = slot_f64(rt)
+    rt.fp0 = (operand1 - operand2)
+    return nextOpDirect(rt)
+}
+
+
+def public op_f64_Divide_sr(var rt : M3Runtime) : m3ret_t {
+    let operand = slot_f64(rt)
+    rt.fp0 = (rt.fp0 / operand)
+    return nextOpDirect(rt)
+}
+
+
+def public op_f64_Divide_rs(var rt : M3Runtime) : m3ret_t {
+    let operand = slot_f64(rt)
+    rt.fp0 = (operand / rt.fp0)
+    return nextOpDirect(rt)
+}
+
+
+def public op_f64_Divide_ss(var rt : M3Runtime) : m3ret_t {
+    let operand2 = slot_f64(rt)
+    let operand1 = slot_f64(rt)
+    rt.fp0 = (operand1 / operand2)
+    return nextOpDirect(rt)
+}
+
+
+// C: d_m3OpFunc_i (u32 / u64 Rotl, Rotr) through rotl32 / rotr32 / rotl64 /
+// rotr64 of m3_math_utils (the count argument is a uint, the helpers mask it)
+def public op_u32_Rotl_sr(var rt : M3Runtime) : m3ret_t {
+    let operand = slot_u32(rt)
+    rt.r0 = u64(rotl32(u32(rt.r0), operand))
+    return nextOpDirect(rt)
+}
+
+
+def public op_u32_Rotl_rs(var rt : M3Runtime) : m3ret_t {
+    let operand = slot_u32(rt)
+    rt.r0 = u64(rotl32(operand, u32(rt.r0)))
+    return nextOpDirect(rt)
+}
+
+
+def public op_u32_Rotl_ss(var rt : M3Runtime) : m3ret_t {
+    let operand2 = slot_u32(rt)
+    let operand1 = slot_u32(rt)
+    rt.r0 = u64(rotl32(operand1, operand2))
+    return nextOpDirect(rt)
+}
+
+
+def public op_u32_Rotr_sr(var rt : M3Runtime) : m3ret_t {
+    let operand = slot_u32(rt)
+    rt.r0 = u64(rotr32(u32(rt.r0), operand))
+    return nextOpDirect(rt)
+}
+
+
+def public op_u32_Rotr_rs(var rt : M3Runtime) : m3ret_t {
+    let operand = slot_u32(rt)
+    rt.r0 = u64(rotr32(operand, u32(rt.r0)))
+    return nextOpDirect(rt)
+}
+
+
+def public op_u32_Rotr_ss(var rt : M3Runtime) : m3ret_t {
+    let operand2 = slot_u32(rt)
+    let operand1 = slot_u32(rt)
+    rt.r0 = u64(rotr32(operand1, operand2))
+    return nextOpDirect(rt)
+}
+
+
+def public op_u64_Rotl_sr(var rt : M3Runtime) : m3ret_t {
+    let operand = slot_u64(rt)
+    rt.r0 = rotl64(rt.r0, u32(operand))
+    return nextOpDirect(rt)
+}
+
+
+def public op_u64_Rotl_rs(var rt : M3Runtime) : m3ret_t {
+    let operand = slot_u64(rt)
+    rt.r0 = rotl64(operand, u32(rt.r0 % 64ul))
+    return nextOpDirect(rt)
+}
+
+
+def public op_u64_Rotl_ss(var rt : M3Runtime) : m3ret_t {
+    let operand2 = slot_u64(rt)
+    let operand1 = slot_u64(rt)
+    rt.r0 = rotl64(operand1, u32(operand2 % 64ul))
+    return nextOpDirect(rt)
+}
+
+
+def public op_u64_Rotr_sr(var rt : M3Runtime) : m3ret_t {
+    let operand = slot_u64(rt)
+    rt.r0 = rotr64(rt.r0, u32(operand))
+    return nextOpDirect(rt)
+}
+
+
+def public op_u64_Rotr_rs(var rt : M3Runtime) : m3ret_t {
+    let operand = slot_u64(rt)
+    rt.r0 = rotr64(operand, u32(rt.r0 % 64ul))
+    return nextOpDirect(rt)
+}
+
+
+def public op_u64_Rotr_ss(var rt : M3Runtime) : m3ret_t {
+    let operand2 = slot_u64(rt)
+    let operand1 = slot_u64(rt)
+    rt.r0 = rotr64(operand1, u32(operand2 % 64ul))
+    return nextOpDirect(rt)
+}
+
+
+// C: d_m3OpMacro_i (u32 / i32 / u64 / i64 Divide, Remainder) through the
+// OP_DIV_U / OP_REM_U / OP_DIV_S / OP_REM_S macros, which trap
+// (newTrap (m3Err_trapDivisionByZero / m3Err_trapIntegerOverflow)) instead
+// of storing a result. Eden (as upstream): the helper of m3_math_utils
+// returns the M3Result and fills RES; the trap is raised here with newTrap.
+def public op_u32_Divide_sr(var rt : M3Runtime) : m3ret_t {
+    let operand = slot_u32(rt)
+    var RES : u32
+    let result = OP_DIV_U(RES, u32(rt.r0), operand)
+    if (m3ResultIsError(result)) {
+        return newTrap(rt, result)
+    }
+    rt.r0 = u64(RES)
+    return nextOpDirect(rt)
+}
+
+
+def public op_u32_Divide_rs(var rt : M3Runtime) : m3ret_t {
+    let operand = slot_u32(rt)
+    var RES : u32
+    let result = OP_DIV_U(RES, operand, u32(rt.r0))
+    if (m3ResultIsError(result)) {
+        return newTrap(rt, result)
+    }
+    rt.r0 = u64(RES)
+    return nextOpDirect(rt)
+}
+
+
+def public op_u32_Divide_ss(var rt : M3Runtime) : m3ret_t {
+    let operand2 = slot_u32(rt)
+    let operand1 = slot_u32(rt)
+    var RES : u32
+    let result = OP_DIV_U(RES, operand1, operand2)
+    if (m3ResultIsError(result)) {
+        return newTrap(rt, result)
+    }
+    rt.r0 = u64(RES)
+    return nextOpDirect(rt)
+}
+
+
+def public op_u32_Remainder_sr(var rt : M3Runtime) : m3ret_t {
+    let operand = slot_u32(rt)
+    var RES : u32
+    let result = OP_REM_U(RES, u32(rt.r0), operand)
+    if (m3ResultIsError(result)) {
+        return newTrap(rt, result)
+    }
+    rt.r0 = u64(RES)
+    return nextOpDirect(rt)
+}
+
+
+def public op_u32_Remainder_rs(var rt : M3Runtime) : m3ret_t {
+    let operand = slot_u32(rt)
+    var RES : u32
+    let result = OP_REM_U(RES, operand, u32(rt.r0))
+    if (m3ResultIsError(result)) {
+        return newTrap(rt, result)
+    }
+    rt.r0 = u64(RES)
+    return nextOpDirect(rt)
+}
+
+
+def public op_u32_Remainder_ss(var rt : M3Runtime) : m3ret_t {
+    let operand2 = slot_u32(rt)
+    let operand1 = slot_u32(rt)
+    var RES : u32
+    let result = OP_REM_U(RES, operand1, operand2)
+    if (m3ResultIsError(result)) {
+        return newTrap(rt, result)
+    }
+    rt.r0 = u64(RES)
+    return nextOpDirect(rt)
+}
+
+
+def public op_i32_Divide_sr(var rt : M3Runtime) : m3ret_t {
+    let operand = slot_i32(rt)
+    var RES : i32
+    let result = OP_DIV_S(RES, i32(u32(rt.r0)), operand, INT32_MIN)
+    if (m3ResultIsError(result)) {
+        return newTrap(rt, result)
+    }
+    rt.r0 = u64(i64(RES))
+    return nextOpDirect(rt)
+}
+
+
+def public op_i32_Divide_rs(var rt : M3Runtime) : m3ret_t {
+    let operand = slot_i32(rt)
+    var RES : i32
+    let result = OP_DIV_S(RES, operand, i32(u32(rt.r0)), INT32_MIN)
+    if (m3ResultIsError(result)) {
+        return newTrap(rt, result)
+    }
+    rt.r0 = u64(i64(RES))
+    return nextOpDirect(rt)
+}
+
+
+def public op_i32_Divide_ss(var rt : M3Runtime) : m3ret_t {
+    let operand2 = slot_i32(rt)
+    let operand1 = slot_i32(rt)
+    var RES : i32
+    let result = OP_DIV_S(RES, operand1, operand2, INT32_MIN)
+    if (m3ResultIsError(result)) {
+        return newTrap(rt, result)
+    }
+    rt.r0 = u64(i64(RES))
+    return nextOpDirect(rt)
+}
+
+
+def public op_i32_Remainder_sr(var rt : M3Runtime) : m3ret_t {
+    let operand = slot_i32(rt)
+    var RES : i32
+    let result = OP_REM_S(RES, i32(u32(rt.r0)), operand, INT32_MIN)
+    if (m3ResultIsError(result)) {
+        return newTrap(rt, result)
+    }
+    rt.r0 = u64(i64(RES))
+    return nextOpDirect(rt)
+}
+
+
+def public op_i32_Remainder_rs(var rt : M3Runtime) : m3ret_t {
+    let operand = slot_i32(rt)
+    var RES : i32
+    let result = OP_REM_S(RES, operand, i32(u32(rt.r0)), INT32_MIN)
+    if (m3ResultIsError(result)) {
+        return newTrap(rt, result)
+    }
+    rt.r0 = u64(i64(RES))
+    return nextOpDirect(rt)
+}
+
+
+def public op_i32_Remainder_ss(var rt : M3Runtime) : m3ret_t {
+    let operand2 = slot_i32(rt)
+    let operand1 = slot_i32(rt)
+    var RES : i32
+    let result = OP_REM_S(RES, operand1, operand2, INT32_MIN)
+    if (m3ResultIsError(result)) {
+        return newTrap(rt, result)
+    }
+    rt.r0 = u64(i64(RES))
+    return nextOpDirect(rt)
+}
+
+
+def public op_u64_Divide_sr(var rt : M3Runtime) : m3ret_t {
+    let operand = slot_u64(rt)
+    var RES : u64
+    let result = OP_DIV_U(RES, rt.r0, operand)
+    if (m3ResultIsError(result)) {
+        return newTrap(rt, result)
+    }
+    rt.r0 = RES
+    return nextOpDirect(rt)
+}
+
+
+def public op_u64_Divide_rs(var rt : M3Runtime) : m3ret_t {
+    let operand = slot_u64(rt)
+    var RES : u64
+    let result = OP_DIV_U(RES, operand, rt.r0)
+    if (m3ResultIsError(result)) {
+        return newTrap(rt, result)
+    }
+    rt.r0 = RES
+    return nextOpDirect(rt)
+}
+
+
+def public op_u64_Divide_ss(var rt : M3Runtime) : m3ret_t {
+    let operand2 = slot_u64(rt)
+    let operand1 = slot_u64(rt)
+    var RES : u64
+    let result = OP_DIV_U(RES, operand1, operand2)
+    if (m3ResultIsError(result)) {
+        return newTrap(rt, result)
+    }
+    rt.r0 = RES
+    return nextOpDirect(rt)
+}
+
+
+def public op_u64_Remainder_sr(var rt : M3Runtime) : m3ret_t {
+    let operand = slot_u64(rt)
+    var RES : u64
+    let result = OP_REM_U(RES, rt.r0, operand)
+    if (m3ResultIsError(result)) {
+        return newTrap(rt, result)
+    }
+    rt.r0 = RES
+    return nextOpDirect(rt)
+}
+
+
+def public op_u64_Remainder_rs(var rt : M3Runtime) : m3ret_t {
+    let operand = slot_u64(rt)
+    var RES : u64
+    let result = OP_REM_U(RES, operand, rt.r0)
+    if (m3ResultIsError(result)) {
+        return newTrap(rt, result)
+    }
+    rt.r0 = RES
+    return nextOpDirect(rt)
+}
+
+
+def public op_u64_Remainder_ss(var rt : M3Runtime) : m3ret_t {
+    let operand2 = slot_u64(rt)
+    let operand1 = slot_u64(rt)
+    var RES : u64
+    let result = OP_REM_U(RES, operand1, operand2)
+    if (m3ResultIsError(result)) {
+        return newTrap(rt, result)
+    }
+    rt.r0 = RES
+    return nextOpDirect(rt)
+}
+
+
+def public op_i64_Divide_sr(var rt : M3Runtime) : m3ret_t {
+    let operand = slot_i64(rt)
+    var RES : i64
+    let result = OP_DIV_S(RES, i64(rt.r0), operand, INT64_MIN)
+    if (m3ResultIsError(result)) {
+        return newTrap(rt, result)
+    }
+    rt.r0 = u64(RES)
+    return nextOpDirect(rt)
+}
+
+
+def public op_i64_Divide_rs(var rt : M3Runtime) : m3ret_t {
+    let operand = slot_i64(rt)
+    var RES : i64
+    let result = OP_DIV_S(RES, operand, i64(rt.r0), INT64_MIN)
+    if (m3ResultIsError(result)) {
+        return newTrap(rt, result)
+    }
+    rt.r0 = u64(RES)
+    return nextOpDirect(rt)
+}
+
+
+def public op_i64_Divide_ss(var rt : M3Runtime) : m3ret_t {
+    let operand2 = slot_i64(rt)
+    let operand1 = slot_i64(rt)
+    var RES : i64
+    let result = OP_DIV_S(RES, operand1, operand2, INT64_MIN)
+    if (m3ResultIsError(result)) {
+        return newTrap(rt, result)
+    }
+    rt.r0 = u64(RES)
+    return nextOpDirect(rt)
+}
+
+
+def public op_i64_Remainder_sr(var rt : M3Runtime) : m3ret_t {
+    let operand = slot_i64(rt)
+    var RES : i64
+    let result = OP_REM_S(RES, i64(rt.r0), operand, INT64_MIN)
+    if (m3ResultIsError(result)) {
+        return newTrap(rt, result)
+    }
+    rt.r0 = u64(RES)
+    return nextOpDirect(rt)
+}
+
+
+def public op_i64_Remainder_rs(var rt : M3Runtime) : m3ret_t {
+    let operand = slot_i64(rt)
+    var RES : i64
+    let result = OP_REM_S(RES, operand, i64(rt.r0), INT64_MIN)
+    if (m3ResultIsError(result)) {
+        return newTrap(rt, result)
+    }
+    rt.r0 = u64(RES)
+    return nextOpDirect(rt)
+}
+
+
+def public op_i64_Remainder_ss(var rt : M3Runtime) : m3ret_t {
+    let operand2 = slot_i64(rt)
+    let operand1 = slot_i64(rt)
+    var RES : i64
+    let result = OP_REM_S(RES, operand1, operand2, INT64_MIN)
+    if (m3ResultIsError(result)) {
+        return newTrap(rt, result)
+    }
+    rt.r0 = u64(RES)
+    return nextOpDirect(rt)
+}
+
+
+// C: d_m3OpFunc_f (f32 / f64 Min, Max through min_f32 ... max_f64 of
+// m3_math_utils, the wasm NaN and signed-zero rules; CopySign through
+// copysignf / copysign, the bit masks copysign_f32 / copysign_f64 above)
+def public op_f32_Min_sr(var rt : M3Runtime) : m3ret_t {
+    let operand = slot_f32(rt)
+    rt.fp0 = f64(min_f32(f32(rt.fp0), operand))
+    return nextOpDirect(rt)
+}
+
+
+def public op_f32_Min_rs(var rt : M3Runtime) : m3ret_t {
+    let operand = slot_f32(rt)
+    rt.fp0 = f64(min_f32(operand, f32(rt.fp0)))
+    return nextOpDirect(rt)
+}
+
+
+def public op_f32_Min_ss(var rt : M3Runtime) : m3ret_t {
+    let operand2 = slot_f32(rt)
+    let operand1 = slot_f32(rt)
+    rt.fp0 = f64(min_f32(operand1, operand2))
+    return nextOpDirect(rt)
+}
+
+
+def public op_f32_Max_sr(var rt : M3Runtime) : m3ret_t {
+    let operand = slot_f32(rt)
+    rt.fp0 = f64(max_f32(f32(rt.fp0), operand))
+    return nextOpDirect(rt)
+}
+
+
+def public op_f32_Max_rs(var rt : M3Runtime) : m3ret_t {
+    let operand = slot_f32(rt)
+    rt.fp0 = f64(max_f32(operand, f32(rt.fp0)))
+    return nextOpDirect(rt)
+}
+
+
+def public op_f32_Max_ss(var rt : M3Runtime) : m3ret_t {
+    let operand2 = slot_f32(rt)
+    let operand1 = slot_f32(rt)
+    rt.fp0 = f64(max_f32(operand1, operand2))
+    return nextOpDirect(rt)
+}
+
+
+def public op_f32_CopySign_sr(var rt : M3Runtime) : m3ret_t {
+    let operand = slot_f32(rt)
+    rt.fp0 = f64(copysign_f32(f32(rt.fp0), operand))
+    return nextOpDirect(rt)
+}
+
+
+def public op_f32_CopySign_rs(var rt : M3Runtime) : m3ret_t {
+    let operand = slot_f32(rt)
+    rt.fp0 = f64(copysign_f32(operand, f32(rt.fp0)))
+    return nextOpDirect(rt)
+}
+
+
+def public op_f32_CopySign_ss(var rt : M3Runtime) : m3ret_t {
+    let operand2 = slot_f32(rt)
+    let operand1 = slot_f32(rt)
+    rt.fp0 = f64(copysign_f32(operand1, operand2))
+    return nextOpDirect(rt)
+}
+
+
+def public op_f64_Min_sr(var rt : M3Runtime) : m3ret_t {
+    let operand = slot_f64(rt)
+    rt.fp0 = min_f64(rt.fp0, operand)
+    return nextOpDirect(rt)
+}
+
+
+def public op_f64_Min_rs(var rt : M3Runtime) : m3ret_t {
+    let operand = slot_f64(rt)
+    rt.fp0 = min_f64(operand, rt.fp0)
+    return nextOpDirect(rt)
+}
+
+
+def public op_f64_Min_ss(var rt : M3Runtime) : m3ret_t {
+    let operand2 = slot_f64(rt)
+    let operand1 = slot_f64(rt)
+    rt.fp0 = min_f64(operand1, operand2)
+    return nextOpDirect(rt)
+}
+
+
+def public op_f64_Max_sr(var rt : M3Runtime) : m3ret_t {
+    let operand = slot_f64(rt)
+    rt.fp0 = max_f64(rt.fp0, operand)
+    return nextOpDirect(rt)
+}
+
+
+def public op_f64_Max_rs(var rt : M3Runtime) : m3ret_t {
+    let operand = slot_f64(rt)
+    rt.fp0 = max_f64(operand, rt.fp0)
+    return nextOpDirect(rt)
+}
+
+
+def public op_f64_Max_ss(var rt : M3Runtime) : m3ret_t {
+    let operand2 = slot_f64(rt)
+    let operand1 = slot_f64(rt)
+    rt.fp0 = max_f64(operand1, operand2)
+    return nextOpDirect(rt)
+}
+
+
+def public op_f64_CopySign_sr(var rt : M3Runtime) : m3ret_t {
+    let operand = slot_f64(rt)
+    rt.fp0 = copysign_f64(rt.fp0, operand)
+    return nextOpDirect(rt)
+}
+
+
+def public op_f64_CopySign_rs(var rt : M3Runtime) : m3ret_t {
+    let operand = slot_f64(rt)
+    rt.fp0 = copysign_f64(operand, rt.fp0)
+    return nextOpDirect(rt)
+}
+
+
+def public op_f64_CopySign_ss(var rt : M3Runtime) : m3ret_t {
+    let operand2 = slot_f64(rt)
+    let operand1 = slot_f64(rt)
+    rt.fp0 = copysign_f64(operand1, operand2)
+    return nextOpDirect(rt)
+}
+
+
+// C: d_m3UnaryOp_f (f32 / f64 Abs, Ceil, Floor, Trunc, Sqrt, Nearest,
+// Negate): the _r form works on the register, the _s form on a slot. The
+// libm calls are the m3_math_utils ports (fabsf / fabs, the musl floorf /
+// ceilf, rintf / rint) and the `math` module (trunc, sqrt and the f64
+// ceil / floor), as upstream.
+def public op_f32_Abs_r(var rt : M3Runtime) : m3ret_t {
+    rt.fp0 = f64(fabsf(f32(rt.fp0)))
+    return nextOpDirect(rt)
+}
+
+
+def public op_f32_Abs_s(var rt : M3Runtime) : m3ret_t {
+    let operand = slot_f32(rt)
+    rt.fp0 = f64(fabsf(operand))
+    return nextOpDirect(rt)
+}
+
+
+def public op_f32_Ceil_r(var rt : M3Runtime) : m3ret_t {
+    rt.fp0 = f64(ceilf(f32(rt.fp0)))
+    return nextOpDirect(rt)
+}
+
+
+def public op_f32_Ceil_s(var rt : M3Runtime) : m3ret_t {
+    let operand = slot_f32(rt)
+    rt.fp0 = f64(ceilf(operand))
+    return nextOpDirect(rt)
+}
+
+
+def public op_f32_Floor_r(var rt : M3Runtime) : m3ret_t {
+    rt.fp0 = f64(floorf(f32(rt.fp0)))
+    return nextOpDirect(rt)
+}
+
+
+def public op_f32_Floor_s(var rt : M3Runtime) : m3ret_t {
+    let operand = slot_f32(rt)
+    rt.fp0 = f64(floorf(operand))
+    return nextOpDirect(rt)
+}
+
+
+def public op_f32_Trunc_r(var rt : M3Runtime) : m3ret_t {
+    rt.fp0 = f64((math::trunc(f32(rt.fp0))))
+    return nextOpDirect(rt)
+}
+
+
+def public op_f32_Trunc_s(var rt : M3Runtime) : m3ret_t {
+    let operand = slot_f32(rt)
+    rt.fp0 = f64((math::trunc(operand)))
+    return nextOpDirect(rt)
+}
+
+
+def public op_f32_Sqrt_r(var rt : M3Runtime) : m3ret_t {
+    rt.fp0 = f64((math::sqrt(f32(rt.fp0))))
+    return nextOpDirect(rt)
+}
+
+
+def public op_f32_Sqrt_s(var rt : M3Runtime) : m3ret_t {
+    let operand = slot_f32(rt)
+    rt.fp0 = f64((math::sqrt(operand)))
+    return nextOpDirect(rt)
+}
+
+
+def public op_f32_Nearest_r(var rt : M3Runtime) : m3ret_t {
+    rt.fp0 = f64(rintf(f32(rt.fp0)))
+    return nextOpDirect(rt)
+}
+
+
+def public op_f32_Nearest_s(var rt : M3Runtime) : m3ret_t {
+    let operand = slot_f32(rt)
+    rt.fp0 = f64(rintf(operand))
+    return nextOpDirect(rt)
+}
+
+
+def public op_f32_Negate_r(var rt : M3Runtime) : m3ret_t {
+    rt.fp0 = f64(-(f32(rt.fp0)))
+    return nextOpDirect(rt)
+}
+
+
+def public op_f32_Negate_s(var rt : M3Runtime) : m3ret_t {
+    let operand = slot_f32(rt)
+    rt.fp0 = f64(-(operand))
+    return nextOpDirect(rt)
+}
+
+
+def public op_f64_Abs_r(var rt : M3Runtime) : m3ret_t {
+    rt.fp0 = fabs(rt.fp0)
+    return nextOpDirect(rt)
+}
+
+
+def public op_f64_Abs_s(var rt : M3Runtime) : m3ret_t {
+    let operand = slot_f64(rt)
+    rt.fp0 = fabs(operand)
+    return nextOpDirect(rt)
+}
+
+
+def public op_f64_Ceil_r(var rt : M3Runtime) : m3ret_t {
+    rt.fp0 = (math::ceil(rt.fp0))
+    return nextOpDirect(rt)
+}
+
+
+def public op_f64_Ceil_s(var rt : M3Runtime) : m3ret_t {
+    let operand = slot_f64(rt)
+    rt.fp0 = (math::ceil(operand))
+    return nextOpDirect(rt)
+}
+
+
+def public op_f64_Floor_r(var rt : M3Runtime) : m3ret_t {
+    rt.fp0 = (math::floor(rt.fp0))
+    return nextOpDirect(rt)
+}
+
+
+def public op_f64_Floor_s(var rt : M3Runtime) : m3ret_t {
+    let operand = slot_f64(rt)
+    rt.fp0 = (math::floor(operand))
+    return nextOpDirect(rt)
+}
+
+
+def public op_f64_Trunc_r(var rt : M3Runtime) : m3ret_t {
+    rt.fp0 = (math::trunc(rt.fp0))
+    return nextOpDirect(rt)
+}
+
+
+def public op_f64_Trunc_s(var rt : M3Runtime) : m3ret_t {
+    let operand = slot_f64(rt)
+    rt.fp0 = (math::trunc(operand))
+    return nextOpDirect(rt)
+}
+
+
+def public op_f64_Sqrt_r(var rt : M3Runtime) : m3ret_t {
+    rt.fp0 = (math::sqrt(rt.fp0))
+    return nextOpDirect(rt)
+}
+
+
+def public op_f64_Sqrt_s(var rt : M3Runtime) : m3ret_t {
+    let operand = slot_f64(rt)
+    rt.fp0 = (math::sqrt(operand))
+    return nextOpDirect(rt)
+}
+
+
+def public op_f64_Nearest_r(var rt : M3Runtime) : m3ret_t {
+    rt.fp0 = rint(rt.fp0)
+    return nextOpDirect(rt)
+}
+
+
+def public op_f64_Nearest_s(var rt : M3Runtime) : m3ret_t {
+    let operand = slot_f64(rt)
+    rt.fp0 = rint(operand)
+    return nextOpDirect(rt)
+}
+
+
+def public op_f64_Negate_r(var rt : M3Runtime) : m3ret_t {
+    rt.fp0 = (-(rt.fp0))
+    return nextOpDirect(rt)
+}
+
+
+def public op_f64_Negate_s(var rt : M3Runtime) : m3ret_t {
+    let operand = slot_f64(rt)
+    rt.fp0 = (-(operand))
+    return nextOpDirect(rt)
+}
+
+
+// C: d_m3UnaryOp_i (i32 / i64 EqualToZero through OP_EQZ; u32 / u64 Clz,
+// Ctz through the guarded OP_CLZ_* / OP_CTZ_* above, Popcnt through
+// __builtin_popcount / __builtin_popcountll: the popcnt intrinsic, as
+// upstream). Eden: a bit count is stored zero-extended (a u32 / u64 result).
+def public op_i32_EqualToZero_r(var rt : M3Runtime) : m3ret_t {
+    rt.r0 = bool_reg(i32(u32(rt.r0)) == 0)
+    return nextOpDirect(rt)
+}
+
+
+def public op_i32_EqualToZero_s(var rt : M3Runtime) : m3ret_t {
+    let operand = slot_i32(rt)
+    rt.r0 = bool_reg(operand == 0)
+    return nextOpDirect(rt)
+}
+
+
+def public op_i64_EqualToZero_r(var rt : M3Runtime) : m3ret_t {
+    rt.r0 = bool_reg(i64(rt.r0) == 0l)
+    return nextOpDirect(rt)
+}
+
+
+def public op_i64_EqualToZero_s(var rt : M3Runtime) : m3ret_t {
+    let operand = slot_i64(rt)
+    rt.r0 = bool_reg(operand == 0l)
+    return nextOpDirect(rt)
+}
+
+
+def public op_u32_Clz_r(var rt : M3Runtime) : m3ret_t {
+    rt.r0 = u64(OP_CLZ_32(u32(rt.r0)))
+    return nextOpDirect(rt)
+}
+
+
+def public op_u32_Clz_s(var rt : M3Runtime) : m3ret_t {
+    let operand = slot_u32(rt)
+    rt.r0 = u64(OP_CLZ_32(operand))
+    return nextOpDirect(rt)
+}
+
+
+def public op_u32_Ctz_r(var rt : M3Runtime) : m3ret_t {
+    rt.r0 = u64(OP_CTZ_32(u32(rt.r0)))
+    return nextOpDirect(rt)
+}
+
+
+def public op_u32_Ctz_s(var rt : M3Runtime) : m3ret_t {
+    let operand = slot_u32(rt)
+    rt.r0 = u64(OP_CTZ_32(operand))
+    return nextOpDirect(rt)
+}
+
+
+def public op_u32_Popcnt_r(var rt : M3Runtime) : m3ret_t {
+    rt.r0 = u64(popcnt(u32(rt.r0)))
+    return nextOpDirect(rt)
+}
+
+
+def public op_u32_Popcnt_s(var rt : M3Runtime) : m3ret_t {
+    let operand = slot_u32(rt)
+    rt.r0 = u64(popcnt(operand))
+    return nextOpDirect(rt)
+}
+
+
+def public op_u64_Clz_r(var rt : M3Runtime) : m3ret_t {
+    rt.r0 = OP_CLZ_64(rt.r0)
+    return nextOpDirect(rt)
+}
+
+
+def public op_u64_Clz_s(var rt : M3Runtime) : m3ret_t {
+    let operand = slot_u64(rt)
+    rt.r0 = OP_CLZ_64(operand)
+    return nextOpDirect(rt)
+}
+
+
+def public op_u64_Ctz_r(var rt : M3Runtime) : m3ret_t {
+    rt.r0 = OP_CTZ_64(rt.r0)
+    return nextOpDirect(rt)
+}
+
+
+def public op_u64_Ctz_s(var rt : M3Runtime) : m3ret_t {
+    let operand = slot_u64(rt)
+    rt.r0 = OP_CTZ_64(operand)
+    return nextOpDirect(rt)
+}
+
+
+def public op_u64_Popcnt_r(var rt : M3Runtime) : m3ret_t {
+    rt.r0 = popcnt(rt.r0)
+    return nextOpDirect(rt)
+}
+
+
+def public op_u64_Popcnt_s(var rt : M3Runtime) : m3ret_t {
+    let operand = slot_u64(rt)
+    rt.r0 = popcnt(operand)
+    return nextOpDirect(rt)
+}
+
+
+// PART 3: the conversion families of the upstream file (op_i32_Wrap_i64_r
+// ... op_f64_Reinterpret_i64_s_s: Wrap, Extend, Trunc, TruncSat, Convert,
+// Demote, Promote, Reinterpret; upstream lines 2284 - 3220) go here, in
 // file order.
 
 
@@ -2064,10 +4037,260 @@ def public m3_build_op_table() {
     clear(g_ops)
     clear(g_opIndex)
     m3_register_op("op_NoOp", @@op_NoOp)
-    // PART 2: op_i32_Equal_rs ... op_f64_CopySign_ss (the compare, arithmetic,
-    // bit and float families, upstream lines 621 - 2894) register here
-    // PART 3: op_i32_Extend8_s_r ... op_f64_Reinterpret_i64_s_s (the
-    // conversion families, upstream lines 2899 - 3220) register here
+    // PART 2: op_i32_Equal_rs ... op_u64_Popcnt_s (the compare, arithmetic,
+    // bit and float families, upstream lines 621 - 2282)
+    m3_register_op("op_i32_Equal_rs", @@op_i32_Equal_rs)
+    m3_register_op("op_i32_Equal_ss", @@op_i32_Equal_ss)
+    m3_register_op("op_i32_NotEqual_rs", @@op_i32_NotEqual_rs)
+    m3_register_op("op_i32_NotEqual_ss", @@op_i32_NotEqual_ss)
+    m3_register_op("op_i32_LessThan_sr", @@op_i32_LessThan_sr)
+    m3_register_op("op_i32_LessThan_rs", @@op_i32_LessThan_rs)
+    m3_register_op("op_i32_LessThan_ss", @@op_i32_LessThan_ss)
+    m3_register_op("op_i32_GreaterThan_sr", @@op_i32_GreaterThan_sr)
+    m3_register_op("op_i32_GreaterThan_rs", @@op_i32_GreaterThan_rs)
+    m3_register_op("op_i32_GreaterThan_ss", @@op_i32_GreaterThan_ss)
+    m3_register_op("op_i32_LessThanOrEqual_sr", @@op_i32_LessThanOrEqual_sr)
+    m3_register_op("op_i32_LessThanOrEqual_rs", @@op_i32_LessThanOrEqual_rs)
+    m3_register_op("op_i32_LessThanOrEqual_ss", @@op_i32_LessThanOrEqual_ss)
+    m3_register_op("op_i32_GreaterThanOrEqual_sr", @@op_i32_GreaterThanOrEqual_sr)
+    m3_register_op("op_i32_GreaterThanOrEqual_rs", @@op_i32_GreaterThanOrEqual_rs)
+    m3_register_op("op_i32_GreaterThanOrEqual_ss", @@op_i32_GreaterThanOrEqual_ss)
+    m3_register_op("op_i64_Equal_rs", @@op_i64_Equal_rs)
+    m3_register_op("op_i64_Equal_ss", @@op_i64_Equal_ss)
+    m3_register_op("op_i64_NotEqual_rs", @@op_i64_NotEqual_rs)
+    m3_register_op("op_i64_NotEqual_ss", @@op_i64_NotEqual_ss)
+    m3_register_op("op_i64_LessThan_sr", @@op_i64_LessThan_sr)
+    m3_register_op("op_i64_LessThan_rs", @@op_i64_LessThan_rs)
+    m3_register_op("op_i64_LessThan_ss", @@op_i64_LessThan_ss)
+    m3_register_op("op_i64_GreaterThan_sr", @@op_i64_GreaterThan_sr)
+    m3_register_op("op_i64_GreaterThan_rs", @@op_i64_GreaterThan_rs)
+    m3_register_op("op_i64_GreaterThan_ss", @@op_i64_GreaterThan_ss)
+    m3_register_op("op_i64_LessThanOrEqual_sr", @@op_i64_LessThanOrEqual_sr)
+    m3_register_op("op_i64_LessThanOrEqual_rs", @@op_i64_LessThanOrEqual_rs)
+    m3_register_op("op_i64_LessThanOrEqual_ss", @@op_i64_LessThanOrEqual_ss)
+    m3_register_op("op_i64_GreaterThanOrEqual_sr", @@op_i64_GreaterThanOrEqual_sr)
+    m3_register_op("op_i64_GreaterThanOrEqual_rs", @@op_i64_GreaterThanOrEqual_rs)
+    m3_register_op("op_i64_GreaterThanOrEqual_ss", @@op_i64_GreaterThanOrEqual_ss)
+    m3_register_op("op_u32_LessThan_sr", @@op_u32_LessThan_sr)
+    m3_register_op("op_u32_LessThan_rs", @@op_u32_LessThan_rs)
+    m3_register_op("op_u32_LessThan_ss", @@op_u32_LessThan_ss)
+    m3_register_op("op_u32_GreaterThan_sr", @@op_u32_GreaterThan_sr)
+    m3_register_op("op_u32_GreaterThan_rs", @@op_u32_GreaterThan_rs)
+    m3_register_op("op_u32_GreaterThan_ss", @@op_u32_GreaterThan_ss)
+    m3_register_op("op_u32_LessThanOrEqual_sr", @@op_u32_LessThanOrEqual_sr)
+    m3_register_op("op_u32_LessThanOrEqual_rs", @@op_u32_LessThanOrEqual_rs)
+    m3_register_op("op_u32_LessThanOrEqual_ss", @@op_u32_LessThanOrEqual_ss)
+    m3_register_op("op_u32_GreaterThanOrEqual_sr", @@op_u32_GreaterThanOrEqual_sr)
+    m3_register_op("op_u32_GreaterThanOrEqual_rs", @@op_u32_GreaterThanOrEqual_rs)
+    m3_register_op("op_u32_GreaterThanOrEqual_ss", @@op_u32_GreaterThanOrEqual_ss)
+    m3_register_op("op_u64_LessThan_sr", @@op_u64_LessThan_sr)
+    m3_register_op("op_u64_LessThan_rs", @@op_u64_LessThan_rs)
+    m3_register_op("op_u64_LessThan_ss", @@op_u64_LessThan_ss)
+    m3_register_op("op_u64_GreaterThan_sr", @@op_u64_GreaterThan_sr)
+    m3_register_op("op_u64_GreaterThan_rs", @@op_u64_GreaterThan_rs)
+    m3_register_op("op_u64_GreaterThan_ss", @@op_u64_GreaterThan_ss)
+    m3_register_op("op_u64_LessThanOrEqual_sr", @@op_u64_LessThanOrEqual_sr)
+    m3_register_op("op_u64_LessThanOrEqual_rs", @@op_u64_LessThanOrEqual_rs)
+    m3_register_op("op_u64_LessThanOrEqual_ss", @@op_u64_LessThanOrEqual_ss)
+    m3_register_op("op_u64_GreaterThanOrEqual_sr", @@op_u64_GreaterThanOrEqual_sr)
+    m3_register_op("op_u64_GreaterThanOrEqual_rs", @@op_u64_GreaterThanOrEqual_rs)
+    m3_register_op("op_u64_GreaterThanOrEqual_ss", @@op_u64_GreaterThanOrEqual_ss)
+    m3_register_op("op_f32_Equal_rs", @@op_f32_Equal_rs)
+    m3_register_op("op_f32_Equal_ss", @@op_f32_Equal_ss)
+    m3_register_op("op_f32_NotEqual_rs", @@op_f32_NotEqual_rs)
+    m3_register_op("op_f32_NotEqual_ss", @@op_f32_NotEqual_ss)
+    m3_register_op("op_f32_LessThan_sr", @@op_f32_LessThan_sr)
+    m3_register_op("op_f32_LessThan_rs", @@op_f32_LessThan_rs)
+    m3_register_op("op_f32_LessThan_ss", @@op_f32_LessThan_ss)
+    m3_register_op("op_f32_GreaterThan_sr", @@op_f32_GreaterThan_sr)
+    m3_register_op("op_f32_GreaterThan_rs", @@op_f32_GreaterThan_rs)
+    m3_register_op("op_f32_GreaterThan_ss", @@op_f32_GreaterThan_ss)
+    m3_register_op("op_f32_LessThanOrEqual_sr", @@op_f32_LessThanOrEqual_sr)
+    m3_register_op("op_f32_LessThanOrEqual_rs", @@op_f32_LessThanOrEqual_rs)
+    m3_register_op("op_f32_LessThanOrEqual_ss", @@op_f32_LessThanOrEqual_ss)
+    m3_register_op("op_f32_GreaterThanOrEqual_sr", @@op_f32_GreaterThanOrEqual_sr)
+    m3_register_op("op_f32_GreaterThanOrEqual_rs", @@op_f32_GreaterThanOrEqual_rs)
+    m3_register_op("op_f32_GreaterThanOrEqual_ss", @@op_f32_GreaterThanOrEqual_ss)
+    m3_register_op("op_f64_Equal_rs", @@op_f64_Equal_rs)
+    m3_register_op("op_f64_Equal_ss", @@op_f64_Equal_ss)
+    m3_register_op("op_f64_NotEqual_rs", @@op_f64_NotEqual_rs)
+    m3_register_op("op_f64_NotEqual_ss", @@op_f64_NotEqual_ss)
+    m3_register_op("op_f64_LessThan_sr", @@op_f64_LessThan_sr)
+    m3_register_op("op_f64_LessThan_rs", @@op_f64_LessThan_rs)
+    m3_register_op("op_f64_LessThan_ss", @@op_f64_LessThan_ss)
+    m3_register_op("op_f64_GreaterThan_sr", @@op_f64_GreaterThan_sr)
+    m3_register_op("op_f64_GreaterThan_rs", @@op_f64_GreaterThan_rs)
+    m3_register_op("op_f64_GreaterThan_ss", @@op_f64_GreaterThan_ss)
+    m3_register_op("op_f64_LessThanOrEqual_sr", @@op_f64_LessThanOrEqual_sr)
+    m3_register_op("op_f64_LessThanOrEqual_rs", @@op_f64_LessThanOrEqual_rs)
+    m3_register_op("op_f64_LessThanOrEqual_ss", @@op_f64_LessThanOrEqual_ss)
+    m3_register_op("op_f64_GreaterThanOrEqual_sr", @@op_f64_GreaterThanOrEqual_sr)
+    m3_register_op("op_f64_GreaterThanOrEqual_rs", @@op_f64_GreaterThanOrEqual_rs)
+    m3_register_op("op_f64_GreaterThanOrEqual_ss", @@op_f64_GreaterThanOrEqual_ss)
+    m3_register_op("op_i32_Add_rs", @@op_i32_Add_rs)
+    m3_register_op("op_i32_Add_ss", @@op_i32_Add_ss)
+    m3_register_op("op_i64_Add_rs", @@op_i64_Add_rs)
+    m3_register_op("op_i64_Add_ss", @@op_i64_Add_ss)
+    m3_register_op("op_i32_Multiply_rs", @@op_i32_Multiply_rs)
+    m3_register_op("op_i32_Multiply_ss", @@op_i32_Multiply_ss)
+    m3_register_op("op_i64_Multiply_rs", @@op_i64_Multiply_rs)
+    m3_register_op("op_i64_Multiply_ss", @@op_i64_Multiply_ss)
+    m3_register_op("op_i32_Subtract_sr", @@op_i32_Subtract_sr)
+    m3_register_op("op_i32_Subtract_rs", @@op_i32_Subtract_rs)
+    m3_register_op("op_i32_Subtract_ss", @@op_i32_Subtract_ss)
+    m3_register_op("op_i64_Subtract_sr", @@op_i64_Subtract_sr)
+    m3_register_op("op_i64_Subtract_rs", @@op_i64_Subtract_rs)
+    m3_register_op("op_i64_Subtract_ss", @@op_i64_Subtract_ss)
+    m3_register_op("op_u32_ShiftLeft_sr", @@op_u32_ShiftLeft_sr)
+    m3_register_op("op_u32_ShiftLeft_rs", @@op_u32_ShiftLeft_rs)
+    m3_register_op("op_u32_ShiftLeft_ss", @@op_u32_ShiftLeft_ss)
+    m3_register_op("op_u64_ShiftLeft_sr", @@op_u64_ShiftLeft_sr)
+    m3_register_op("op_u64_ShiftLeft_rs", @@op_u64_ShiftLeft_rs)
+    m3_register_op("op_u64_ShiftLeft_ss", @@op_u64_ShiftLeft_ss)
+    m3_register_op("op_i32_ShiftRight_sr", @@op_i32_ShiftRight_sr)
+    m3_register_op("op_i32_ShiftRight_rs", @@op_i32_ShiftRight_rs)
+    m3_register_op("op_i32_ShiftRight_ss", @@op_i32_ShiftRight_ss)
+    m3_register_op("op_i64_ShiftRight_sr", @@op_i64_ShiftRight_sr)
+    m3_register_op("op_i64_ShiftRight_rs", @@op_i64_ShiftRight_rs)
+    m3_register_op("op_i64_ShiftRight_ss", @@op_i64_ShiftRight_ss)
+    m3_register_op("op_u32_ShiftRight_sr", @@op_u32_ShiftRight_sr)
+    m3_register_op("op_u32_ShiftRight_rs", @@op_u32_ShiftRight_rs)
+    m3_register_op("op_u32_ShiftRight_ss", @@op_u32_ShiftRight_ss)
+    m3_register_op("op_u64_ShiftRight_sr", @@op_u64_ShiftRight_sr)
+    m3_register_op("op_u64_ShiftRight_rs", @@op_u64_ShiftRight_rs)
+    m3_register_op("op_u64_ShiftRight_ss", @@op_u64_ShiftRight_ss)
+    m3_register_op("op_u32_And_rs", @@op_u32_And_rs)
+    m3_register_op("op_u32_And_ss", @@op_u32_And_ss)
+    m3_register_op("op_u32_Or_rs", @@op_u32_Or_rs)
+    m3_register_op("op_u32_Or_ss", @@op_u32_Or_ss)
+    m3_register_op("op_u32_Xor_rs", @@op_u32_Xor_rs)
+    m3_register_op("op_u32_Xor_ss", @@op_u32_Xor_ss)
+    m3_register_op("op_u64_And_rs", @@op_u64_And_rs)
+    m3_register_op("op_u64_And_ss", @@op_u64_And_ss)
+    m3_register_op("op_u64_Or_rs", @@op_u64_Or_rs)
+    m3_register_op("op_u64_Or_ss", @@op_u64_Or_ss)
+    m3_register_op("op_u64_Xor_rs", @@op_u64_Xor_rs)
+    m3_register_op("op_u64_Xor_ss", @@op_u64_Xor_ss)
+    m3_register_op("op_f32_Add_rs", @@op_f32_Add_rs)
+    m3_register_op("op_f32_Add_ss", @@op_f32_Add_ss)
+    m3_register_op("op_f32_Multiply_rs", @@op_f32_Multiply_rs)
+    m3_register_op("op_f32_Multiply_ss", @@op_f32_Multiply_ss)
+    m3_register_op("op_f32_Subtract_sr", @@op_f32_Subtract_sr)
+    m3_register_op("op_f32_Subtract_rs", @@op_f32_Subtract_rs)
+    m3_register_op("op_f32_Subtract_ss", @@op_f32_Subtract_ss)
+    m3_register_op("op_f32_Divide_sr", @@op_f32_Divide_sr)
+    m3_register_op("op_f32_Divide_rs", @@op_f32_Divide_rs)
+    m3_register_op("op_f32_Divide_ss", @@op_f32_Divide_ss)
+    m3_register_op("op_f64_Add_rs", @@op_f64_Add_rs)
+    m3_register_op("op_f64_Add_ss", @@op_f64_Add_ss)
+    m3_register_op("op_f64_Multiply_rs", @@op_f64_Multiply_rs)
+    m3_register_op("op_f64_Multiply_ss", @@op_f64_Multiply_ss)
+    m3_register_op("op_f64_Subtract_sr", @@op_f64_Subtract_sr)
+    m3_register_op("op_f64_Subtract_rs", @@op_f64_Subtract_rs)
+    m3_register_op("op_f64_Subtract_ss", @@op_f64_Subtract_ss)
+    m3_register_op("op_f64_Divide_sr", @@op_f64_Divide_sr)
+    m3_register_op("op_f64_Divide_rs", @@op_f64_Divide_rs)
+    m3_register_op("op_f64_Divide_ss", @@op_f64_Divide_ss)
+    m3_register_op("op_u32_Rotl_sr", @@op_u32_Rotl_sr)
+    m3_register_op("op_u32_Rotl_rs", @@op_u32_Rotl_rs)
+    m3_register_op("op_u32_Rotl_ss", @@op_u32_Rotl_ss)
+    m3_register_op("op_u32_Rotr_sr", @@op_u32_Rotr_sr)
+    m3_register_op("op_u32_Rotr_rs", @@op_u32_Rotr_rs)
+    m3_register_op("op_u32_Rotr_ss", @@op_u32_Rotr_ss)
+    m3_register_op("op_u64_Rotl_sr", @@op_u64_Rotl_sr)
+    m3_register_op("op_u64_Rotl_rs", @@op_u64_Rotl_rs)
+    m3_register_op("op_u64_Rotl_ss", @@op_u64_Rotl_ss)
+    m3_register_op("op_u64_Rotr_sr", @@op_u64_Rotr_sr)
+    m3_register_op("op_u64_Rotr_rs", @@op_u64_Rotr_rs)
+    m3_register_op("op_u64_Rotr_ss", @@op_u64_Rotr_ss)
+    m3_register_op("op_u32_Divide_sr", @@op_u32_Divide_sr)
+    m3_register_op("op_u32_Divide_rs", @@op_u32_Divide_rs)
+    m3_register_op("op_u32_Divide_ss", @@op_u32_Divide_ss)
+    m3_register_op("op_u32_Remainder_sr", @@op_u32_Remainder_sr)
+    m3_register_op("op_u32_Remainder_rs", @@op_u32_Remainder_rs)
+    m3_register_op("op_u32_Remainder_ss", @@op_u32_Remainder_ss)
+    m3_register_op("op_i32_Divide_sr", @@op_i32_Divide_sr)
+    m3_register_op("op_i32_Divide_rs", @@op_i32_Divide_rs)
+    m3_register_op("op_i32_Divide_ss", @@op_i32_Divide_ss)
+    m3_register_op("op_i32_Remainder_sr", @@op_i32_Remainder_sr)
+    m3_register_op("op_i32_Remainder_rs", @@op_i32_Remainder_rs)
+    m3_register_op("op_i32_Remainder_ss", @@op_i32_Remainder_ss)
+    m3_register_op("op_u64_Divide_sr", @@op_u64_Divide_sr)
+    m3_register_op("op_u64_Divide_rs", @@op_u64_Divide_rs)
+    m3_register_op("op_u64_Divide_ss", @@op_u64_Divide_ss)
+    m3_register_op("op_u64_Remainder_sr", @@op_u64_Remainder_sr)
+    m3_register_op("op_u64_Remainder_rs", @@op_u64_Remainder_rs)
+    m3_register_op("op_u64_Remainder_ss", @@op_u64_Remainder_ss)
+    m3_register_op("op_i64_Divide_sr", @@op_i64_Divide_sr)
+    m3_register_op("op_i64_Divide_rs", @@op_i64_Divide_rs)
+    m3_register_op("op_i64_Divide_ss", @@op_i64_Divide_ss)
+    m3_register_op("op_i64_Remainder_sr", @@op_i64_Remainder_sr)
+    m3_register_op("op_i64_Remainder_rs", @@op_i64_Remainder_rs)
+    m3_register_op("op_i64_Remainder_ss", @@op_i64_Remainder_ss)
+    m3_register_op("op_f32_Min_sr", @@op_f32_Min_sr)
+    m3_register_op("op_f32_Min_rs", @@op_f32_Min_rs)
+    m3_register_op("op_f32_Min_ss", @@op_f32_Min_ss)
+    m3_register_op("op_f32_Max_sr", @@op_f32_Max_sr)
+    m3_register_op("op_f32_Max_rs", @@op_f32_Max_rs)
+    m3_register_op("op_f32_Max_ss", @@op_f32_Max_ss)
+    m3_register_op("op_f32_CopySign_sr", @@op_f32_CopySign_sr)
+    m3_register_op("op_f32_CopySign_rs", @@op_f32_CopySign_rs)
+    m3_register_op("op_f32_CopySign_ss", @@op_f32_CopySign_ss)
+    m3_register_op("op_f64_Min_sr", @@op_f64_Min_sr)
+    m3_register_op("op_f64_Min_rs", @@op_f64_Min_rs)
+    m3_register_op("op_f64_Min_ss", @@op_f64_Min_ss)
+    m3_register_op("op_f64_Max_sr", @@op_f64_Max_sr)
+    m3_register_op("op_f64_Max_rs", @@op_f64_Max_rs)
+    m3_register_op("op_f64_Max_ss", @@op_f64_Max_ss)
+    m3_register_op("op_f64_CopySign_sr", @@op_f64_CopySign_sr)
+    m3_register_op("op_f64_CopySign_rs", @@op_f64_CopySign_rs)
+    m3_register_op("op_f64_CopySign_ss", @@op_f64_CopySign_ss)
+    m3_register_op("op_f32_Abs_r", @@op_f32_Abs_r)
+    m3_register_op("op_f32_Abs_s", @@op_f32_Abs_s)
+    m3_register_op("op_f32_Ceil_r", @@op_f32_Ceil_r)
+    m3_register_op("op_f32_Ceil_s", @@op_f32_Ceil_s)
+    m3_register_op("op_f32_Floor_r", @@op_f32_Floor_r)
+    m3_register_op("op_f32_Floor_s", @@op_f32_Floor_s)
+    m3_register_op("op_f32_Trunc_r", @@op_f32_Trunc_r)
+    m3_register_op("op_f32_Trunc_s", @@op_f32_Trunc_s)
+    m3_register_op("op_f32_Sqrt_r", @@op_f32_Sqrt_r)
+    m3_register_op("op_f32_Sqrt_s", @@op_f32_Sqrt_s)
+    m3_register_op("op_f32_Nearest_r", @@op_f32_Nearest_r)
+    m3_register_op("op_f32_Nearest_s", @@op_f32_Nearest_s)
+    m3_register_op("op_f32_Negate_r", @@op_f32_Negate_r)
+    m3_register_op("op_f32_Negate_s", @@op_f32_Negate_s)
+    m3_register_op("op_f64_Abs_r", @@op_f64_Abs_r)
+    m3_register_op("op_f64_Abs_s", @@op_f64_Abs_s)
+    m3_register_op("op_f64_Ceil_r", @@op_f64_Ceil_r)
+    m3_register_op("op_f64_Ceil_s", @@op_f64_Ceil_s)
+    m3_register_op("op_f64_Floor_r", @@op_f64_Floor_r)
+    m3_register_op("op_f64_Floor_s", @@op_f64_Floor_s)
+    m3_register_op("op_f64_Trunc_r", @@op_f64_Trunc_r)
+    m3_register_op("op_f64_Trunc_s", @@op_f64_Trunc_s)
+    m3_register_op("op_f64_Sqrt_r", @@op_f64_Sqrt_r)
+    m3_register_op("op_f64_Sqrt_s", @@op_f64_Sqrt_s)
+    m3_register_op("op_f64_Nearest_r", @@op_f64_Nearest_r)
+    m3_register_op("op_f64_Nearest_s", @@op_f64_Nearest_s)
+    m3_register_op("op_f64_Negate_r", @@op_f64_Negate_r)
+    m3_register_op("op_f64_Negate_s", @@op_f64_Negate_s)
+    m3_register_op("op_i32_EqualToZero_r", @@op_i32_EqualToZero_r)
+    m3_register_op("op_i32_EqualToZero_s", @@op_i32_EqualToZero_s)
+    m3_register_op("op_i64_EqualToZero_r", @@op_i64_EqualToZero_r)
+    m3_register_op("op_i64_EqualToZero_s", @@op_i64_EqualToZero_s)
+    m3_register_op("op_u32_Clz_r", @@op_u32_Clz_r)
+    m3_register_op("op_u32_Clz_s", @@op_u32_Clz_s)
+    m3_register_op("op_u32_Ctz_r", @@op_u32_Ctz_r)
+    m3_register_op("op_u32_Ctz_s", @@op_u32_Ctz_s)
+    m3_register_op("op_u32_Popcnt_r", @@op_u32_Popcnt_r)
+    m3_register_op("op_u32_Popcnt_s", @@op_u32_Popcnt_s)
+    m3_register_op("op_u64_Clz_r", @@op_u64_Clz_r)
+    m3_register_op("op_u64_Clz_s", @@op_u64_Clz_s)
+    m3_register_op("op_u64_Ctz_r", @@op_u64_Ctz_r)
+    m3_register_op("op_u64_Ctz_s", @@op_u64_Ctz_s)
+    m3_register_op("op_u64_Popcnt_r", @@op_u64_Popcnt_r)
+    m3_register_op("op_u64_Popcnt_s", @@op_u64_Popcnt_s)
+    // PART 3: op_i32_Wrap_i64_r ... op_f64_Reinterpret_i64_s_s (the
+    // conversion families, upstream lines 2284 - 3220) register here
     m3_register_op("op_GetGlobal_s32", @@op_GetGlobal_s32)
     m3_register_op("op_GetGlobal_s64", @@op_GetGlobal_s64)
     m3_register_op("op_SetGlobal_i32", @@op_SetGlobal_i32)
