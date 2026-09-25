@@ -289,6 +289,25 @@ and 2 append to `rt.stdoutBuffer` / `rt.stderrBuffer` (also mirrored to
 stdin/stdout on top for the WASI driver. `m3_api_libc` and `m3_api_wasi` lose
 nothing else.
 
+### 4.6a Canonical NaN
+
+`_nan_f32()` / `_nan_f64()` of `m3_math_utils` are `inf / inf` (the upstream
+form): on x86 that is the sign-set default NaN `0xffc00000` /
+`0xfff8000000000000`, while C wasm3's `NAN` macro is the positive
+`0x7fc00000`. The wasm spec accepts either sign for `nan:canonical`, the
+upstream spec run passes with it, and the tests assert `isnan` only. Not
+measured in the editor (same x86-64 hardware, no difference expected); if
+the spec run in the editor ever disagrees on a NaN case, this is the first
+place to look.
+
+### 4.6b Bit counts at zero
+
+`builtin_clz/ctz` of `m3_math_utils` delegate to daslang's `clz`/`ctz`,
+which return 31/0 (63/0 for 64-bit) at zero, like C's undefined builtins.
+The zero guard is the caller's, as in C: `OP_CLZ_32(x) = x == 0 ? 32 :
+...` in `m3_exec.h` and the upstream `m3_exec.das`. The `m3_exec` port
+keeps every such guard.
+
 ### 4.7a The `_try` / `_catch` macros
 
 `m3_exception` (a re-export module) documents the expansion of C's `_try`,
