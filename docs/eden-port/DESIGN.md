@@ -236,6 +236,17 @@ and 2 append to `rt.stdoutBuffer` / `rt.stderrBuffer` (also mirrored to
 stdin/stdout on top for the WASI driver. `m3_api_libc` and `m3_api_wasi` lose
 nothing else.
 
+### 4.7a The `_try` / `_catch` macros
+
+`m3_exception` (a re-export module) documents the expansion of C's `_try`,
+`_()`, `_throw`, `_throwif`, `_throwifnull` as early `return result`. Two C
+sites carry code after `_catch:` and must not take that shape mechanically:
+`m3_bind.c` (`_catch:` then `m3_Free(ftype)`) and `m3_compile.c`
+(`_catch:` then `*o_codePage = page`). The upstream port falls through at
+both (`.upstream/source/m3_bind.das`, `.upstream/source/m3_compile.das`);
+the Eden port does the same. `_throwifnull(PTR)` tests a handle against
+`-1`.
+
 ### 4.8 What must not change
 
 - C function and variable names, the order of functions in a file, the

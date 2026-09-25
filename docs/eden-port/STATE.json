@@ -6,7 +6,7 @@
   "modules": [
     {"name": "wasm3_defs",     "status": "done", "source": "wasm3_defs.das",     "eden_tests": "test_wasm3_defs.das",     "upstream_tests": ["test_wasm3_defs.das"]},
     {"name": "m3_config",      "status": "done", "source": "m3_config.das",      "eden_tests": "test_m3_config.das",      "upstream_tests": ["test_m3_config.das"]},
-    {"name": "m3_exception",   "status": "todo", "source": "m3_exception.das",   "eden_tests": null, "note": "43 lines of error-string helpers, covered by test_m3_core and every trap test"},
+    {"name": "m3_exception",   "status": "done", "source": "m3_exception.das",   "eden_tests": "test_m3_exception.das", "upstream_tests": [], "note": "declares nothing (a public re-export of m3_config, as m3_exception.h is macros only); the header's macro expansion table is the contract, the Eden test exercises each expansion shape; no upstream test file"},
     {"name": "m3_core",        "status": "todo", "source": "m3_core.das",        "eden_tests": "test_m3_core.das",        "upstream_tests": ["test_m3_core.das"]},
     {"name": "m3_types",       "status": "todo", "source": "m3_types.das",       "eden_tests": "test_m3_types.das",       "upstream_tests": ["test_m3_types_integration.das"]},
     {"name": "m3_math_utils",  "status": "todo", "source": "m3_math_utils.das",  "eden_tests": "test_m3_math_utils.das",  "upstream_tests": ["test_m3_math_utils.das"]},

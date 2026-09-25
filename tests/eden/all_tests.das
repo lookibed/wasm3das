@@ -25,7 +25,7 @@ require modules/wasm3das/source/eden_test
 // --- test modules, in port order (edited by the porter) ---
 require modules/wasm3das/tests/eden/test_wasm3_defs
 require modules/wasm3das/tests/eden/test_m3_config
-// require modules/wasm3das/tests/eden/test_m3_exception
+require modules/wasm3das/tests/eden/test_m3_exception
 // require modules/wasm3das/tests/eden/test_m3_core
 // require modules/wasm3das/tests/eden/test_m3_types
 // require modules/wasm3das/tests/eden/test_m3_math_utils
@@ -51,7 +51,7 @@ def public run_all_tests(var t : TestRun; fx : FixtureSource) {
     // --- run lines, in the same order (edited by the porter) ---
     run_tests_wasm3_defs(t, fx)
     run_tests_m3_config(t, fx)
-    // run_tests_m3_exception(t, fx)
+    run_tests_m3_exception(t, fx)
     // run_tests_m3_core(t, fx)
     // run_tests_m3_types(t, fx)
     // run_tests_m3_math_utils(t, fx)
