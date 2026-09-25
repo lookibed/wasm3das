@@ -18,10 +18,27 @@ changed=0
 
 # --- fixtures ---
 mapfile -t fixtures < <(grep -vE '^\s*(#|$)' "$FIXTURES" | sed 's/\s*#.*$//; s/^\s*//; s/\s*$//')
+
+# machine-local fixtures, never committed (fixtures.local.txt at the
+# repository root, git-ignored): lines "<fixture name> = <source path>",
+# e.g. "local/roms/tetris.gb = /mnt/d/roms/Tetris (World) (Rev 1).gb"
+declare -A local_src=()
+LOCAL_FIXTURES="$repo/fixtures.local.txt"
+if [[ -f "$LOCAL_FIXTURES" ]]; then
+    while IFS= read -r line; do
+        [[ "$line" =~ ^[[:space:]]*(#|$) ]] && continue
+        name="$(sed -E 's/^\s*//; s/\s*=.*$//' <<< "$line")"
+        path="$(sed -E 's/^[^=]*=\s*//; s/\s*$//' <<< "$line")"
+        local_src["$name"]="$path"
+        fixtures+=("$name")
+    done < "$LOCAL_FIXTURES"
+fi
 for name in "${fixtures[@]}"; do
     # names under manual/ are the upstream benchmark fixtures
     # (.upstream/tests/manual, run_fixtures.py); the rest are wasm3c/test
-    if [[ "$name" == manual/* ]]; then
+    if [[ -n "${local_src[$name]:-}" ]]; then
+        src="${local_src[$name]}"
+    elif [[ "$name" == manual/* ]]; then
         src="$repo/.upstream/tests/manual/${name#manual/}"
     elif [[ "$name" == abi/* ]]; then
         # the ABI guests and their data (docs/eden-abi)

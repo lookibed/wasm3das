@@ -601,7 +601,8 @@ def abi_player_digest() {
 [export]
 def on_initialize() {
     let camera = create_node(NodeData(name = "camera", position = float3(0, 0, -5)))
-    add_component(camera, new Camera(orthographic = true, orthographicSize = 10f))
+    // the size is the visible height (10 units), whatever the tab's aspect
+    add_component(camera, new Camera(orthographic = true, orthographicSize = 10f, fovAxis = FovAxis.Vertical))
     statusNode = create_debug_text(lastSummary, float2(16, 16), TOP_LEFT_ANCHOR)
     set_text_font_size(statusNode, 20.0)
     request_fixtures()

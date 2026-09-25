@@ -18,8 +18,14 @@ Golden references: the wasmtime results of the Spider fixture's probes,
 listed in `tests/eden/abi_golden.das`, which the guest reproduces frame for
 frame through the whole ABI.
 
-Commercial ROMs are not part of the repository. To play one, copy it to
-`guests/binjgb/roms/`, add its fixture name to `docs/eden-port/fixtures.txt`
-(it is then installed as a project asset), and run
-`abi_play abi/build/binjgb.wasm abi/binjgb/roms/<file>` in the editor
-console.
+Commercial ROMs are not part of the repository. To play one, list it in
+`fixtures.local.txt` at the repository root (git-ignored), one line per
+file:
+
+```
+local/roms/tetris.gb = /mnt/d/roms/Tetris (World) (Rev 1).gb
+```
+
+run `scripts/eden/install_host.sh` (it copies the file into the project
+assets), restart the game, and type in the editor console
+`abi_play abi/build/binjgb.wasm local/roms/tetris.gb`.

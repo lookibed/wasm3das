@@ -90,7 +90,7 @@ class GuestPlayer : Component {
             texture = tex
             hasMaterial = true
             let size = eden_host_frame_size(id)
-            let h = 16.0
+            let h = 9.0   // of the host camera's 10 visible units (main.das)
             let w = h * float(size.x) / float(max(size.y, 1))
             screen.localScale = float3(w, h, 1.0)
             screen?.Mesh.materialId = create_material(MaterialImport(shaderName = "pixel_art", diffuse = tex))
