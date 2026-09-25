@@ -100,7 +100,9 @@ require daslib/math_bits                            // Eden: bit casts of the fl
         upstream port (m3_zero_bytes, m3_copy_bytes, m3_mem_chunk_max) have
         none either. `resize` is not used on arrays of structs: the 0.6.3
         build refuses it for a struct with field initializers, so growing is
-        reserve + push(T()) and shrinking is pop.
+        reserve + push(T()) (emplace(T()) for an element type that cannot be
+        copied, i.e. a struct holding an array, such as the arena structs of
+        m3_types) and shrinking is pop.
       - the native stack diagnostics m3StackCheckInit / m3StackCheck /
         m3StackGetMax take the address of a local in C and upstream; the
         sandbox cannot, and d_m3LogNativeStack is off, so they are the C
@@ -606,7 +608,9 @@ def public m3_GetTimestamp() : u64 {
     `resize` is deliberately not used: the 0.6.3 build refuses it for an
     array of structs with field initializers. Growing is reserve + push of
     the element default `T()` (C's zero fill; a handle field declared `= -1`
-    starts null), shrinking is pop.
+    starts null), shrinking is pop. An element type that cannot be copied
+    (a struct holding an array, as the arena structs of m3_types do) is
+    moved in with emplace instead; static_if picks the form per type.
 */
 
 
@@ -616,7 +620,14 @@ def public m3_Malloc_Impl(var o_array : array<auto(T)>; i_size : int) {
     clear(o_array)
     reserve(o_array, i_size)
     for (i in range(i_size)) {
-        push(o_array, T())
+        // Eden: an element that holds an array (M3Module, M3FuncType, ...)
+        // cannot be copied, so it is moved in; scalars and plain structs
+        // cannot be moved in, so they are pushed
+        static_if (typeinfo can_copy(type<T>)) {
+            push(o_array, T())
+        } else {
+            emplace(o_array, T())
+        }
     }
 }
 
@@ -671,7 +682,12 @@ def public m3_Realloc_Impl(
 
     reserve(i_ptr, i_newSize)
     while (length(i_ptr) < i_newSize) {
-        push(i_ptr, T())
+        // Eden: push or move in, by element type, as in m3_Malloc_Impl
+        static_if (typeinfo can_copy(type<T>)) {
+            push(i_ptr, T())
+        } else {
+            emplace(i_ptr, T())
+        }
     }
 }
 

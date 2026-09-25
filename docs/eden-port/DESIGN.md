@@ -112,13 +112,66 @@ struct M3Runtime {
 }
 ```
 
-`M3Environment` keeps only what C keeps outside a runtime that the Eden port
-still needs (config, the interned func-type list is moved into the runtime;
-document the deviation in the file header). `m3_ParseModule` returns an
-`M3Module` value that owns its arrays; `m3_LoadModule` moves it into
-`rt.modules` and registers its functions and globals into the runtime arenas,
-assigning handles. Freeing a runtime is clearing the arrays; there is no
-`delete` and no `new` for `M3*` data.
+`M3Environment` keeps only configuration (what C keeps outside a runtime:
+the stack-size hint, limits); the interned func-type list and the code
+pages move into the runtime. Consequently **`m3_ParseModule` takes the
+runtime** (`m3_ParseModule(var rt : M3Runtime; bytes : array<uint8>) :
+tuple<M3Result; int>`, the module handle) and parses straight into the
+runtime arenas; `m3_LoadModule(rt, moduleIdx)` then does what C's does
+(memory, globals, data segments, table, start function) on an already
+registered module. There is exactly one representation of every object:
+
+| C | Eden |
+|---|---|
+| `module->functions[i]` (array of structs) | `rt.functions[module.functions[i]]`: the module keeps `functions : array<int>` of handles, in C order (imports first); `numFunctions = length(module.functions)` |
+| `module->globals[i]` | `rt.globals[module.globals[i]]` |
+| `module->funcTypes[i]`, interned in the environment | `rt.funcTypes[module.funcTypes[i]]`, interned in the runtime by structural equality (`Runtime_AddFuncType`, the C `Environment_AddFuncType`), so two equal types share one handle and `op_CallIndirect` compares handles |
+| `module->table0[i]` (function pointers) | `module.table0 : array<int>` of function handles, -1 = null |
+| `module->wasmStart/wasmEnd`, `function->wasm/wasmEnd` | the module owns `wasm : array<uint8>` (a copy of the binary); positions are indices into it |
+| `function->compiled` (pc) | `int` index into `rt.code`, -1 = not compiled |
+| `function->module`, `function->funcType`, `function->import.moduleUtf8/fieldUtf8` | `moduleIdx : int`, `funcTypeIdx : int`, strings |
+| `runtime->memory.mallocated` | `rt.mem : array<uint8>` + `memory : M3Memory { numPages, maxPages, pageSize }` |
+| `runtime->stack`, `originStack` | `rt.stack : array<uint64>`, `originStack : int` |
+| `runtime->modules` (linked list) | `rt.modules : array<M3Module>`, `module.next` not needed |
+| `runtime->environment->pagesOpen/Released`, code pages | `rt.code : array<uint64>`; `M3CodePage` (from `m3_core`) is a start index + length used by `m3_code`, `m3_compile` |
+
+Decisions fixed by `m3_types` (the struct table is in its header):
+
+- `IM3Runtime` handles: 0 = the owning runtime, -1 = null (a module's
+  `runtime` is -1 until `m3_LoadModule`). `rt.environment` is an embedded
+  copy of the environment; its `retFuncTypes` handles are interned per
+  runtime by `m3_NewRuntime`.
+- Code pages: `rt.codePages : array<M3CodePage>` is the page arena
+  (`pagesOpen`, `pagesFull`, `M3CodePageHeader.next` are indices into it);
+  a page's words live in `rt.code` from `page.code` on. `m3_code` owns the
+  page functions.
+- `M3Function.constants : array<u64>` and `M3Compilation.constants :
+  u64[d_m3MaxConstantTableSize]`: one 64-bit word per **slot**, so a 64-bit
+  constant still reserves two consecutive slots (the second unused) and the
+  compiler's slot accounting is C's. `numConstantBytes` keeps its C name.
+- `M3SectionHandler = function<(var rt : M3Runtime; i_module : IM3Module; i_name : cstr_t; i_start, i_end : cbytes_t) : M3Result>`,
+  `M3Compiler = function<(var rt : M3Runtime; i_opcode : m3opcode_t) : M3Result>`:
+  the compilation state is `rt.compilation`, so C's `IM3Compilation`
+  argument is the runtime.
+- `M3CompilationScope.outer : int` indexes a scope stack that `m3_compile`
+  adds to `M3Compilation` (C keeps scopes on the native stack).
+- `m3Error(i_result; var i_runtime : M3Runtime; ...)` always records
+  (C's `if (i_runtime)` null guard has no counterpart).
+- `M3ImportContext.userdata` / `M3Runtime.userdata` are `int` tokens.
+- `M3Module.startFunction : i32 = -1` from construction (C callocs 0 and
+  sets -1 in `m3_parse.c` before use; `m3_LoadModule` runs any index >= 0).
+- `cstr_t = string` cannot tell C's `NULL` from `""`. C relies on the
+  difference for import/export names (`m3_env.c`: `isImported =
+  moduleUtf8 || fieldUtf8`, `names[j] && strcmp`, and `m3_bind.c`), and the
+  spec suite's `names.wast` exports a function named `""`. The porters of
+  `m3_env` and `m3_bind` must carry the distinction explicitly (a `bool`
+  next to the string, or `numNames` as the guard) rather than `!empty(s)`,
+  and the reviewer of those modules checks `names.wast`-style cases.
+
+Freeing a runtime is clearing the arrays; there is no `delete` and no `new`
+for `M3*` data. Structs are values inside arrays (`M3Function`, `M3Module`,
+`M3Global`, `M3FuncType`, `M3ImportInfo`, `M3DataSegment`, `M3MemoryInfo`,
+`M3Compilation` ...), created with `S()` and their initializers.
 
 Every C pointer field becomes an `int` handle into the arena named by the
 field's type (`IM3Function` → `int` into `rt.functions`, `IM3Module` → `int`
