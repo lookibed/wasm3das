@@ -1,0 +1,9 @@
+# Fixtures the Eden test modules read, as paths under wasm3c/test/.
+# scripts/eden/install_host.sh copies each one to <eden project>/assets/wasm/<name>.data
+# and lists it in the host's request_fixtures(). One per line, `#` starts a comment.
+# The porter appends what a new test module needs; never remove a line a test uses.
+lang/fib32.wasm
+lang/fib64.wasm
+lang/fib32_tail.wasm
+lang/fib.c.wasm
+wasi/simple/test.wasm

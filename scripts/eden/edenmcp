@@ -1,0 +1,6 @@
+#!/usr/bin/env bash
+# WSL wrapper: run the Eden MCP CLI on the Windows side (see edenmcp.py).
+here="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)"
+py="${EDEN_WIN_PYTHON:-/mnt/c/Python313/python.exe}"
+win_script="$(wslpath -w "$here/edenmcp.py")"
+exec "$py" -X utf8 -u "$win_script" "$@"

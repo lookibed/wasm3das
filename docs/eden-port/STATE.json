@@ -1,0 +1,30 @@
+{
+  "_doc": "Ledger of the Eden port. One entry per module of docs/eden-port/DESIGN.md section 3, in port order. status: todo | porting | verify | done | blocked. Only the orchestrator (skill eden-port) changes status; every change is committed together with the work it records. `upstream_tests` are the files of .upstream/tests/integration whose [test] functions the Eden test file must cover (scripts/eden/coverage.py); `eden_tests` is that file under tests/eden/.",
+  "goal": "every module done, scripts/eden/gate.sh green, scripts/eden/spec.sh and scripts/eden/wasi.sh --fast green",
+  "spec_expected": {"pass": 17863, "fail": 0, "crash": 0, "corpus": "opam-1.1.1"},
+  "wasi_fast_expected": {"pass": 7, "total": 7},
+  "modules": [
+    {"name": "wasm3_defs",     "status": "todo", "source": "wasm3_defs.das",     "eden_tests": "test_wasm3_defs.das",     "upstream_tests": ["test_wasm3_defs.das"]},
+    {"name": "m3_config",      "status": "todo", "source": "m3_config.das",      "eden_tests": "test_m3_config.das",      "upstream_tests": ["test_m3_config.das"]},
+    {"name": "m3_exception",   "status": "todo", "source": "m3_exception.das",   "eden_tests": null, "note": "43 lines of error-string helpers, covered by test_m3_core and every trap test"},
+    {"name": "m3_core",        "status": "todo", "source": "m3_core.das",        "eden_tests": "test_m3_core.das",        "upstream_tests": ["test_m3_core.das"]},
+    {"name": "m3_types",       "status": "todo", "source": "m3_types.das",       "eden_tests": "test_m3_types.das",       "upstream_tests": ["test_m3_types_integration.das"]},
+    {"name": "m3_math_utils",  "status": "todo", "source": "m3_math_utils.das",  "eden_tests": "test_m3_math_utils.das",  "upstream_tests": ["test_m3_math_utils.das"]},
+    {"name": "m3_code",        "status": "todo", "source": "m3_code.das",        "eden_tests": "test_m3_code.das",        "upstream_tests": ["test_m3_code.das"]},
+    {"name": "m3_function",    "status": "todo", "source": "m3_function.das",    "eden_tests": "test_m3_function.das",    "upstream_tests": ["test_m3_function.das"]},
+    {"name": "m3_module",      "status": "todo", "source": "m3_module.das",      "eden_tests": "test_m3_module.das",      "upstream_tests": ["test_m3_module.das"]},
+    {"name": "m3_exec_defs",   "status": "todo", "source": "m3_exec_defs.das",   "eden_tests": "test_m3_exec_defs.das",   "upstream_tests": [], "note": "no upstream test file; the Eden file tests the slot/memory/immediate accessors of DESIGN 4.2-4.4 directly"},
+    {"name": "m3_exec",        "status": "todo", "source": "m3_exec.das",        "eden_tests": "test_m3_exec.das",        "upstream_tests": ["test_m3_exec.das"]},
+    {"name": "m3_compile",     "status": "todo", "source": "m3_compile.das",     "eden_tests": "test_m3_compile.das",     "upstream_tests": ["test_m3_compile.das"]},
+    {"name": "m3_env",         "status": "todo", "source": "m3_env.das",         "eden_tests": "test_m3_env.das",         "upstream_tests": ["test_m3_env.das"]},
+    {"name": "m3_parse",       "status": "todo", "source": "m3_parse.das",       "eden_tests": "test_m3_parse.das",       "upstream_tests": ["test_m3_parse.das"]},
+    {"name": "m3_bind",        "status": "todo", "source": "m3_bind.das",        "eden_tests": "test_m3_bind.das",        "upstream_tests": ["test_m3_bind.das"]},
+    {"name": "m3_api_defs",    "status": "todo", "source": "m3_api_defs.das",    "eden_tests": null, "note": "helpers exercised by test_m3_api_libc / test_m3_api_wasi"},
+    {"name": "wasi_core",      "status": "todo", "source": "wasi_core.das",      "eden_tests": "test_wasi_core.das",      "upstream_tests": ["test_wasi_core.das"]},
+    {"name": "m3_api_wasi_fd", "status": "todo", "source": "m3_api_wasi_fd.das", "eden_tests": "test_m3_api_wasi_fd.das", "upstream_tests": ["test_m3_api_wasi_fd.das"]},
+    {"name": "m3_api_libc",    "status": "todo", "source": "m3_api_libc.das",    "eden_tests": "test_m3_api_libc.das",    "upstream_tests": ["test_m3_api_libc.das"]},
+    {"name": "m3_api_wasi",    "status": "todo", "source": "m3_api_wasi.das",    "eden_tests": "test_m3_api_wasi.das",    "upstream_tests": ["test_m3_api_wasi.das"]},
+    {"name": "lang_modules",   "status": "todo", "source": null,                 "eden_tests": "test_lang_modules.das",   "upstream_tests": ["test_lang_modules.das", "test_fib32_regression.das"], "note": "end-to-end: every wasm3c/test/lang fixture through the whole stack, fib(25)=75025; the fib32 regression is folded in"},
+    {"name": "app",            "status": "todo", "source": null,                 "eden_tests": null, "upstream_tests": [], "note": ".local/app/wasm3_eden.das (REPL for run-spec-test.py / run-wasi-test.py, from .upstream/app/wasm3.das) and the wasm3_run cheat of .eden_host/main.das; done when scripts/eden/spec.sh and scripts/eden/wasi.sh --fast are green. test_spec_core / test_spec_modules_load of the upstream suite are replaced by spec.sh (they need the corpus on disk)"}
+  ]
+}

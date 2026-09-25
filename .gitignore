@@ -18,6 +18,10 @@
 .DS_Store
 Thumbs.db
 
+# EdenSpark editor sidecars: the editor imports every image/text file it
+# finds in the project tree (including wasm3c/) and writes a .meta next to it
+*.meta
+
 # Session-local LSP/MCP wiring (machine-specific absolute paths)
 /opencode.json
 

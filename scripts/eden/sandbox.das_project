@@ -1,0 +1,158 @@
+options gen2
+require daslib/strings_boost
+require daslib/fio
+
+// Local stand-in for the EdenSpark editor's script sandbox.
+//
+// The editor compiles user scripts with Daslang 0.6.3 through its own project
+// file, which (measured on eden.exe 0.9.0.34, see docs/eden-port/DESIGN.md):
+//   - forbids `unsafe` in every form ("unsafe function 'x'"), and refuses
+//     `options no_unsafe = false` ("option no_unsafe is not allowed here")
+//   - refuses daslib/fio, daslib/network, daslib/jobque_boost, daslib/ast,
+//     daslib/ast_boost, daslib/templates_boost, daslib/safe_addr
+//   - accepts options gen2, indenting, stack, rtti, and the daslib modules
+//     listed in `allowed_daslib` below
+// This file reproduces those rules for the local daslang binary, so
+// scripts/eden/compile.sh and scripts/eden/test.sh fail on the same code the
+// editor would reject. It is a model, not the editor: the editor's compile
+// (scripts/eden/eden_gate.sh) stays the final gate.
+
+typedef module_info = tuple<string; string; string> const
+
+
+def is_daslib_file(path : string) : bool {
+    // files of the daslang standard library itself (and the toolchain's own
+    // .das_module descriptors) are trusted: what they require or enable
+    // internally is not the user's choice
+    return find(path, "/daslib/") >= 0 || find(path, "\\daslib\\") >= 0 || ends_with(path, ".das_module")
+}
+
+
+def is_port_module(name : string) : bool {
+    // the hooks for options and annotations receive the module *name*, not
+    // a path; the port's own modules are the ones the sandbox judges
+    let byPrefix = starts_with(name, "m3_") || starts_with(name, "wasm3") || starts_with(name, "wasi") || starts_with(name, "eden") || starts_with(name, "test_")
+    let byPath = find(name, "/") >= 0 || find(name, ".das") >= 0
+    return byPrefix || byPath
+}
+
+
+def file_exists(path : string) : bool {
+    var st : FStat
+    return stat(path, st)
+}
+
+var DAS_PAK_ROOT = "./"
+
+// every entry was compiled inside the editor (probe cheats, 2026-09-25);
+// linked_list, safe_addr, templates_boost, ast, ast_boost, fio, network and
+// jobque_boost were refused there, constexpr does not exist in 0.6.3
+let allowed_daslib <- [
+    "strings_boost", "strings", "json", "json_boost", "regex", "math_boost",
+    "functional", "algorithm", "decs", "decs_boost", "random", "sort_boost",
+    "array_boost", "static_let", "contracts", "linq", "apply", "rtti",
+    "enum_trait", "bitfield_trait", "math_bits", "utf8_utils", "archive",
+    "cuckoo_hash_table", "flat_hash_table", "match", "defer", "if_not_null",
+    "bool_array", "base64"
+]
+
+let allowed_options <- [
+    "gen2", "indenting", "stack", "rtti", "no_global_variables",
+    "never_inline", "persistent_heap", "heap_size_hint", "string_heap_size_hint",
+    "no_aot", "solid_context", "strict_smart_pointers"
+]
+
+let denied_annotations <- [
+    "macro", "_macro", "function_macro", "call_macro", "typeinfo_macro",
+    "structure_macro", "variant_macro", "enumeration_macro", "reader_macro",
+    "comment_reader", "tag_function", "tag_function_macro", "for_loop_macro",
+    "capture_macro", "simulate_macro", "pass_macro", "expr_macro", "unsafe_deref",
+    "init", "finalize", "unsafe_when_uninitialized"
+]
+
+
+[export]
+def module_get(req, from : string) : module_info {
+    var rs <- split_by_chars(req, "./")
+    if (length(rs) == 0) {
+        return (req, "{join(rs, "/")}.das", "")
+    }
+    let modName = rs[length(rs) - 1]
+    if (rs[0] == "%file") {
+        if (length(rs) == 1) {
+            return (modName, "%file.das", "")
+        }
+        erase(rs, 0)
+    }
+    let absPath = "{DAS_PAK_ROOT}{join(rs, "/")}.das"
+    if (file_exists(absPath)) {
+        return (modName, absPath, "")
+    }
+    var fr <- split_by_chars(from, "\\/")
+    while (length(fr) > 0) {
+        pop(fr)
+        let fromPath = "{join(fr, "/")}/{join(rs, "/")}.das"
+        if (file_exists(fromPath)) {
+            return (modName, fromPath, "")
+        }
+    }
+    if (rs[0] == "daslib") {
+        rs[0] = "{get_das_root()}/daslib"
+    }
+    return (modName, "{join(rs, "/")}.das", "")
+}
+
+
+[export]
+def module_allowed(mod, filename : string) : bool {
+    if (is_daslib_file(filename)) {
+        return true
+    }
+    // the local tools under .local/ (test runner, command-line front end)
+    // read files; the editor never sees that folder
+    if (find(filename, "/.local/") >= 0 || find(filename, "\\.local\\") >= 0) {
+        return true
+    }
+    // builtin modules ($, math, strings, ...) and the project's own files
+    if (mod == "$" || mod == "math" || mod == "strings" || mod == "rtti") {
+        return true
+    }
+    if (mod == "fio" || mod == "network" || mod == "jobque" || mod == "ast" || mod == "debugapi") {
+        return false
+    }
+    let rs <- split_by_chars(mod, "/")
+    if (length(rs) >= 2 && rs[0] == "daslib") {
+        return find_index(allowed_daslib, rs[length(rs) - 1]) >= 0
+    }
+    if (find(mod, "daslib") >= 0) {
+        return find_index(allowed_daslib, rs[length(rs) - 1]) >= 0
+    }
+    return true
+}
+
+
+[export]
+def module_allowed_unsafe(mod, filename : string) : bool {
+    // .local/ tools may call exit() and friends; nothing under source/ or
+    // tests/eden/ may
+    let isLocal = find(filename, "/.local/") >= 0 || find(filename, "\\.local\\") >= 0
+    return is_daslib_file(filename) || isLocal
+}
+
+
+[export]
+def option_allowed(opt, from : string) : bool {
+    if (is_daslib_file(from) || !is_port_module(from)) {
+        return true
+    }
+    return find_index(allowed_options, opt) >= 0
+}
+
+
+[export]
+def annotation_allowed(ann, from : string) : bool {
+    if (is_daslib_file(from) || !is_port_module(from)) {
+        return true
+    }
+    return find_index(denied_annotations, ann) < 0
+}

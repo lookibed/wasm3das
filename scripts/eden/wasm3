@@ -1,0 +1,31 @@
+#!/usr/bin/env bash
+# Command-line front end of the Eden port: the drop-in replacement for the C
+# `wasm3` binary that wasm3c/test/run-spec-test.py and run-wasi-test.py
+# drive (`--exec "<repo>/scripts/eden/wasm3 --repl"`).
+#
+# Runs .local/app/wasm3_eden.das with the 0.6.3 build (the editor's parser)
+# under the sandbox project. The script path is absolute so the sandbox
+# module resolver finds the `modules/wasm3das/...` requires by walking up
+# from it; the working directory is left alone because the drivers pass
+# fixture paths relative to their own directory.
+#
+# Environment: DASLANG_063 (default /root/daScript-0.6.3/bin/daslang),
+#              WASM3DAS_EDEN_APP overrides the entry point.
+here="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)"
+repo="$(cd -- "$here/../.." && pwd)"
+bin="${DASLANG_063:-/root/daScript-0.6.3/bin/daslang}"
+[[ -x "$bin" ]] || bin="${DASLANG_064:-/root/daScript/bin/daslang}"
+app="${WASM3DAS_EDEN_APP:-$repo/.local/app/wasm3_eden.das}"
+if [[ ! -f "$app" ]]; then
+    echo "wasm3 (eden): $app does not exist yet (STATE.json module 'app')" >&2
+    exit 2
+fi
+ulimit -s 262144 2>/dev/null || true
+args=()
+for a in "$@"; do
+    case "$a" in
+        --help|-h) args+=(--wasm3-help) ;;   # the daslang CLI swallows --help
+        *) args+=("$a") ;;
+    esac
+done
+exec "$bin" -no-dynamic-modules -project "$repo/scripts/eden/sandbox.das_project" "$app" -- "${args[@]}"
