@@ -355,6 +355,14 @@ documented limit.
 - `CompileFunction(rt, functionIdx)` is what `CompileFunctionHook` of
   `m3_exec` points to; `m3_env` wires it (`CompileFunctionHook = @@CompileFunction`).
 
+- `d_m3Assert` panics (the upstream choice; C's release build compiles it
+  out). A structurally invalid body (e.g. `local.set` on an empty stack)
+  therefore panics in `GetStackTopIndex` instead of returning C's
+  stack-underrun error. In the editor a panic stops the running cheat;
+  `m3_env`'s entry points (`m3_LoadModule`, `m3_Call`) and the host wrap
+  compilation in `try/recover` and turn a panic into an `M3Result`, so a
+  bad module cannot take down the game.
+
 ### 4.5 Host functions
 
 ```das
