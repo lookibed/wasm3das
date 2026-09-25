@@ -42,7 +42,7 @@ require modules/wasm3das/tests/eden/test_m3_api_defs
 require modules/wasm3das/tests/eden/test_wasi_core
 require modules/wasm3das/tests/eden/test_m3_api_wasi_fd
 require modules/wasm3das/tests/eden/test_m3_api_libc
-// require modules/wasm3das/tests/eden/test_m3_api_wasi
+require modules/wasm3das/tests/eden/test_m3_api_wasi
 // require modules/wasm3das/tests/eden/test_lang_modules
 // require modules/wasm3das/tests/eden/test_fib32_regression
 
@@ -68,7 +68,7 @@ def public run_all_tests(var t : TestRun; fx : FixtureSource) {
     run_tests_wasi_core(t, fx)
     run_tests_m3_api_wasi_fd(t, fx)
     run_tests_m3_api_libc(t, fx)
-    // run_tests_m3_api_wasi(t, fx)
+    run_tests_m3_api_wasi(t, fx)
     // run_tests_lang_modules(t, fx)
     // run_tests_fib32_regression(t, fx)
     pass
