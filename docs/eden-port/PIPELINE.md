@@ -119,5 +119,6 @@ When the editor updates (the launcher shows a new version, or
 | `get_game_status` says `internal error` | more than one Eden-visible file fails to compile | `scripts/eden/compile.sh` names them all |
 | editor passes fewer checks than the local run | a fixture is not installed or a test is skipped in the editor | `scripts/eden/install_host.sh`; `wasm3_fixture_check <name>` |
 | `compile.sh` green but the editor fails | a 0.6.3/0.6.4 difference the sandbox model does not know | add the construct to DESIGN §1/§6 and to compile.sh's grep rules |
+| the editor reports errors at lines that do not exist in the file on disk | the editor missed a file-change notification and compiles a stale in-memory copy | create any new `.das` file in the tree (the editor rescans), delete it, restart; `eden_gate.sh` does this itself before every restart |
 | a cheat prints nothing | the cheat panicked before its first `print` (the editor swallows it) | add a `print` at the top, check `get_game_status` for the error text |
 | stale cheat names in `list_cheat_commands` | cosmetic, the registry keeps removed names until the editor restarts | ignore |

@@ -39,6 +39,17 @@ fi
 echo "before: $status"
 
 banner "eden_gate: full restart (stop + start)"
+# The editor can miss a file-change notification and keep compiling an
+# in-memory copy of a file (seen once: errors at line numbers that no longer
+# exist). A new file appearing in the tree forces a rescan of every file, so
+# a throw-away module is created and removed before the restart.
+probe_dir="$repo/tmp/eden"
+mkdir -p "$probe_dir"
+probe="$probe_dir/rescan_probe_$$.das"
+printf '// eden_gate rescan probe, deleted right after creation\n' > "$probe"
+sleep 2
+rm -f "$probe"
+sleep 1
 # The first compile after new files appeared in the project tree sometimes
 # ends in a bare "internal error" although every file is fine on the second
 # attempt (the editor's file scan lags one cycle); one retry covers that.
@@ -65,6 +76,15 @@ while true; do
             if (( attempt < 2 )); then
                 echo "eden_gate: 'internal error' on attempt $attempt, retrying once after a rescan pause"
                 sleep 3
+                continue
+            fi ;;
+        Running*)
+            # a fresh start reports a game_time near zero; a large value means
+            # the stop/start pair did not take and the old program still runs
+            gt=$(echo "$status" | sed -nE 's/.*game_time: ([0-9]+)\.[0-9]+s.*/\1/p')
+            if [[ -n "$gt" && "$gt" -gt 30 && $attempt -lt 3 ]]; then
+                echo "eden_gate: game_time ${gt}s after a restart (attempt $attempt), the restart did not take; retrying"
+                sleep 2
                 continue
             fi ;;
     esac

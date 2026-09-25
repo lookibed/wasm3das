@@ -247,6 +247,15 @@ both (`.upstream/source/m3_bind.das`, `.upstream/source/m3_compile.das`);
 the Eden port does the same. `_throwifnull(PTR)` tests a handle against
 `-1`.
 
+### 4.7b Allocator helpers of `m3_core`
+
+`m3_Malloc_Impl(var arr; n)`, `m3_Realloc_Impl(var arr; new; old)`,
+`m3_Free_Impl(var arr)` and `m3_CopyMem(arr; n) : array<T>` are generic over
+`array<T>` and take **element counts**. The one C caller of `m3_CopyMem`
+(`m3_compile.c`, the constant table) passes a byte count
+(`numConstantBytes`); the Eden `m3_compile` passes the element count
+(`numConstants`). `m3_AllocStruct(S)` is `S()`.
+
 ### 4.8 What must not change
 
 - C function and variable names, the order of functions in a file, the
@@ -343,6 +352,16 @@ asking the compiler.
 - Keywords that are legal identifiers in C but not here: `addr`, `pass`,
   `new`, `delete`, `typeinfo`, `label`, `goto` (rename parameters such as
   `addr` to `at`).
+- `resize` on an `array<Struct>` whose struct has field initializers is
+  refused by 0.6.3 as an unsafe builtin (0.6.4 accepts it). Grow with
+  `reserve` + `push(arr, T())`, shrink with `pop`; the `m3_Malloc_Impl` /
+  `m3_Realloc_Impl` helpers of `m3_core` do exactly that, use them for every
+  arena of `M3*` structs. `resize` on arrays of scalars is fine.
+- `[inline]` does not exist in 0.6.3: drop it (the upstream port used it on
+  small helpers).
+- Byte cursors are `(bytes : array<uint8>; var o_value : T&; var io_pos : int&; i_end : int) : M3Result`
+  (the array first, then the C parameters in C order); the full list is in
+  the header of `source/m3_core.das`.
 - A `require` must be Eden-project-root relative
   (`require modules/wasm3das/source/m3_core`); `./x.das` does not resolve in
   the editor.
