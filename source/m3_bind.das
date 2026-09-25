@@ -19,10 +19,11 @@ require strings
     C accepts nullable pointers for both output and signature. A Daslang `var`
     output reference and `ccstr_t` string are not nullable in the same sense,
     so the two C null-pointer guards in SignatureToFuncType are intentionally
-    not represented by fake runtime conditions. FindAndLinkFunction keeps C's
-    optional signature by treating the empty string as C's NULL i_signature,
-    which is the only value a caller can pass for "do not validate" (a wasm
-    signature is never empty; the shortest legal one is "v()").
+    not represented by fake runtime conditions. FindAndLinkFunction always
+    validates the signature: C's `if (i_signature)` is true for every string
+    a caller can pass (no C caller passes NULL), and an empty signature is
+    rejected by SignatureToFuncType with m3Err_malformedFunctionSignature,
+    as in C.
 
     All representable parsing/error/cleanup behavior below follows the C
     functions.
@@ -276,12 +277,11 @@ def public FindAndLinkFunction(
         // Eden: the entry is an import (see the header)
         if (u32(i) < rt.modules[io_module].numFuncImports) {
             if (rt.functions[f].import.fieldUtf8 == i_functionName && (wildcardModule || rt.functions[f].import.moduleUtf8 == i_moduleName)) {
-                // C: if (i_signature) - an empty signature stands for C NULL.
-                if (!empty(i_signature)) {
-                    result = ValidateSignature(rt, f, i_signature)   // C: _ (ValidateSignature (f, i_signature))
-                    if (result != m3Err_none) {
-                        return result
-                    }
+                // C: if (i_signature) - Eden: always true (a string is never
+                // NULL); "" goes on to C's malformed-signature error
+                result = ValidateSignature(rt, f, i_signature)   // C: _ (ValidateSignature (f, i_signature))
+                if (result != m3Err_none) {
+                    return result
                 }
                 // Eden: the function value goes into rt.rawCalls once; the
                 // code word holds its handle (DESIGN 4.5)

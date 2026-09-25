@@ -390,8 +390,13 @@ documented limit.
 typedef M3RawCall = function<(var rt : M3Runtime; ctx : M3ImportContext; sp : int) : M3Result>
 ```
 
-Arguments are read from `rt.stack[sp + i]` through the `m3Api*` helpers of
-`m3_api_defs`, memory through the 4.2 accessors; `ctx` is C's
+The host frame (measured against `CompileCallArgsAndReturn` and
+`op_CallRawFunction`, identical to C): every value is one 64-bit cell of
+two slot words, results first. Result j is `rt.stack[sp + 2*j]`, argument
+k is `rt.stack[sp + 2*(numRets + k)]` (so for a void function argument 0
+is at `sp`). The `m3Api*` helpers of `m3_api_defs` walk this with one
+cursor stepping 2 per value, as C's `m3ApiReturnType` / `m3ApiGetArg`
+step one u64; memory through the 4.2 accessors; `ctx` is C's
 `IM3ImportContext` by value (`functionIdx`, `userdata` token, the WASI
 context). Linking (`m3_bind`) stores the function value in `rt.rawCalls`
 and its handle in the code word. `op_Entry` copies `length(constants)`

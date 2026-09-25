@@ -424,14 +424,15 @@ def test_link_lookup_and_signature(var t : TestRun; fx : FixtureSource) {
         "unknown argument type char", "malformed signature propagates")
     equal(t, length(rt.funcTypes), numTypes, "validation leaves the func-type arena as it was")
     equal(t, length(rt.rawCalls), 0, "a failed link pushes no raw call")
-    // C: if (i_signature) - the port spells C's NULL signature as "".
-    is_ok(t, m3_LinkRawFunction(rt, m, "spectest", "print_i32", "", @@recording_print_i32),
-        "no signature skips validation")
+    // C: "" is a non-NULL signature; SignatureToFuncType rejects it (strlen < 2)
+    is_err(t, m3_LinkRawFunction(rt, m, "spectest", "print_i32", "", @@recording_print_i32),
+        m3Err_malformedFunctionSignature, "an empty signature is malformed, as in C")
+    equal(t, length(rt.rawCalls), 0, "the malformed link pushes no raw call")
     // C: wildcardModule = (strcmp (i_moduleName, "*") == 0).
     is_ok(t, m3_LinkRawFunction(rt, m, "*", "print_i32", "v(i)", @@recording_print_i32),
         "wildcard module name")
     equal(t, length(rt.funcTypes), numTypes, "a matching signature is released too")
-    equal(t, length(rt.rawCalls), 2, "one raw call per successful link")
+    equal(t, length(rt.rawCalls), 1, "one raw call per successful link (the empty signature did not link)")
     let imp = rt.modules[m].functions[0]
     equal(t, rt.functions[imp].moduleIdx, m, "the linked import belongs to the module")
     check(t, rt.functions[imp].compiled != -1, "the linked import is compiled")
