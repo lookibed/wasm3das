@@ -47,6 +47,20 @@ for f in "${files[@]}"; do
     if grep -nE '\baddr<' "$f"; then
         echo "compile: $f: typed addr<T> is 0.6.4 syntax, not in 0.6.3 (and unsafe anyway)" ; fail=1
     fi
+    # two combined operand reads (immediate_*(rt), slot_*(rt), slot_index(rt),
+    # set_slot_*(rt, v)) in one statement evaluate in unspecified order; the
+    # upstream macro pass refused them, this grep does (DESIGN 4.4)
+    if awk '
+        /^[[:space:]]*\/\// { next }
+        {
+            line = $0
+            n = gsub(/(immediate_[a-z0-9]+|slot_[a-z0-9]+|slot_index)\(rt\)/, "", line)
+            n += gsub(/set_slot_[a-z0-9]+\(rt, /, "", line)
+            if (n >= 2) { print FILENAME ":" NR ": " $0; found = 1 }
+        }
+        END { exit found ? 0 : 1 }' "$f"; then
+        echo "compile: $f: two combined operand reads in one statement (order unspecified); split them" ; fail=1
+    fi
 done
 
 for bin in $(compilers); do

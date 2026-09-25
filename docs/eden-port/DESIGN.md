@@ -266,6 +266,26 @@ result is `M3_NEXT`. Immediates are read with `immediate_u64(var rt) : uint64`
 its own statement, never nested inside another expression (the reason the
 upstream macro pass existed).
 
+Fixed by `m3_exec_defs` (its header is the API reference for `m3_exec`):
+`retOp(rt)` = `M3_RETURN` (C `return m3Err_none` from an op),
+`newTrap(rt, err)` stores the string in `rt.trap` and returns `M3_TRAP`,
+`forwardTrap(rt, result : M3Result)` maps `""` to `M3_RETURN` and anything
+else to a trap (for `op_CallRawFunction`), `d_m3ClearRegisters(rt)` zeroes
+`r0`/`fp0`. The immediate readers are `immediate_u64/u32/i32/i64/f32/f64/pc/handle/slot`
+(one word each, `immediate_handle` replaces C's function/module/functype/
+rawcall immediates), the slot accessors come in three forms, frame-relative
+`slot_T(rt, off)`, saved-index `stack_T(rt, idx)` with `slot_index`, and the
+combined `slot_T(var rt)` that reads the offset immediate then dereferences
+(C's `slot(_pc)` macro). **Two combined reads never share one expression**:
+each is the sole side effect of its statement (`let a = slot_i32(rt)` then
+`let b = slot_i32(rt)`), or the evaluation order is unspecified. A 32-bit
+slot store writes the whole word zero-extended (the word is the slot).
+Memory accessors `load_T/store_T(rt, at)` assemble little-endian bytes with
+no bounds check; `mem_size(rt)` stands for `_mem->length`. Nesting sites of
+`RunLoop` (`op_Call`, `op_CallIndirect`, `op_Entry`, `op_Loop`) save and
+restore `rt.pc`/`rt.sp` around the nested call, since C's by-value
+registers are shared fields here.
+
 The op table `g_ops : array<M3Op>` is filled once by `m3_build_op_table()` in
 `m3_exec` from a literal list `[@@op_Entry, @@op_Call, ...]`, in the same
 order as `M3ExecDispatchPass` sorts them (by name). `m3_OpWord(op)` returns the
