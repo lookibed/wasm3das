@@ -99,7 +99,12 @@ require modules/wasm3das/source/m3_core
       - test_env_evaluate_expression_and_interning: EvaluateExpression on
         the four constant types and a global.get, leaving the runtime's
         compilation, page lists and error untouched; Environment_AddFuncType
-        interning (equal type -> existing handle, slot popped).
+        interning (equal type -> existing handle, slot popped);
+      - test_env_free_runtime_returns_memory: 50 runtimes with fib32 and a
+        1 MiB memory, each run and freed, grow heap_bytes_allocated() by
+        less than 256 KiB (m3_FreeRuntime deletes the runtime value); the
+        freed runtime is a default M3Runtime and freeing it again is a
+        no-op.
 */
 
 
@@ -1389,6 +1394,78 @@ def test_env_evaluate_expression_and_interning(var t : TestRun; fx : FixtureSour
 }
 
 
+// Eden: one runtime of the heap test: fib32 loaded with a 1 MiB linear
+// memory (16 pages), fib(10) compiled and run, then m3_FreeRuntime
+def private free_runtime_cycle(var t : TestRun) {
+    var rt <- new_runtime(64u * 1024u)
+    let m = fib32_module(t, rt, false)
+    rt.modules[m].memoryInfo.initPages = 16u
+    rt.modules[m].memoryInfo.maxPages = 16u
+    is_ok(t, m3_LoadModule(rt, m), "m3_LoadModule fib32 with memory")
+    equal(t, length(rt.mem), 16 * 65536, "a 1 MiB linear memory")
+    var out = 0
+    is_ok(t, call_i32_i32(rt, "fib", 10, out), "fib(10)")
+    equal(t, out, 55, "fib(10) = 55")
+    m3_FreeRuntime(rt)
+}
+
+
+// Eden: m3_FreeRuntime hands the runtime's memory back to the heap (delete
+// of the value, see m3_env's header); before, the reset moved a fresh value
+// over the old one and every buffer stayed allocated (about 1.3 MiB per
+// cycle here, 16 MiB per fib.c runtime). heap_bytes_allocated() is the
+// context heap's live byte count (daslang 0.6.3 builtin, present in the
+// editor too). The bound (256 KiB for 50 cycles) leaves room for the test
+// helpers' own small temporaries, which are not the port's.
+def test_env_free_runtime_returns_memory(var t : TestRun; fx : FixtureSource) {
+    free_runtime_cycle(t)   // warm-up: the op tables and hooks exist afterwards
+    let before = heap_bytes_allocated()
+    for (i in range(50)) {
+        free_runtime_cycle(t)
+    }
+    let after = heap_bytes_allocated()
+    let growth = int64(after) - int64(before)
+    if (t.verbose) {
+        print("[test_m3_env] heap before={int64(before)} after={int64(after)} growth={growth} bytes over 50 runtimes\n")
+    }
+    check(t, growth < 256l * 1024l, "50 freed runtimes of 1 MiB grow the heap by {growth} bytes (bound 256 KiB)")
+
+    // the freed runtime is a default M3Runtime (see m3_env's header)
+    var rt <- new_runtime(1024u)
+    fib32_module(t, rt, true)
+    m3_FreeRuntime(rt)
+    equal(t, length(rt.modules), 0, "no module after m3_FreeRuntime")
+    equal(t, length(rt.stack), 0, "no stack after m3_FreeRuntime")
+    equal(t, length(rt.mem), 0, "no memory after m3_FreeRuntime")
+    equal(t, length(rt.code), 0, "no code after m3_FreeRuntime")
+    equal(t, rt.originStack, -1, "originStack is NULL")
+    equal(t, rt.environment.retFuncTypes[1], -1, "the environment is the default")
+    m3_FreeRuntime(rt)
+    equal(t, length(rt.funcTypes), 0, "a second m3_FreeRuntime is a no-op")
+}
+
+
+def private stale_op(var rt : M3Runtime) : int {
+    return newTrap(rt, "stale op table entry")
+}
+
+
+// Eden: the editor's hot reload carries g_ops over a code change but cannot
+// carry its function values ("failed to find function ... with hash"), so the
+// table can be full of dead entries. m3_NewRuntime must rebuild it; this test
+// fills every entry with a wrong op, as a reload would leave them unusable,
+// and runs fib32 through a new runtime.
+def test_env_new_runtime_rebuilds_a_stale_op_table(var t : TestRun; fx : FixtureSource) {
+    free_runtime_cycle(t)   // the tables exist
+    let count = m3_OpCount()
+    for (i in range(count)) {
+        g_ops[i] = @@stale_op
+    }
+    free_runtime_cycle(t)   // fib(10) = 55 only if m3_NewRuntime rebuilt g_ops
+    equal(t, m3_OpCount(), count, "the rebuilt table has the same op count")
+}
+
+
 // ============================================================================
 // Runner
 // ============================================================================
@@ -1435,4 +1512,8 @@ def public run_tests_m3_env(var t : TestRun; fx : FixtureSource) {
     test_env_invalid_body_panics_to_result(t, fx)
     begin_test(t, "test_env_evaluate_expression_and_interning")
     test_env_evaluate_expression_and_interning(t, fx)
+    begin_test(t, "test_env_free_runtime_returns_memory")
+    test_env_free_runtime_returns_memory(t, fx)
+    begin_test(t, "test_env_new_runtime_rebuilds_a_stale_op_table")
+    test_env_new_runtime_rebuilds_a_stale_op_table(t, fx)
 }

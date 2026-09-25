@@ -77,9 +77,20 @@ require daslib/math_bits                                // Eden: the f32 / f64 v
         they were parsed; Runtime_FirstModule is C's `runtime->modules`
         head. ModuleVisitor takes the runtime, the module handle and the
         info string and returns a handle (C: void *, -1 = NULL).
-      - m3_FreeRuntime(rt): Runtime_Release, then the value is reset to
-        M3Runtime() (C: m3_Free (runtime)); the stack and the memory are
-        freed by emptying rt.stack / rt.mem.
+      - m3_FreeRuntime(rt): Runtime_Release, then `delete rt` (C: m3_Free
+        (runtime)) and the value is reset to M3Runtime(). delete is what
+        returns the memory: it finalizes every array field (arenas, code,
+        module binaries) and frees the buffers, where a move of a fresh
+        value over the old one only overwrote the fields and kept every
+        buffer allocated (a long-running host creating runtimes grew without
+        bound). It is a delete of a struct value, safe, not the new/delete
+        of pointer-shaped M3* data that DESIGN forbids. The freed runtime is
+        a default M3Runtime(): no module, empty arenas and stack
+        (originStack -1), environment and handles at their defaults; unlike
+        C's dangling pointer it may be read, and m3_FreeRuntime on it again
+        is a no-op, but it is not a runtime to call into (make a new one with
+        m3_NewRuntime). The stack and the memory are freed by Runtime_Release
+        through m3_Free_Impl, which deletes rt.stack / rt.mem.
       - EvaluateExpression: C compiles and runs the expression in a
         temporary M3Runtime that shares the module's runtime's environment
         and stack. Its arenas cannot be separated from the runtime here, so
@@ -838,7 +849,14 @@ def public m3_FreeRuntime(var i_runtime : M3Runtime) {
     // C: if (i_runtime); Eden: a reference is never NULL
     // compiled out under the active configuration: m3_PrintProfilerInfo
     Runtime_Release(i_runtime)
-    // C: m3_Free (i_runtime); Eden: the value is reset (see the header)
+    // C: m3_Free (i_runtime)
+    // Eden: delete of the runtime value (not a pointer: safe, and not the
+    // new/delete of M3* data DESIGN forbids) finalizes every array field -
+    // the arenas, rt.code, the module binaries - and returns their buffers
+    // to the heap; a move-assignment over the old value does not (it
+    // overwrites the fields without finalizing them). The zeroed value is
+    // then reset to M3Runtime(), which owns no heap memory (see the header)
+    delete i_runtime
     i_runtime <- M3Runtime()
 }
 
@@ -949,7 +967,9 @@ def public EvaluateExpression(var rt : M3Runtime; i_module : IM3Module; var o_ex
 
     io_bytes = rt.compilation.wasm   // C: * io_bytes = o->wasm
 
-    // Eden: the runtime's own state comes back
+    // Eden: the runtime's own state comes back; the temporary's compilation
+    // (its scope stack) is deleted first, a move over it would not free it
+    delete rt.compilation
     rt.compilation <- savedCompilation
     rt.pagesOpen = savedPagesOpen
     rt.pagesFull = savedPagesFull

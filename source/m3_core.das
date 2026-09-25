@@ -653,9 +653,14 @@ def public m3_Malloc_Impl(var o_array : array<auto(T)>; i_size : int) {
 
 /* C: void m3_Free_Impl (void * io_ptr) — free (io_ptr) */
 def public m3_Free_Impl(var io_ptr : array<auto(T)>) {
-    // Eden: an empty array is the null pointer; clear keeps the C
-    // "free then NULL" observable state (length 0)
-    clear(io_ptr)
+    // Eden: an empty array is the null pointer. delete finalizes the
+    // elements and hands the buffer back to the context heap (clear kept the
+    // capacity, so a freed stack, linear memory or module binary stayed
+    // allocated for the life of the process); the array is left empty, C's
+    // "free then NULL" observable state (length 0). A delete of an array
+    // value, not of a pointer: safe, and not the new/delete of M3* data that
+    // DESIGN forbids.
+    delete io_ptr
 }
 
 

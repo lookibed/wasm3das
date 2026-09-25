@@ -2541,9 +2541,13 @@ def private ResolveOperationNames(var io_rows : array<M3OpInfo>) {
 // call rebuilds the same tables (idempotent) and no flag is kept. C's NULL
 // compiler is c_noCompiler, as upstream (IsNoCompiler reads both).
 def public m3_build_operations_table() {
-    if (m3_OpCount() == 0) {
-        m3_build_op_table()
-    }
+    // Eden: always rebuild the op table. The editor's hot reload carries
+    // global variables over and cannot carry function values across a code
+    // change ("failed to find function ... with hash" in its console), so
+    // g_ops may hold 510 dead entries while m3_OpCount() is not 0. The
+    // registration order is fixed, so words already compiled keep their
+    // meaning and only the function values are refreshed.
+    m3_build_op_table()
     clear(c_operations)
     clear(c_operationsFC)
     reserve(c_operations, 253)
@@ -3073,7 +3077,10 @@ def public CompileFunction(var rt : M3Runtime; io_function : IM3Function) : M3Re
 
     // C: IM3Runtime runtime = io_function->module->runtime; IM3Compilation o = & runtime->compilation;
     //    memset (o, 0x0, sizeof (M3Compilation));
-    // Eden: the runtime is rt, its compilation is reset to the defaults
+    // Eden: the runtime is rt, its compilation is reset to the defaults; the
+    // previous one is deleted first (a move over it would not free its scope
+    // stack; delete of a struct value, not the new/delete of M3* data)
+    delete rt.compilation
     rt.compilation <- M3Compilation()
     d_m3Assert(d_m3MaxFunctionSlots >= d_m3MaxFunctionStackHeight * ((d_m3Use32BitSlots ? 1u : 0u) + 1u))   // need twice as many slots in 32-bit mode
     rt.compilation.runtime = 0   // Eden: this runtime (C: o->runtime = runtime)
