@@ -159,6 +159,12 @@ Decisions fixed by `m3_types` (the struct table is in its header):
 - `m3Error(i_result; var i_runtime : M3Runtime; ...)` always records
   (C's `if (i_runtime)` null guard has no counterpart).
 - `M3ImportContext.userdata` / `M3Runtime.userdata` are `int` tokens.
+- Func-type interning: `AllocFuncType` can only append to `rt.funcTypes`.
+  C's `Environment_AddFuncType` (`m3_env.c`) and `ValidateSignature`
+  (`m3_bind.c`) free the freshly built type when an equal one exists; the
+  Eden port pops the just-appended last slot (or compares before
+  appending) so the survivor is the existing handle, which
+  `op_CallIndirect` compares by handle.
 - `M3Module.startFunction : i32 = -1` from construction (C callocs 0 and
   sets -1 in `m3_parse.c` before use; `m3_LoadModule` runs any index >= 0).
 - `cstr_t = string` cannot tell C's `NULL` from `""`. C relies on the
