@@ -463,6 +463,15 @@ the Eden port does the same. `_throwifnull(PTR)` tests a handle against
 (`numConstantBytes`); the Eden `m3_compile` passes the element count
 (`numConstants`). `m3_AllocStruct(S)` is `S()`.
 
+### 4.7c Bytes and strings in host functions
+
+A daslang string cannot hold a NUL byte. `m3ApiReadString` is for
+NUL-terminated C strings only (file names, format strings). Everything
+that moves bytes (`fd_write`, `fd_read`, `fwrite`, `printf`'s output, the
+stdio buffers of 4.7) uses `m3ApiReadBytes` / `m3ApiWriteBytes` and
+`array<u8>`, so binary output survives byte for byte. Host code that
+builds text for `print` in the editor converts at the very end.
+
 ### 4.8 What must not change
 
 - C function and variable names, the order of functions in a file, the

@@ -412,11 +412,13 @@ def public m3ApiWriteMem64(var rt : M3Runtime; ptr : int; val : u64) {
 
 
 // Eden: C strnlen (ptr, maxlen) over the linear memory. Also stops at the
-// end of rt.mem, where C would read past the linear memory (see the header)
+// end of rt.mem, where C would read past the linear memory (see the header).
+// Eden: a guest pointer of 2^31 or more is a negative offset; it counts 0
+// bytes, and the m3ApiCheckMem the caller runs next traps as in C
 def public m3ApiStrnlen(rt : M3Runtime; ptr : int; maxlen : int) : int {
     var n = 0
     let size = length(rt.mem)
-    while (n < maxlen && ptr + n < size && rt.mem[ptr + n] != 0u8) {
+    while (ptr >= 0 && n < maxlen && ptr + n < size && rt.mem[ptr + n] != 0u8) {
         n++
     }
     return n
@@ -435,8 +437,11 @@ def public m3ApiReadBytes(rt : M3Runtime; ptr : int; len : int) : array<u8> {
 }
 
 
-// Eden: rt.mem[ptr .. ptr + len) as a string (C: the `(ptr, len)` char
-// buffer passed to fwrite / printf). The range was checked with m3ApiCheckMem
+// Eden: rt.mem[ptr .. ptr + len) as a string, for NUL-terminated C strings
+// only (file names, format strings): a daslang string cannot hold a NUL
+// byte, so the text ends at the first one. Byte output (fd_write, fwrite,
+// the "%s" of a (ptr, len) buffer) must use m3ApiReadBytes, which keeps
+// every byte. The range was checked with m3ApiCheckMem
 def public m3ApiReadString(rt : M3Runtime; ptr : int; len : int) : string {
     let bytes <- m3ApiReadBytes(rt, ptr, len)
     return string(bytes)

@@ -606,6 +606,19 @@ def test_read_write_mem(var t : TestRun; fx : FixtureSource) {
     equal(t, m3ApiStrnlen(rt, 16, 2), 2, "strnlen stops at maxlen")
     m3ApiWriteString(rt, 28, "wxyz")
     equal(t, m3ApiStrnlen(rt, 28, 100), 4, "strnlen stops at the end of memory")
+    // a guest pointer of 2^31 or more is a negative offset: 0 bytes, no panic;
+    // the caller's m3ApiCheckMem then traps as in C
+    equal(t, m3ApiStrnlen(rt, -1, 100), 0, "strnlen of a negative offset is 0")
+    is_err(t, m3ApiCheckMem(rt, -1, 1ul), m3Err_trapOutOfBoundsMemoryAccess, "and the check that follows traps")
+    // ReadBytes keeps a NUL inside the range (byte output must use it)
+    let saved <- m3ApiReadBytes(rt, 16, 3)
+    rt.mem[16] = u8('a')
+    rt.mem[17] = 0u8
+    rt.mem[18] = u8('b')
+    let raw <- m3ApiReadBytes(rt, 16, 3)
+    equal(t, length(raw), 3, "ReadBytes keeps all 3 bytes across a NUL")
+    equal(t, raw[2], u8('b'), "the byte after the NUL is kept")
+    m3ApiWriteBytes(rt, 16, saved)
     equal_str(t, m3ApiReadString(rt, 16, 3), "abc", "ReadString")
     let bytes <- m3ApiReadBytes(rt, 28, 4)
     equal(t, length(bytes), 4, "ReadBytes length")
