@@ -15,28 +15,29 @@ require modules/wasm3das/source/m3_core
 
 /*
     test_m3_compile.das: Eden counterpart of
-    .upstream/tests/integration/test_m3_compile.das (PART 1 of the port:
-    everything of m3_compile.c before the operation tables).
+    .upstream/tests/integration/test_m3_compile.das.
 
     The upstream tests load fib32.wasm through m3_ParseModule / m3_LoadModule
     (m3_env, m3_parse: later modules) to get a loaded module whose only
     function has the type (i32) -> i32, replace its body with hand-written
     bytes and compile them. Eden: the fixture builds that module by hand in
-    the runtime's arenas (a func type interned with AllocFuncType, a module
-    slot with `runtime = 0`, a function added with Module_AddFunction whose
-    body is the module's `wasm` array), so the same bodies compile through
-    the same CompileFunction; the compiled code is then run through RunCode
-    (m3_Call's entry, as tests/eden/test_m3_exec.das does) to check the
-    values the compiler's words produce.
+    the runtime's arenas (a func type interned with AllocFuncType, the
+    block-result func types of m3_NewEnvironment in
+    rt.environment.retFuncTypes, a module slot with `runtime = 0`, a
+    function added with Module_AddFunction whose body is the module's `wasm`
+    array), so the same bodies compile through the same CompileFunction; the
+    compiled code is then run through RunCode (m3_Call's entry, as
+    tests/eden/test_m3_exec.das does) to check the values the compiler's
+    words produce. The operation tables come from m3_build_operations_table.
 
-    The operation tables c_operations / c_operationsFC and their builder
-    m3_build_operations_table are PART 2 of the port. Until they exist, the
-    fixture installs the rows its bodies need (the C rows of the opcodes
-    used, names resolved through m3_OpWord exactly as the builder will) with
-    install_part1_table; PART 2 replaces that helper with a call to
-    m3_build_operations_table and keeps the checks.
-
-    Coverage of the upstream [test]s (3 of 4 ported, 1 deferred):
+    Coverage of the upstream [test]s (4 of 4 ported):
+      - test_operation_table_after_new_environment: m3_build_operations_table
+        stands in for the table fill of m3_NewEnvironment (m3_env, a later
+        module); every assertion is kept (no null compiler, i32.lt_u routes
+        to Compile_Operator with a register form, call has Compile_Call,
+        0xfd and 0xfc0c have no row, a second build leaves the table intact,
+        0xc5 / 0xfb empty, 0xfc dispatches), plus the row counts and the
+        op table being built by the builder when it is empty.
       - test_compile_negative_i32_constants_keep_the_c_slot_behaviour: the
         same two bodies and the same numConstantBytes checks (8 for two
         i32.const -1, 4 for two i32.const 1), plus the Eden shape of the
@@ -46,10 +47,18 @@ require modules/wasm3das/source/m3_core
       - test_compile_rejects_reserved_and_unknown_opcodes: the same three
         bodies and error strings (0x06 reserved, 0xc5 DEBUG-only, 0xfd past
         the table).
-    // PART 2: test_operation_table_after_new_environment -- needs the
-    // c_operations table, m3_build_operations_table and m3_NewEnvironment
-    // (m3_env); ported with the tables.
     Tests added for the Eden shape (no upstream counterpart):
+      - test_operation_tables_resolve: both tables walked row by row: every
+        non-empty op name resolved to an index below m3_OpCount whose
+        m3_OpWord(name) round-trips, every empty name c_opNull, a compiler
+        on exactly the rows where C has one (72 + 10), the reserved rows
+        empty, and the names / rows counted;
+      - test_compile_and_run_opcodes: bodies compiled through the full
+        table and run: `i32.const 7; i32.const 5; i32.add` (12), a
+        `block (result i32) / br_if / end`, `local.set` / `local.get` on a
+        declared local, `i32.load` with an offset from a one-page memory
+        (and its out-of-bounds trap), `call` of a second function, and
+        `select`;
       - test_slot_and_type_stack: the slot and register accounting
         (AllocateSlots with alignment, MarkSlotAllocated / DeallocateSlot,
         Push / Pop / PopType / PushRegister, the register aliases, the
@@ -79,59 +88,18 @@ require modules/wasm3das/source/m3_core
 
 
 // ============================================================================
-// Helpers: the fixture module and the part-1 operation table
+// Helpers: the fixture module
 // ============================================================================
 
 
-// resolves the four op names of a row into op-table indices, as
-// m3_build_operations_table (PART 2) will
-def private resolve_row(var row : M3OpInfo&) {
-    for (i in range(4)) {
-        if (!empty(row.opNames[i])) {
-            row.operations[i] = int(m3_OpWord(row.opNames[i]))
-        } else {
-            row.operations[i] = c_opNull
-        }
-    }
-}
-
-
-// PART 2: replaced by m3_build_operations_table(). The rows below are the C
-// rows (wasm3c/source/m3_compile.c) of the opcodes the bodies of this file
-// use; every other row is left as C's zero-filled release table leaves the
-// DEBUG-only rows (no operations, no compiler), 0x06 is M3OP_RESERVED.
-def private install_part1_table() {
-    let i32Type = int(u8(M3ValueType.c_m3Type_i32))
-    let noneType = int(u8(M3ValueType.c_m3Type_none))
-    let anyType = int(0xff)
-    m3_Malloc_Impl(c_operations, 253)
-    m3_Malloc_Impl(c_operationsFC, 12)
-    c_operations[0x00] = M3OP("unreachable", 0, noneType, "op_Unreachable", "", "", "", @@Compile_Unreachable)
-    c_operations[0x01] = M3OP("nop", 0, noneType, "", "", "", "", @@Compile_Nop)
-    c_operations[0x06] = M3OP_RESERVED()
-    c_operations[0x0b] = M3OP("end", 0, noneType, "", "", "", "", @@Compile_End)
-    c_operations[0x0f] = M3OP("return", 0, anyType, "op_Return", "", "", "", @@Compile_Return)
-    c_operations[0x10] = M3OP("call", 0, anyType, "op_Call", "", "", "", @@Compile_Call)
-    c_operations[0x1a] = M3OP("drop", -1, noneType, "", "", "", "", @@Compile_Drop)
-    c_operations[0x20] = M3OP("local.get", 1, anyType, "", "", "", "", @@Compile_GetLocal)
-    c_operations[0x21] = M3OP("local.set", 1, noneType, "", "", "", "", @@Compile_SetLocal)
-    c_operations[0x22] = M3OP("local.tee", 0, anyType, "", "", "", "", @@Compile_SetLocal)
-    c_operations[0x41] = M3OP("i32.const", 1, i32Type, "op_Const32", "", "", "", @@Compile_Const_i32)
-    // C: M3OP ("i32.add", -1, i_32, d_commutativeBinOpList (i32, Add), NULL) - no compiler: Compile_Operator
-    c_operations[0x6a] = M3OP("i32.add", -1, i32Type, "op_i32_Add_rs", "", "op_i32_Add_ss", "", c_noCompiler)
-    for (i in range(length(c_operations))) {
-        resolve_row(c_operations[i])
-    }
-}
-
-
-// a runtime with the op table built, the part-1 operation rows installed,
-// `slots` stack words, one module (handle 0, linked: runtime = 0) with one
-// interned func type (i32) -> i32 and one function of that type (handle 0)
-// whose body the tests write with compile_body
+// a runtime with the op table and the operation tables built, `slots` stack
+// words, the block-result func types of m3_NewEnvironment, one module
+// (handle 0, linked: runtime = 0) with one interned func type (i32) -> i32
+// and one function of that type (handle 0) whose body the tests write with
+// compile_body
 def private compile_runtime(slots : int) : M3Runtime {
     m3_build_op_table()
-    install_part1_table()
+    m3_build_operations_table()
     var rt = M3Runtime()
     resize(rt.stack, slots)
     rt.numStackSlots = u32(slots)
@@ -147,6 +115,17 @@ def private compile_runtime(slots : int) : M3Runtime {
     rt.funcTypes[funcType].numArgs = u16(1)
     rt.funcTypes[funcType].types[0] = u8(M3ValueType.c_m3Type_i32)
     rt.funcTypes[funcType].types[1] = u8(M3ValueType.c_m3Type_i32)
+
+    // C m3_NewEnvironment: a func type for every simple block result type
+    // (none .. f64) in environment->retFuncTypes, read by ReadBlockType
+    for (t in range(int(u8(M3ValueType.c_m3Type_none)), int(u8(M3ValueType.c_m3Type_f64)) + 1)) {
+        var ftype : IM3FuncType = -1
+        AllocFuncType(rt, ftype, 1u)
+        rt.funcTypes[ftype].numArgs = u16(0)
+        rt.funcTypes[ftype].numRets = u16(t == int(u8(M3ValueType.c_m3Type_none)) ? 0 : 1)
+        rt.funcTypes[ftype].types[0] = u8(t)
+        rt.environment.retFuncTypes[t] = ftype
+    }
 
     // the module, loaded (C: module->runtime set by m3_LoadModule)
     m3_Realloc_Impl(rt.modules, 1, 0)
@@ -233,6 +212,185 @@ def private slot_state(var rt : M3Runtime; firstDynamic : int) {
 def private page_state(var rt : M3Runtime) : M3Result {
     slot_state(rt, 2)
     return AcquireCompilationCodePage(rt, rt.compilation.page)
+}
+
+
+// ============================================================================
+// Upstream: test_operation_table_after_new_environment
+// ============================================================================
+
+
+def private null_compiler_count() : int {
+    var count = 0
+    for (i in range(253)) {
+        if (c_operations[i].compiler == null) {
+            count++
+        }
+    }
+    return count
+}
+
+
+// Upstream: m3_NewEnvironment fills the table (init_compile_operation_tables)
+// and the test checks the entries it hands out. Eden: the environment is a
+// later module; m3_build_operations_table is the table fill, started here
+// from an empty op table so the builder builds that too.
+def test_operation_table_after_new_environment(var t : TestRun; fx : FixtureSource) {
+    clear(g_ops)
+    clear(g_opIndex)
+    clear(c_operations)
+    clear(c_operationsFC)
+    var absent = M3OpInfo()
+    check(t, !GetOpInfo(m3opcode_t(0x41), absent), "no row before the tables are built")
+    m3_build_operations_table()
+    check(t, m3_OpCount() > 0, "m3_build_operations_table built the empty op table")
+    equal(t, m3_OpCount(), 510, "the op table has every m3_exec operation")
+    equal(t, length(c_operations), 253, "c_operations has C's 253 rows")
+    equal(t, length(c_operationsFC), 12, "c_operationsFC has C's 12 rows")
+
+    equal(t, null_compiler_count(), 0, "entries with a null compiler pointer")
+
+    // i32.lt_u (0x49) has no dedicated compiler in C: NULL, so Compile_Operator runs.
+    var ltU = M3OpInfo()
+    let hasLtU = GetOpInfo(m3opcode_t(0x49), ltU)
+    check(t, hasLtU, "GetOpInfo i32.lt_u")
+    if (hasLtU) {
+        check(t, IsNoCompiler(ltU.compiler), "i32.lt_u routes to Compile_Operator")
+        check(t, !IsNoOp(ltU.operations[0]), "i32.lt_u has a register-form operation")
+    }
+
+    // call (0x10) has Compile_Call.
+    var callInfo = M3OpInfo()
+    let hasCall = GetOpInfo(m3opcode_t(0x10), callInfo)
+    check(t, hasCall, "GetOpInfo call")
+    if (hasCall) {
+        check(t, callInfo.compiler != null && !IsNoCompiler(callInfo.compiler), "call has a dedicated compiler")
+    }
+
+    // Opcodes past the table and unknown prefixes yield no entry, as in C.
+    var past = M3OpInfo()
+    check(t, !GetOpInfo(m3opcode_t(0xfd), past), "0xfd has no opinfo")
+    check(t, !GetOpInfo(m3opcode_t(0xfc0c), past), "extended 0x0c has no opinfo")
+
+    // Calling the initialiser again must not disturb the table.
+    m3_build_operations_table()
+    equal(t, null_compiler_count(), 0, "table intact after a second initialisation")
+    equal(t, length(c_operations), 253, "a second build keeps 253 rows (cleared first)")
+    equal(t, length(c_operationsFC), 12, "a second build keeps 12 extended rows")
+    var ltUAgain = M3OpInfo()
+    GetOpInfo(m3opcode_t(0x49), ltUAgain)
+    equal(t, ltUAgain.operations[0], ltU.operations[0], "a second build resolves the same index")
+
+    // C: the rows after 0xc4 are DEBUG-only logging entries; the release
+    // table is zero-filled up to the 0xfc dispatcher. GetOpInfo hands them
+    // out without operations or compiler, exactly like the reserved 0x06.
+    var debugRow = M3OpInfo()
+    let hasDebugRow = GetOpInfo(m3opcode_t(0xc5), debugRow)
+    check(t, hasDebugRow && IsNoCompiler(debugRow.compiler) && IsNoOp(debugRow.operations[0]), "0xc5 is empty like a reserved row")
+    var lastGap = M3OpInfo()
+    let hasLastGap = GetOpInfo(m3opcode_t(0xfb), lastGap)
+    check(t, hasLastGap && IsNoCompiler(lastGap.compiler), "0xfb is empty")
+    var extended = M3OpInfo()
+    let hasExtended = GetOpInfo(m3opcode_t(0xfc), extended)
+    check(t, hasExtended && !IsNoCompiler(extended.compiler), "0xfc dispatches extended opcodes")
+}
+
+
+// ============================================================================
+// Eden: both tables walked, every name resolved
+// ============================================================================
+
+
+// the opcodes whose C row names a compiler (wasm3c/source/m3_compile.c);
+// every other row has C's NULL (c_noCompiler here)
+def private c_compiler_rows() : array<int> {
+    var rows : array<int>
+    for (op in range(int(0x00), int(0x06))) {
+        push(rows, op)                 // unreachable .. else
+    }
+    for (op in range(int(0x0b), int(0x14))) {
+        push(rows, op)                 // end .. return_call_indirect
+    }
+    push(rows, int(0x1a))              // drop
+    push(rows, int(0x1b))              // select
+    for (op in range(int(0x20), int(0x25))) {
+        push(rows, op)                 // local.get .. global.set
+    }
+    for (op in range(int(0x28), int(0x45))) {
+        push(rows, op)                 // the loads, stores, memory.size / grow, the consts
+    }
+    for (op in [0xa8, 0xa9, 0xaa, 0xab, 0xae, 0xaf, 0xb0, 0xb1, 0xb2, 0xb3, 0xb4, 0xb5, 0xb7, 0xb8, 0xb9, 0xba, 0xbc, 0xbd, 0xbe, 0xbf]) {
+        push(rows, int(op))            // Compile_Convert
+    }
+    push(rows, int(0xfc))              // Compile_ExtendedOpcode
+    return <- rows
+}
+
+
+def private c_compiler_rows_fc() : array<int> {
+    var rows : array<int>
+    for (op in range(int(0x00), int(0x08))) {
+        push(rows, op)                 // the saturating truncations
+    }
+    push(rows, int(0x0a))              // memory.copy
+    push(rows, int(0x0b))              // memory.fill
+    return <- rows
+}
+
+
+// walks one table; returns the number of resolved names
+def private check_table(var t : TestRun; rows : array<M3OpInfo>; withCompiler : array<int>; tableName : string) : int {
+    var resolved = 0
+    for (row, idx in rows, count()) {
+        for (i in range(4)) {
+            let name = row.opNames[i]
+            if (empty(name)) {
+                equal(t, row.operations[i], c_opNull, "{tableName}[{idx}] operation {i} is c_opNull")
+            } else {
+                let op = row.operations[i]
+                check(t, op >= 0 && op < m3_OpCount(), "{tableName}[{idx}] {name} resolved to an op-table index")
+                equal(t, m3_OpWord(name), u64(op), "{tableName}[{idx}] {name} round-trips through m3_OpWord")
+                resolved++
+            }
+        }
+        let expectCompiler = has_value(withCompiler, idx)
+        equal(t, !IsNoCompiler(row.compiler), expectCompiler, "{tableName}[{idx}] has a compiler exactly where C has one")
+    }
+    return resolved
+}
+
+
+def test_operation_tables_resolve(var t : TestRun; fx : FixtureSource) {
+    m3_build_op_table()
+    m3_build_operations_table()
+    var compilers <- c_compiler_rows()
+    var compilersFC <- c_compiler_rows_fc()
+    equal(t, length(compilers), 72, "72 rows of c_operations name a compiler in C")
+    equal(t, length(compilersFC), 10, "10 rows of c_operationsFC name a compiler in C")
+    equal(t, check_table(t, c_operations, compilers, "c_operations"), 416, "op names resolved in c_operations")
+    equal(t, check_table(t, c_operationsFC, compilersFC, "c_operationsFC"), 32, "op names resolved in c_operationsFC")
+
+    // the reserved rows (M3OP_RESERVED, C's `{ 0 }`)
+    for (op in [0x06, 0x0a, 0x14, 0x19, 0x1c, 0x1f, 0x25, 0x27, 0xc5, 0xe0, 0xfb]) {
+        let row = c_operations[int(op)]
+        check(t, IsNoCompiler(row.compiler) && IsNoOp(row.operations[0]) && empty(row.opNames[0]), "row {op} is reserved")
+        equal(t, row.stackOffset, 0, "row {op} stackOffset")
+    }
+    check(t, IsNoCompiler(c_operationsFC[0x08].compiler) && IsNoCompiler(c_operationsFC[0x09].compiler), "extended 0x08 / 0x09 are reserved")
+
+    // a few rows field by field against C
+    equal(t, c_operations[0x1b].stackOffset, -2, "select stackOffset")
+    equal(t, c_operations[0x1b]._type, int(0xff), "select type any")
+    check(t, c_operations[0x1b].compiler == @@Compile_Select, "select compiler")
+    equal(t, c_operations[0x6a].opNames[0], "op_i32_Add_rs", "i32.add [0]")
+    equal(t, c_operations[0x6a].opNames[1], "", "i32.add [1] (commutative: NULL)")
+    equal(t, c_operations[0x6a].opNames[2], "op_i32_Add_ss", "i32.add [2]")
+    equal(t, c_operations[0x38].opNames[3], "op_f32_Store_f32_rr", "f32.store [3] (d_storeFpOpList)")
+    equal(t, c_operations[0x50]._type, int(u8(M3ValueType.c_m3Type_i32)), "i64.eqz yields an i32")
+    equal(t, c_operations[0xfc]._type, int(u8(M3ValueType.c_m3Type_unknown)), "0xfc type unknown")
+    check(t, c_operations[0xfc].compiler == @@Compile_ExtendedOpcode, "0xfc compiler")
+    check(t, c_operationsFC[0x0a].compiler == @@Compile_Memory_CopyFill, "memory.copy compiler")
+    equal(t, c_operationsFC[0x07].opNames[3], "op_u64_TruncSat_f64_s_s", "i64.trunc_u:sat/f64 [3]")
 }
 
 
@@ -674,6 +832,83 @@ def test_compile_function_trivial_bodies(var t : TestRun; fx : FixtureSource) {
 
 
 // ============================================================================
+// Eden: real opcodes through the full table, then run
+// ============================================================================
+
+
+def test_compile_and_run_opcodes(var t : TestRun; fx : FixtureSource) {
+    var rt <- compile_runtime(64)
+    let f : IM3Function = 0
+
+    // i32.const 7; i32.const 5; i32.add; end -> 12 (Compile_Operator, both constants in slots)
+    var add <- [u8(0x00), u8(0x41), u8(0x07), u8(0x41), u8(0x05), u8(0x6a), u8(0x0b)]
+    equal_str(t, compile_body(rt, f, add), m3Err_none, "compile i32.const 7; i32.const 5; i32.add; end")
+    equal(t, rt.code[rt.functions[f].compiled + 2], m3_OpWord("op_i32_Add_ss"), "i32.add of two constant slots is the _ss form")
+    expect_value(t, rt, f, 0, 12, "7 + 5")
+
+    // block (result i32) i32.const 100; local.get 0; br_if 0; drop; i32.const 200; end; end
+    // -> 100 when the argument is non-zero (the branch leaves the block with 100), else 200
+    var brIf <- [u8(0x00), u8(0x02), u8(0x7f), u8(0x41), u8(0xe4), u8(0x00), u8(0x20), u8(0x00), u8(0x0d), u8(0x00), u8(0x1a), u8(0x41), u8(0xc8), u8(0x01), u8(0x0b), u8(0x0b)]
+    equal_str(t, compile_body(rt, f, brIf), m3Err_none, "compile block / br_if / end")
+    expect_value(t, rt, f, 1, 100, "br_if taken")
+    expect_value(t, rt, f, -7, 100, "br_if taken on a negative")
+    expect_value(t, rt, f, 0, 200, "br_if not taken")
+
+    // (local i32) local.get 0; i32.const 3; i32.add; local.set 1; local.get 1; local.get 1; i32.mul; end
+    // -> (n + 3) * (n + 3)
+    var locals <- [u8(0x01), u8(0x01), u8(0x7f), u8(0x20), u8(0x00), u8(0x41), u8(0x03), u8(0x6a), u8(0x21), u8(0x01), u8(0x20), u8(0x01), u8(0x20), u8(0x01), u8(0x6c), u8(0x0b)]
+    equal_str(t, compile_body(rt, f, locals), m3Err_none, "compile local.set / local.get")
+    expect_value(t, rt, f, 2, 25, "(2 + 3)^2")
+    expect_value(t, rt, f, -3, 0, "(-3 + 3)^2")
+    expect_value(t, rt, f, 7, 100, "(7 + 3)^2")
+
+    // local.get 0; i32.load align=2 offset=4; end -> the i32 at n + 4 of a one-page memory
+    resize(rt.mem, 65536)
+    rt.memory.numPages = 1u
+    rt.mem[12] = u8(0x78)
+    rt.mem[13] = u8(0x56)
+    rt.mem[14] = u8(0x34)
+    rt.mem[15] = u8(0x12)
+    var load <- [u8(0x00), u8(0x20), u8(0x00), u8(0x28), u8(0x02), u8(0x04), u8(0x0b)]
+    equal_str(t, compile_body(rt, f, load), m3Err_none, "compile i32.load offset=4")
+    expect_value(t, rt, f, 8, int(0x12345678), "i32.load of the little-endian word at 12")
+    expect_value(t, rt, f, 0, 0, "i32.load of zeroed memory")
+    rt.mem[65535] = u8(0x7f)
+    expect_value(t, rt, f, 65528, int(0x7f000000), "i32.load of the last word (65528 + 4)")
+    var out = 0
+    equal_str(t, call_i32(rt, f, 65529, out), m3Err_trapOutOfBoundsMemoryAccess, "i32.load one byte past the end traps")
+
+    // call: function 1 (i32) -> i32 is local.get 0; i32.const 10; i32.mul; end,
+    // function 0 is local.get 0; call 1; i32.const 1; i32.add; end -> n * 10 + 1
+    Module_AddFunction(rt, 0, 0u, M3ImportInfo(), false)
+    let g : IM3Function = 1
+    rt.functions[g].moduleIdx = 0
+    rt.functions[g].names[0] = "times10"
+    rt.functions[g].numNames = u16(1)
+    var callee <- [u8(0x00), u8(0x20), u8(0x00), u8(0x41), u8(0x0a), u8(0x6c), u8(0x0b)]
+    equal_str(t, compile_body(rt, g, callee), m3Err_none, "compile the callee")
+    expect_value(t, rt, g, 4, 40, "the callee alone")
+    var caller <- [u8(0x00), u8(0x20), u8(0x00), u8(0x10), u8(0x01), u8(0x41), u8(0x01), u8(0x6a), u8(0x0b)]
+    equal_str(t, compile_body(rt, f, caller), m3Err_none, "compile the caller")
+    var sawCall = false
+    for (pc in range(rt.functions[f].compiled, length(rt.code) - 1)) {
+        if (rt.code[pc] == m3_OpWord("op_Call") && int(rt.code[pc + 1]) == rt.functions[g].compiled) {
+            sawCall = true
+        }
+    }
+    check(t, sawCall, "the caller emits op_Call with the callee's compiled pc")
+    expect_value(t, rt, f, 4, 41, "call: 4 * 10 + 1")
+    expect_value(t, rt, f, -2, -19, "call: -2 * 10 + 1")
+
+    // i32.const 11; i32.const 22; local.get 0; select; end -> 11 if n != 0, else 22
+    var sel <- [u8(0x00), u8(0x41), u8(0x0b), u8(0x41), u8(0x16), u8(0x20), u8(0x00), u8(0x1b), u8(0x0b)]
+    equal_str(t, compile_body(rt, f, sel), m3Err_none, "compile select")
+    expect_value(t, rt, f, 5, 11, "select the first")
+    expect_value(t, rt, f, 0, 22, "select the second")
+}
+
+
+// ============================================================================
 // Eden: CompileRawFunction
 // ============================================================================
 
@@ -701,6 +936,10 @@ def test_compile_raw_function(var t : TestRun; fx : FixtureSource) {
 
 
 def public run_tests_m3_compile(var t : TestRun; fx : FixtureSource) {
+    begin_test(t, "test_operation_table_after_new_environment")
+    test_operation_table_after_new_environment(t, fx)
+    begin_test(t, "test_operation_tables_resolve")
+    test_operation_tables_resolve(t, fx)
     begin_test(t, "test_compile_negative_i32_constants_keep_the_c_slot_behaviour")
     test_compile_negative_i32_constants_keep_the_c_slot_behaviour(t, fx)
     begin_test(t, "test_compile_stack_top_after_unreachable")
@@ -715,6 +954,8 @@ def public run_tests_m3_compile(var t : TestRun; fx : FixtureSource) {
     test_patch_chain_and_scopes(t, fx)
     begin_test(t, "test_compile_function_trivial_bodies")
     test_compile_function_trivial_bodies(t, fx)
+    begin_test(t, "test_compile_and_run_opcodes")
+    test_compile_and_run_opcodes(t, fx)
     begin_test(t, "test_compile_raw_function")
     test_compile_raw_function(t, fx)
 }

@@ -78,7 +78,20 @@ scripts/eden/coverage.sh $MODULE # upstream tests all mapped
 scripts/eden/test.sh --both      # fail=0 with both compilers
 ```
 
-Do not run the editor gate (`eden_gate.sh`) yourself; the verifier does.
+The editor recompiles the project on every save, so after `compile.sh` is
+green also read the editor itself:
+
+```
+scripts/eden/edenmcp get_game_status   # must not say "compilation failed" / "internal error"
+scripts/eden/edenmcp get_logs          # read every "Compilation error" line after the last reload
+```
+
+An error there that `compile.sh` does not show is a real editor/local
+difference: fix it and report it (it belongs in DESIGN §1/§6). Errors that
+only belong to a save you already superseded are expected; say so after
+confirming the last `Reload scripts ended` has no error after it.
+
+Do not run the full editor gate (`eden_gate.sh`) yourself; the verifier does.
 
 ## Report
 
