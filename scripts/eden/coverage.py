@@ -2,7 +2,7 @@
 """
 Gate 2 of the Eden port: every upstream test has an Eden counterpart.
 
-For each module whose STATE.json status is "done" or "verify", the upstream
+For each module whose STATE.json status is "porting", "verify" or "done", the upstream
 test file .upstream/tests/integration/<upstream_tests> is read and every
 `[test] def test_x` in it must appear in tests/eden/<eden_tests> either as
 
@@ -34,7 +34,10 @@ def main(argv):
     repo = argv[0]
     state = json.load(open(os.path.join(repo, "docs", "eden-port", "STATE.json")))
     wanted = argv[1:]
-    modules = [m for m in state["modules"] if (not wanted and m["status"] in ("done", "verify")) or m["name"] in wanted]
+    # every module that has work in the tree is checked: porting, verify, done
+    # (a module still in porting whose test file is missing fails loudly, which
+    # is the point when gate.sh runs during a verification)
+    modules = [m for m in state["modules"] if (not wanted and m["status"] in ("porting", "verify", "done")) or m["name"] in wanted]
     all_tests = open(os.path.join(repo, "tests", "eden", "all_tests.das")).read()
     failures = 0
     checked = 0

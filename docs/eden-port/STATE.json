@@ -4,7 +4,7 @@
   "spec_expected": {"pass": 17863, "fail": 0, "crash": 0, "corpus": "opam-1.1.1"},
   "wasi_fast_expected": {"pass": 7, "total": 7},
   "modules": [
-    {"name": "wasm3_defs",     "status": "todo", "source": "wasm3_defs.das",     "eden_tests": "test_wasm3_defs.das",     "upstream_tests": ["test_wasm3_defs.das"]},
+    {"name": "wasm3_defs",     "status": "done", "source": "wasm3_defs.das",     "eden_tests": "test_wasm3_defs.das",     "upstream_tests": ["test_wasm3_defs.das"]},
     {"name": "m3_config",      "status": "todo", "source": "m3_config.das",      "eden_tests": "test_m3_config.das",      "upstream_tests": ["test_m3_config.das"]},
     {"name": "m3_exception",   "status": "todo", "source": "m3_exception.das",   "eden_tests": null, "note": "43 lines of error-string helpers, covered by test_m3_core and every trap test"},
     {"name": "m3_core",        "status": "todo", "source": "m3_core.das",        "eden_tests": "test_m3_core.das",        "upstream_tests": ["test_m3_core.das"]},
