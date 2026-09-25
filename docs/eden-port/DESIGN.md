@@ -322,12 +322,17 @@ documented limit.
 ### 4.5 Host functions
 
 ```das
-typedef M3RawCall = function<(var rt : M3Runtime; sp : int) : string>
+typedef M3RawCall = function<(var rt : M3Runtime; ctx : M3ImportContext; sp : int) : M3Result>
 ```
 
 Arguments are read from `rt.stack[sp + i]` through the `m3Api*` helpers of
-`m3_api_defs`, memory through the 4.2 accessors. Linking (`m3_bind`) stores the
-function value in `rt.rawCalls` and its handle in the code word.
+`m3_api_defs`, memory through the 4.2 accessors; `ctx` is C's
+`IM3ImportContext` by value (`functionIdx`, `userdata` token, the WASI
+context). Linking (`m3_bind`) stores the function value in `rt.rawCalls`
+and its handle in the code word. `op_Entry` copies `length(constants)`
+words, so `m3_compile` keeps `length(constants) == numConstantBytes / 4`;
+`m3_env` sizes `rt.stack` to exactly `numStackSlots` (the overflow trap
+point of `op_Entry` is `length(rt.stack)`).
 
 ### 4.6 Errors and traps
 

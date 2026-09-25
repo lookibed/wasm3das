@@ -93,7 +93,7 @@ require daslib/math_bits                           // Eden: bit views of the M3G
         it.
       - M3SectionHandler takes the runtime and a module handle; the section
         bytes are `rt.modules[i_module].wasm[i_start .. i_end)`.
-      - M3RawCall is `function<(var rt : M3Runtime; sp : int) : M3Result>`
+      - M3RawCall is `function<(var rt : M3Runtime; ctx : M3ImportContext; sp : int) : M3Result>`
         (DESIGN section 4.5): arguments are read from rt.stack[sp + i],
         memory through rt.mem; the linked function values live in
         rt.rawCalls and a code word holds the handle. The upstream `_ctx`,
@@ -405,8 +405,10 @@ struct M3ImportContext {
 // Eden: DESIGN.md section 4.5. A raw function reads its arguments from
 // rt.stack[sp + i] and the memory through rt.mem; the linked values live in
 // rt.rawCalls and a code word holds the handle. `rt` is `var`: every raw
-// function writes the return slot and the guest buffers.
-typedef public M3RawCall = function<(var rt : M3Runtime; sp : int) : M3Result>
+// function writes the return slot and the guest buffers. `ctx` is C's
+// IM3ImportContext by value (functionIdx, userdata token): the WASI host
+// functions read ctx.userdata as C reads _ctx->userdata.
+typedef public M3RawCall = function<(var rt : M3Runtime; ctx : M3ImportContext; sp : int) : M3Result>
 
 
 /* C m3_exec_defs.h: typedef m3ret_t (vectorcall * IM3Operation) (d_m3OpSig); */

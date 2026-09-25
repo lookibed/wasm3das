@@ -97,8 +97,8 @@ require daslib/math_bits                               // Eden: bit casts of cop
         words after the ret+arg slots (one word per slot) and the memcpy of
         the constants copies the function's `constants` words after them.
       - op_CallRawFunction: the raw call is rt.rawCalls[handle], invoked as
-        (rt, sp) (DESIGN 4.5; the M3ImportContext C builds is read from the
-        two immediates but not passed, the ABI has no context). C swaps
+        (rt, ctx, sp) (DESIGN 4.5; the M3ImportContext C builds from the two
+        immediates is passed by value, memory is rt.mem). C swaps
         runtime->stack (the frame base m3_Call uses) for the raw function's
         frame so a host function may re-enter m3_Call; the Eden runtime keeps
         that base in rt.originStack (C sets runtime->stack = originStack and
@@ -3747,7 +3747,7 @@ def public op_CallRawFunction(var rt : M3Runtime) : m3ret_t {
     let stack_backup = rt.originStack
     rt.originStack = sp
     let rawCall = rt.rawCalls[call]
-    let possible_trap = invoke(rawCall, rt, sp)   // C: call (runtime, &ctx, sp, m3MemData (_mem)); Eden: (rt, sp), DESIGN 4.5
+    let possible_trap = invoke(rawCall, rt, ctx, sp)   // C: call (runtime, &ctx, sp, m3MemData (_mem)); Eden: (rt, ctx, sp), DESIGN 4.5
     rt.originStack = stack_backup
     // C: if (possible_trap) { _mem = memory->mallocated; pushBacktraceFrame (); } — Eden: both absent
     return forwardTrap(rt, possible_trap)

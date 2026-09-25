@@ -1717,7 +1717,7 @@ var private rawSeenOrigin : int = -1
 
 // the raw function dec : (i32) -> i32; its frame is C's: the argument in
 // slot 1 of the frame at `sp`, the result written to slot 0
-def private raw_decrement(var rt : M3Runtime; sp : int) : M3Result {
+def private raw_decrement(var rt : M3Runtime; ctx : M3ImportContext; sp : int) : M3Result {
     rawCallCount++
     rawSeenOrigin = rt.originStack
     let v = stack_i32(rt, sp + 1)
@@ -1726,7 +1726,7 @@ def private raw_decrement(var rt : M3Runtime; sp : int) : M3Result {
 }
 
 
-def private raw_trap(var rt : M3Runtime; sp : int) : M3Result {
+def private raw_trap(var rt : M3Runtime; ctx : M3ImportContext; sp : int) : M3Result {
     return "host function trap"
 }
 

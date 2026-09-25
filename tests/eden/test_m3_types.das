@@ -472,7 +472,7 @@ def private op_loop_pc(var rt : M3Runtime) : int {
 }
 
 
-def private raw_return_slot(var rt : M3Runtime; sp : int) : M3Result {
+def private raw_return_slot(var rt : M3Runtime; ctx : M3ImportContext; sp : int) : M3Result {
     // the raw-call shape of DESIGN.md 4.5: read rt.stack[sp + i], write the
     // return slot
     rt.stack[sp] = rt.stack[sp + 1] + rt.stack[sp + 2]
@@ -480,7 +480,7 @@ def private raw_return_slot(var rt : M3Runtime; sp : int) : M3Result {
 }
 
 
-def private raw_trap(var rt : M3Runtime; sp : int) : M3Result {
+def private raw_trap(var rt : M3Runtime; ctx : M3ImportContext; sp : int) : M3Result {
     return m3Err_trapAbort
 }
 
@@ -513,12 +513,15 @@ def test_function_typedefs(var t : TestRun; fx : FixtureSource) {
     push(rt.rawCalls, @@raw_return_slot)
     push(rt.rawCalls, @@raw_trap)
     equal(t, length(rt.rawCalls), 2, "raw-call arena holds two functions")
+    var ctx = M3ImportContext()   // Eden: C's IM3ImportContext by value (DESIGN 4.5)
+    ctx.functionIdx = 7
+    ctx.userdata = 11
     let call0 = rt.rawCalls[0]
-    let result0 = invoke(call0, rt, 0)
+    let result0 = invoke(call0, rt, ctx, 0)
     is_ok(t, result0, "raw call 0 succeeds")
     equal(t, rt.stack[0], 42ul, "raw call 0 wrote the return slot")
     let call1 = rt.rawCalls[1]
-    let result1 = invoke(call1, rt, 0)
+    let result1 = invoke(call1, rt, ctx, 0)
     is_err(t, result1, m3Err_trapAbort, "raw call 1 traps")
 
     // a custom section handler stored in the environment
