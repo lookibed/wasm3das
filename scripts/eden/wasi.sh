@@ -27,10 +27,13 @@ ln -sfn "$repo/wasm3c/test/run-wasi-test.py" "$run/run-wasi-test.py"
 ln -sfn "$repo/wasm3c/extra" "$repo/tmp/eden/.wasi/extra"
 ln -sfn "$repo/wasm3c/test/wasi" "$run/wasi"
 ln -sfn "$repo/wasm3c/test/self-hosting" "$run/self-hosting"
+# the driver splits --exec on spaces and the repository path has spaces:
+# the front end is reached through a symlink in the run directory
+ln -sfn "$repo/scripts/eden/wasm3" "$run/wasm3"
 cd "$run"
 banner "wasi: run-wasi-test.py ${fast:-(full)}"
 set +e
-python3 -u ./run-wasi-test.py --exec "$repo/scripts/eden/wasm3" $fast --timeout "$timeout_s" 2>&1 | tee "$repo/tmp/eden/.wasi/last.log" | tail -30
+python3 -u ./run-wasi-test.py --exec "./wasm3" $fast --timeout "$timeout_s" 2>&1 | tee "$repo/tmp/eden/.wasi/last.log" | tail -30
 r=${PIPESTATUS[0]}
 set -e
 line=$(grep -iE 'passed|fail' "$repo/tmp/eden/.wasi/last.log" | tail -1)

@@ -11,7 +11,10 @@
 #
 # Environment: DASLANG_063 (default /root/daScript-0.6.3/bin/daslang),
 #              WASM3DAS_EDEN_APP overrides the entry point.
-here="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)"
+# resolved through symlinks: spec.sh / wasi.sh call it as ./wasm3 from their
+# run directory, because the drivers split --exec on spaces and the
+# repository path contains spaces
+here="$(cd -- "$(dirname -- "$(readlink -f -- "${BASH_SOURCE[0]}")")" && pwd)"
 repo="$(cd -- "$here/../.." && pwd)"
 bin="${DASLANG_063:-/root/daScript-0.6.3/bin/daslang}"
 [[ -x "$bin" ]] || bin="${DASLANG_064:-/root/daScript/bin/daslang}"
