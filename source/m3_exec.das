@@ -144,6 +144,20 @@ require daslib/math_bits                               // Eden: bit casts of cop
         the macro's own newTrap); the signed ShiftRight spells C's
         OP_SHR_32 / OP_SHR_64 on a signed X inline (an arithmetic shift by
         the masked count), as the upstream file does.
+      - part 2's float compares (f32 / f64 Equal, NotEqual, LessThan,
+        GreaterThan, LessThanOrEqual, GreaterThanOrEqual in every operand
+        form, 32 operations) guard both operands with isnan before the host
+        operator (DESIGN section 1: the editor's == / != are not IEEE on
+        NaN, `NaN == NaN` is true there; isnan of m3_math_utils is a bit
+        test measured to work in the editor): eq = !isnan(a) && !isnan(b)
+        && a == b, ne = isnan(a) || isnan(b) || a != b, the ordered forms
+        !isnan(a) && !isnan(b) && a < b and so on, the results C's IEEE
+        unordered compare gives (eq and the ordered forms 0 on a NaN, ne
+        1). The _rs / _sr forms bind C's (f32) _fp0 cast to a local `reg`
+        once. No other f32 / f64 comparison exists in this module: Min /
+        Max, Nearest and the truncations delegate to m3_math_utils, whose
+        helpers test isnan first, and every remaining comparison is on
+        integers (the Select conditions, EqualToZero, the bounds checks).
       - part 3's conversions: the wrap is u64(u32(x)), the bits of C's
         OP_WRAP_I64 mask on the i64 register, so its i32 result is the one
         zero-extended in rt.r0; the sign extensions narrow with the i8 /
@@ -830,9 +844,14 @@ def public op_u64_GreaterThanOrEqual_ss(var rt : M3Runtime) : m3ret_t {
 }
 
 
+// Eden: the float compares guard both operands with isnan (the bit test of
+// m3_math_utils) before the host operator: the editor's == / != are not IEEE
+// on NaN (DESIGN.md section 1). C m3_exec.h: the plain operator, IEEE
+// unordered, so eq and every ordered compare are 0 on a NaN and ne is 1.
 def public op_f32_Equal_rs(var rt : M3Runtime) : m3ret_t {
     let operand = slot_f32(rt)
-    rt.r0 = bool_reg(operand == f32(rt.fp0))
+    let reg = f32(rt.fp0)
+    rt.r0 = bool_reg(!isnan(operand) && !isnan(reg) && operand == reg)   // Eden: isnan guard (DESIGN section 1)
     return nextOpDirect(rt)
 }
 
@@ -840,14 +859,15 @@ def public op_f32_Equal_rs(var rt : M3Runtime) : m3ret_t {
 def public op_f32_Equal_ss(var rt : M3Runtime) : m3ret_t {
     let operand2 = slot_f32(rt)
     let operand1 = slot_f32(rt)
-    rt.r0 = bool_reg(operand1 == operand2)
+    rt.r0 = bool_reg(!isnan(operand1) && !isnan(operand2) && operand1 == operand2)   // Eden: isnan guard (DESIGN section 1)
     return nextOpDirect(rt)
 }
 
 
 def public op_f32_NotEqual_rs(var rt : M3Runtime) : m3ret_t {
     let operand = slot_f32(rt)
-    rt.r0 = bool_reg(operand != f32(rt.fp0))
+    let reg = f32(rt.fp0)
+    rt.r0 = bool_reg(isnan(operand) || isnan(reg) || operand != reg)   // Eden: isnan guard (DESIGN section 1)
     return nextOpDirect(rt)
 }
 
@@ -855,21 +875,23 @@ def public op_f32_NotEqual_rs(var rt : M3Runtime) : m3ret_t {
 def public op_f32_NotEqual_ss(var rt : M3Runtime) : m3ret_t {
     let operand2 = slot_f32(rt)
     let operand1 = slot_f32(rt)
-    rt.r0 = bool_reg(operand1 != operand2)
+    rt.r0 = bool_reg(isnan(operand1) || isnan(operand2) || operand1 != operand2)   // Eden: isnan guard (DESIGN section 1)
     return nextOpDirect(rt)
 }
 
 
 def public op_f32_LessThan_sr(var rt : M3Runtime) : m3ret_t {
     let operand = slot_f32(rt)
-    rt.r0 = bool_reg(f32(rt.fp0) < operand)
+    let reg = f32(rt.fp0)
+    rt.r0 = bool_reg(!isnan(reg) && !isnan(operand) && reg < operand)   // Eden: isnan guard (DESIGN section 1)
     return nextOpDirect(rt)
 }
 
 
 def public op_f32_LessThan_rs(var rt : M3Runtime) : m3ret_t {
     let operand = slot_f32(rt)
-    rt.r0 = bool_reg(operand < f32(rt.fp0))
+    let reg = f32(rt.fp0)
+    rt.r0 = bool_reg(!isnan(operand) && !isnan(reg) && operand < reg)   // Eden: isnan guard (DESIGN section 1)
     return nextOpDirect(rt)
 }
 
@@ -877,21 +899,23 @@ def public op_f32_LessThan_rs(var rt : M3Runtime) : m3ret_t {
 def public op_f32_LessThan_ss(var rt : M3Runtime) : m3ret_t {
     let operand2 = slot_f32(rt)
     let operand1 = slot_f32(rt)
-    rt.r0 = bool_reg(operand1 < operand2)
+    rt.r0 = bool_reg(!isnan(operand1) && !isnan(operand2) && operand1 < operand2)   // Eden: isnan guard (DESIGN section 1)
     return nextOpDirect(rt)
 }
 
 
 def public op_f32_GreaterThan_sr(var rt : M3Runtime) : m3ret_t {
     let operand = slot_f32(rt)
-    rt.r0 = bool_reg(f32(rt.fp0) > operand)
+    let reg = f32(rt.fp0)
+    rt.r0 = bool_reg(!isnan(reg) && !isnan(operand) && reg > operand)   // Eden: isnan guard (DESIGN section 1)
     return nextOpDirect(rt)
 }
 
 
 def public op_f32_GreaterThan_rs(var rt : M3Runtime) : m3ret_t {
     let operand = slot_f32(rt)
-    rt.r0 = bool_reg(operand > f32(rt.fp0))
+    let reg = f32(rt.fp0)
+    rt.r0 = bool_reg(!isnan(operand) && !isnan(reg) && operand > reg)   // Eden: isnan guard (DESIGN section 1)
     return nextOpDirect(rt)
 }
 
@@ -899,21 +923,23 @@ def public op_f32_GreaterThan_rs(var rt : M3Runtime) : m3ret_t {
 def public op_f32_GreaterThan_ss(var rt : M3Runtime) : m3ret_t {
     let operand2 = slot_f32(rt)
     let operand1 = slot_f32(rt)
-    rt.r0 = bool_reg(operand1 > operand2)
+    rt.r0 = bool_reg(!isnan(operand1) && !isnan(operand2) && operand1 > operand2)   // Eden: isnan guard (DESIGN section 1)
     return nextOpDirect(rt)
 }
 
 
 def public op_f32_LessThanOrEqual_sr(var rt : M3Runtime) : m3ret_t {
     let operand = slot_f32(rt)
-    rt.r0 = bool_reg(f32(rt.fp0) <= operand)
+    let reg = f32(rt.fp0)
+    rt.r0 = bool_reg(!isnan(reg) && !isnan(operand) && reg <= operand)   // Eden: isnan guard (DESIGN section 1)
     return nextOpDirect(rt)
 }
 
 
 def public op_f32_LessThanOrEqual_rs(var rt : M3Runtime) : m3ret_t {
     let operand = slot_f32(rt)
-    rt.r0 = bool_reg(operand <= f32(rt.fp0))
+    let reg = f32(rt.fp0)
+    rt.r0 = bool_reg(!isnan(operand) && !isnan(reg) && operand <= reg)   // Eden: isnan guard (DESIGN section 1)
     return nextOpDirect(rt)
 }
 
@@ -921,21 +947,23 @@ def public op_f32_LessThanOrEqual_rs(var rt : M3Runtime) : m3ret_t {
 def public op_f32_LessThanOrEqual_ss(var rt : M3Runtime) : m3ret_t {
     let operand2 = slot_f32(rt)
     let operand1 = slot_f32(rt)
-    rt.r0 = bool_reg(operand1 <= operand2)
+    rt.r0 = bool_reg(!isnan(operand1) && !isnan(operand2) && operand1 <= operand2)   // Eden: isnan guard (DESIGN section 1)
     return nextOpDirect(rt)
 }
 
 
 def public op_f32_GreaterThanOrEqual_sr(var rt : M3Runtime) : m3ret_t {
     let operand = slot_f32(rt)
-    rt.r0 = bool_reg(f32(rt.fp0) >= operand)
+    let reg = f32(rt.fp0)
+    rt.r0 = bool_reg(!isnan(reg) && !isnan(operand) && reg >= operand)   // Eden: isnan guard (DESIGN section 1)
     return nextOpDirect(rt)
 }
 
 
 def public op_f32_GreaterThanOrEqual_rs(var rt : M3Runtime) : m3ret_t {
     let operand = slot_f32(rt)
-    rt.r0 = bool_reg(operand >= f32(rt.fp0))
+    let reg = f32(rt.fp0)
+    rt.r0 = bool_reg(!isnan(operand) && !isnan(reg) && operand >= reg)   // Eden: isnan guard (DESIGN section 1)
     return nextOpDirect(rt)
 }
 
@@ -943,14 +971,14 @@ def public op_f32_GreaterThanOrEqual_rs(var rt : M3Runtime) : m3ret_t {
 def public op_f32_GreaterThanOrEqual_ss(var rt : M3Runtime) : m3ret_t {
     let operand2 = slot_f32(rt)
     let operand1 = slot_f32(rt)
-    rt.r0 = bool_reg(operand1 >= operand2)
+    rt.r0 = bool_reg(!isnan(operand1) && !isnan(operand2) && operand1 >= operand2)   // Eden: isnan guard (DESIGN section 1)
     return nextOpDirect(rt)
 }
 
 
 def public op_f64_Equal_rs(var rt : M3Runtime) : m3ret_t {
     let operand = slot_f64(rt)
-    rt.r0 = bool_reg(operand == rt.fp0)
+    rt.r0 = bool_reg(!isnan(operand) && !isnan(rt.fp0) && operand == rt.fp0)   // Eden: isnan guard (DESIGN section 1)
     return nextOpDirect(rt)
 }
 
@@ -958,14 +986,14 @@ def public op_f64_Equal_rs(var rt : M3Runtime) : m3ret_t {
 def public op_f64_Equal_ss(var rt : M3Runtime) : m3ret_t {
     let operand2 = slot_f64(rt)
     let operand1 = slot_f64(rt)
-    rt.r0 = bool_reg(operand1 == operand2)
+    rt.r0 = bool_reg(!isnan(operand1) && !isnan(operand2) && operand1 == operand2)   // Eden: isnan guard (DESIGN section 1)
     return nextOpDirect(rt)
 }
 
 
 def public op_f64_NotEqual_rs(var rt : M3Runtime) : m3ret_t {
     let operand = slot_f64(rt)
-    rt.r0 = bool_reg(operand != rt.fp0)
+    rt.r0 = bool_reg(isnan(operand) || isnan(rt.fp0) || operand != rt.fp0)   // Eden: isnan guard (DESIGN section 1)
     return nextOpDirect(rt)
 }
 
@@ -973,21 +1001,21 @@ def public op_f64_NotEqual_rs(var rt : M3Runtime) : m3ret_t {
 def public op_f64_NotEqual_ss(var rt : M3Runtime) : m3ret_t {
     let operand2 = slot_f64(rt)
     let operand1 = slot_f64(rt)
-    rt.r0 = bool_reg(operand1 != operand2)
+    rt.r0 = bool_reg(isnan(operand1) || isnan(operand2) || operand1 != operand2)   // Eden: isnan guard (DESIGN section 1)
     return nextOpDirect(rt)
 }
 
 
 def public op_f64_LessThan_sr(var rt : M3Runtime) : m3ret_t {
     let operand = slot_f64(rt)
-    rt.r0 = bool_reg(rt.fp0 < operand)
+    rt.r0 = bool_reg(!isnan(rt.fp0) && !isnan(operand) && rt.fp0 < operand)   // Eden: isnan guard (DESIGN section 1)
     return nextOpDirect(rt)
 }
 
 
 def public op_f64_LessThan_rs(var rt : M3Runtime) : m3ret_t {
     let operand = slot_f64(rt)
-    rt.r0 = bool_reg(operand < rt.fp0)
+    rt.r0 = bool_reg(!isnan(operand) && !isnan(rt.fp0) && operand < rt.fp0)   // Eden: isnan guard (DESIGN section 1)
     return nextOpDirect(rt)
 }
 
@@ -995,21 +1023,21 @@ def public op_f64_LessThan_rs(var rt : M3Runtime) : m3ret_t {
 def public op_f64_LessThan_ss(var rt : M3Runtime) : m3ret_t {
     let operand2 = slot_f64(rt)
     let operand1 = slot_f64(rt)
-    rt.r0 = bool_reg(operand1 < operand2)
+    rt.r0 = bool_reg(!isnan(operand1) && !isnan(operand2) && operand1 < operand2)   // Eden: isnan guard (DESIGN section 1)
     return nextOpDirect(rt)
 }
 
 
 def public op_f64_GreaterThan_sr(var rt : M3Runtime) : m3ret_t {
     let operand = slot_f64(rt)
-    rt.r0 = bool_reg(rt.fp0 > operand)
+    rt.r0 = bool_reg(!isnan(rt.fp0) && !isnan(operand) && rt.fp0 > operand)   // Eden: isnan guard (DESIGN section 1)
     return nextOpDirect(rt)
 }
 
 
 def public op_f64_GreaterThan_rs(var rt : M3Runtime) : m3ret_t {
     let operand = slot_f64(rt)
-    rt.r0 = bool_reg(operand > rt.fp0)
+    rt.r0 = bool_reg(!isnan(operand) && !isnan(rt.fp0) && operand > rt.fp0)   // Eden: isnan guard (DESIGN section 1)
     return nextOpDirect(rt)
 }
 
@@ -1017,21 +1045,21 @@ def public op_f64_GreaterThan_rs(var rt : M3Runtime) : m3ret_t {
 def public op_f64_GreaterThan_ss(var rt : M3Runtime) : m3ret_t {
     let operand2 = slot_f64(rt)
     let operand1 = slot_f64(rt)
-    rt.r0 = bool_reg(operand1 > operand2)
+    rt.r0 = bool_reg(!isnan(operand1) && !isnan(operand2) && operand1 > operand2)   // Eden: isnan guard (DESIGN section 1)
     return nextOpDirect(rt)
 }
 
 
 def public op_f64_LessThanOrEqual_sr(var rt : M3Runtime) : m3ret_t {
     let operand = slot_f64(rt)
-    rt.r0 = bool_reg(rt.fp0 <= operand)
+    rt.r0 = bool_reg(!isnan(rt.fp0) && !isnan(operand) && rt.fp0 <= operand)   // Eden: isnan guard (DESIGN section 1)
     return nextOpDirect(rt)
 }
 
 
 def public op_f64_LessThanOrEqual_rs(var rt : M3Runtime) : m3ret_t {
     let operand = slot_f64(rt)
-    rt.r0 = bool_reg(operand <= rt.fp0)
+    rt.r0 = bool_reg(!isnan(operand) && !isnan(rt.fp0) && operand <= rt.fp0)   // Eden: isnan guard (DESIGN section 1)
     return nextOpDirect(rt)
 }
 
@@ -1039,21 +1067,21 @@ def public op_f64_LessThanOrEqual_rs(var rt : M3Runtime) : m3ret_t {
 def public op_f64_LessThanOrEqual_ss(var rt : M3Runtime) : m3ret_t {
     let operand2 = slot_f64(rt)
     let operand1 = slot_f64(rt)
-    rt.r0 = bool_reg(operand1 <= operand2)
+    rt.r0 = bool_reg(!isnan(operand1) && !isnan(operand2) && operand1 <= operand2)   // Eden: isnan guard (DESIGN section 1)
     return nextOpDirect(rt)
 }
 
 
 def public op_f64_GreaterThanOrEqual_sr(var rt : M3Runtime) : m3ret_t {
     let operand = slot_f64(rt)
-    rt.r0 = bool_reg(rt.fp0 >= operand)
+    rt.r0 = bool_reg(!isnan(rt.fp0) && !isnan(operand) && rt.fp0 >= operand)   // Eden: isnan guard (DESIGN section 1)
     return nextOpDirect(rt)
 }
 
 
 def public op_f64_GreaterThanOrEqual_rs(var rt : M3Runtime) : m3ret_t {
     let operand = slot_f64(rt)
-    rt.r0 = bool_reg(operand >= rt.fp0)
+    rt.r0 = bool_reg(!isnan(operand) && !isnan(rt.fp0) && operand >= rt.fp0)   // Eden: isnan guard (DESIGN section 1)
     return nextOpDirect(rt)
 }
 
@@ -1061,7 +1089,7 @@ def public op_f64_GreaterThanOrEqual_rs(var rt : M3Runtime) : m3ret_t {
 def public op_f64_GreaterThanOrEqual_ss(var rt : M3Runtime) : m3ret_t {
     let operand2 = slot_f64(rt)
     let operand1 = slot_f64(rt)
-    rt.r0 = bool_reg(operand1 >= operand2)
+    rt.r0 = bool_reg(!isnan(operand1) && !isnan(operand2) && operand1 >= operand2)   // Eden: isnan guard (DESIGN section 1)
     return nextOpDirect(rt)
 }
 

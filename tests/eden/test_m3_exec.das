@@ -53,7 +53,11 @@ require strings                               // starts_with / ends_with / find:
         bits, the operands installed as the operation's form reads them),
         with the operand order of the _rs / _sr / _ss forms, the traps of
         the integer division, the wasm NaN / signed-zero rules of min /
-        max, and the sign / zero extension of a 32-bit result into rt.r0;
+        max, a NaN on either side (and on both sides for eq / ne) of every
+        float compare form with the IEEE unordered result (0 for eq and the
+        ordered compares, 1 for ne; DESIGN.md section 1: the editor's == is
+        not IEEE on NaN, the port guards with isnan), and the sign / zero
+        extension of a 32-bit result into rt.r0;
         the table must name every word of the part-2 range, so a missing
         registration or a missing row fails;
       - test_conversion_families: every conversion operation of part 3 once
@@ -86,7 +90,12 @@ require strings                               // starts_with / ends_with / find:
         op_MemCopy (overlapping both ways) and op_MemFill with their traps;
       - test_call_indirect_and_compile: the three op_CallIndirect traps, the
         call through the table, the lazy compile through CompileFunctionHook
-        (success and failure), and op_Compile's in-place rewrite to op_Call.
+        (success and failure), and op_Compile's in-place rewrite to op_Call;
+      - test_every_op_executed: the sweep over the whole table, run last:
+        every word 0..509 of g_opIndex was marked by mark_executed, from a
+        program this file assembled and ran (emit_op) or from a table
+        invoke (run_op_case / run_conv_case), so a registered operation
+        without a test fails here.
 */
 
 
@@ -138,9 +147,29 @@ def private emit(var rt : M3Runtime; word : u64) : int {
 }
 
 
+// Eden: the per-word coverage of this file. mark_executed records a word
+// when a hand-assembled program emits it (every program of this file is run,
+// both arms of every branch are driven) and when a table test invokes it;
+// test_every_op_executed asserts that no word 0..OP_COUNT-1 is left at
+// false, so a registered operation without a test fails there.
+var private executedWords : array<bool>
+
+
+def private mark_executed(word : int) {
+    if (length(executedWords) < OP_COUNT) {
+        resize(executedWords, OP_COUNT)   // an array of bool: resize is fine on scalars (DESIGN section 6)
+    }
+    if (word >= 0 && word < length(executedWords)) {
+        executedWords[word] = true
+    }
+}
+
+
 // an operation word by name
 def private emit_op(var rt : M3Runtime; name : string) : int {
-    return emit(rt, m3_OpWord(name))
+    let word = m3_OpWord(name)
+    mark_executed(int(word))
+    return emit(rt, word)
 }
 
 
@@ -761,7 +790,9 @@ def private run_op_case(var t : TestRun; var rt : M3Runtime; c : OpCase) {
         }
     }
     rt.pc = 0
-    let op = m3_OpAt(int(m3_OpWord(name)))
+    let opWord = int(m3_OpWord(name))
+    mark_executed(opWord)
+    let op = m3_OpAt(opWord)
     let r = invoke(op, rt)
     if (c.trap != "") {
         equal(t, r, M3_TRAP, "{name} traps")
@@ -792,7 +823,8 @@ def test_arithmetic_families(var t : TestRun; fx : FixtureSource) {
 
     // the compares: -2 against 3 as signed words, the same words unsigned
     // (0xfffffffe against 3), 1.5 / -2.0 / 3.0 and a NaN as floats; the
-    // operands are asymmetric so a swapped _rs / _sr order fails
+    // operands are asymmetric so a swapped _rs / _sr order fails; every
+    // float compare form also has its NaN rows (DESIGN section 1)
     push(cases, oc("op_i32_Equal_rs", 5ul, 5ul, 1ul))
     push(cases, oc("op_i32_Equal_ss", 5ul, 6ul, 0ul))
     push(cases, oc("op_i32_NotEqual_rs", 5ul, 6ul, 1ul))
@@ -866,6 +898,43 @@ def test_arithmetic_families(var t : TestRun; fx : FixtureSource) {
     push(cases, oc("op_f32_GreaterThanOrEqual_sr", 0xc0000000ul, 0x40400000ul, 0ul))
     push(cases, oc("op_f32_GreaterThanOrEqual_rs", 0x40400000ul, 0xc0000000ul, 1ul))
     push(cases, oc("op_f32_GreaterThanOrEqual_ss", 0x40400000ul, 0x40400000ul, 1ul))
+    // f32 NaN rows (DESIGN section 1): a NaN on either side of every form and
+    // on both sides of eq / ne; wasm f32.eq / lt / gt / le / ge are 0 on a
+    // NaN, f32.ne is 1 (C: the IEEE unordered compare)
+    push(cases, oc("op_f32_Equal_rs", 0x7fc00000ul, 0x40400000ul, 0ul))
+    push(cases, oc("op_f32_Equal_rs", 0x40400000ul, 0x7fc00000ul, 0ul))
+    push(cases, oc("op_f32_Equal_rs", 0x7fc00000ul, 0x7fc00000ul, 0ul))
+    push(cases, oc("op_f32_Equal_ss", 0x7fc00000ul, 0x40400000ul, 0ul))
+    push(cases, oc("op_f32_Equal_ss", 0x40400000ul, 0x7fc00000ul, 0ul))
+    push(cases, oc("op_f32_NotEqual_rs", 0x7fc00000ul, 0x40400000ul, 1ul))
+    push(cases, oc("op_f32_NotEqual_rs", 0x40400000ul, 0x7fc00000ul, 1ul))
+    push(cases, oc("op_f32_NotEqual_ss", 0x7fc00000ul, 0x40400000ul, 1ul))
+    push(cases, oc("op_f32_NotEqual_ss", 0x40400000ul, 0x7fc00000ul, 1ul))
+    push(cases, oc("op_f32_NotEqual_ss", 0x7fc00000ul, 0x7fc00000ul, 1ul))
+    push(cases, oc("op_f32_LessThan_sr", 0x7fc00000ul, 0x40400000ul, 0ul))
+    push(cases, oc("op_f32_LessThan_sr", 0x40400000ul, 0x7fc00000ul, 0ul))
+    push(cases, oc("op_f32_LessThan_rs", 0x7fc00000ul, 0x40400000ul, 0ul))
+    push(cases, oc("op_f32_LessThan_rs", 0x40400000ul, 0x7fc00000ul, 0ul))
+    push(cases, oc("op_f32_LessThan_ss", 0x7fc00000ul, 0x40400000ul, 0ul))
+    push(cases, oc("op_f32_LessThan_ss", 0x40400000ul, 0x7fc00000ul, 0ul))
+    push(cases, oc("op_f32_GreaterThan_sr", 0x7fc00000ul, 0x40400000ul, 0ul))
+    push(cases, oc("op_f32_GreaterThan_sr", 0x40400000ul, 0x7fc00000ul, 0ul))
+    push(cases, oc("op_f32_GreaterThan_rs", 0x7fc00000ul, 0x40400000ul, 0ul))
+    push(cases, oc("op_f32_GreaterThan_rs", 0x40400000ul, 0x7fc00000ul, 0ul))
+    push(cases, oc("op_f32_GreaterThan_ss", 0x7fc00000ul, 0x40400000ul, 0ul))
+    push(cases, oc("op_f32_GreaterThan_ss", 0x40400000ul, 0x7fc00000ul, 0ul))
+    push(cases, oc("op_f32_LessThanOrEqual_sr", 0x7fc00000ul, 0x40400000ul, 0ul))
+    push(cases, oc("op_f32_LessThanOrEqual_sr", 0x40400000ul, 0x7fc00000ul, 0ul))
+    push(cases, oc("op_f32_LessThanOrEqual_rs", 0x7fc00000ul, 0x40400000ul, 0ul))
+    push(cases, oc("op_f32_LessThanOrEqual_rs", 0x40400000ul, 0x7fc00000ul, 0ul))
+    push(cases, oc("op_f32_LessThanOrEqual_ss", 0x7fc00000ul, 0x40400000ul, 0ul))
+    push(cases, oc("op_f32_LessThanOrEqual_ss", 0x40400000ul, 0x7fc00000ul, 0ul))
+    push(cases, oc("op_f32_GreaterThanOrEqual_sr", 0x7fc00000ul, 0x40400000ul, 0ul))
+    push(cases, oc("op_f32_GreaterThanOrEqual_sr", 0x40400000ul, 0x7fc00000ul, 0ul))
+    push(cases, oc("op_f32_GreaterThanOrEqual_rs", 0x7fc00000ul, 0x40400000ul, 0ul))
+    push(cases, oc("op_f32_GreaterThanOrEqual_rs", 0x40400000ul, 0x7fc00000ul, 0ul))
+    push(cases, oc("op_f32_GreaterThanOrEqual_ss", 0x7fc00000ul, 0x40400000ul, 0ul))
+    push(cases, oc("op_f32_GreaterThanOrEqual_ss", 0x40400000ul, 0x7fc00000ul, 0ul))
     // f64: 1.5 = 0x3ff8..., -2.0 = 0xc000..., 3.0 = 0x4008..., NaN = 0x7ff8...
     push(cases, oc("op_f64_Equal_rs", 0x3ff8000000000000ul, 0x3ff8000000000000ul, 1ul))
     push(cases, oc("op_f64_Equal_ss", 0x7ff8000000000000ul, 0x7ff8000000000000ul, 0ul))
@@ -883,6 +952,41 @@ def test_arithmetic_families(var t : TestRun; fx : FixtureSource) {
     push(cases, oc("op_f64_GreaterThanOrEqual_sr", 0xc000000000000000ul, 0x4008000000000000ul, 0ul))
     push(cases, oc("op_f64_GreaterThanOrEqual_rs", 0x4008000000000000ul, 0xc000000000000000ul, 1ul))
     push(cases, oc("op_f64_GreaterThanOrEqual_ss", 0x4008000000000000ul, 0x4008000000000000ul, 1ul))
+    // f64 NaN rows, the same shape as the f32 ones
+    push(cases, oc("op_f64_Equal_rs", 0x7ff8000000000000ul, 0x4008000000000000ul, 0ul))
+    push(cases, oc("op_f64_Equal_rs", 0x4008000000000000ul, 0x7ff8000000000000ul, 0ul))
+    push(cases, oc("op_f64_Equal_rs", 0x7ff8000000000000ul, 0x7ff8000000000000ul, 0ul))
+    push(cases, oc("op_f64_Equal_ss", 0x7ff8000000000000ul, 0x4008000000000000ul, 0ul))
+    push(cases, oc("op_f64_Equal_ss", 0x4008000000000000ul, 0x7ff8000000000000ul, 0ul))
+    push(cases, oc("op_f64_NotEqual_rs", 0x7ff8000000000000ul, 0x4008000000000000ul, 1ul))
+    push(cases, oc("op_f64_NotEqual_rs", 0x4008000000000000ul, 0x7ff8000000000000ul, 1ul))
+    push(cases, oc("op_f64_NotEqual_ss", 0x7ff8000000000000ul, 0x4008000000000000ul, 1ul))
+    push(cases, oc("op_f64_NotEqual_ss", 0x4008000000000000ul, 0x7ff8000000000000ul, 1ul))
+    push(cases, oc("op_f64_NotEqual_ss", 0x7ff8000000000000ul, 0x7ff8000000000000ul, 1ul))
+    push(cases, oc("op_f64_LessThan_sr", 0x7ff8000000000000ul, 0x4008000000000000ul, 0ul))
+    push(cases, oc("op_f64_LessThan_sr", 0x4008000000000000ul, 0x7ff8000000000000ul, 0ul))
+    push(cases, oc("op_f64_LessThan_rs", 0x7ff8000000000000ul, 0x4008000000000000ul, 0ul))
+    push(cases, oc("op_f64_LessThan_rs", 0x4008000000000000ul, 0x7ff8000000000000ul, 0ul))
+    push(cases, oc("op_f64_LessThan_ss", 0x7ff8000000000000ul, 0x4008000000000000ul, 0ul))
+    push(cases, oc("op_f64_LessThan_ss", 0x4008000000000000ul, 0x7ff8000000000000ul, 0ul))
+    push(cases, oc("op_f64_GreaterThan_sr", 0x7ff8000000000000ul, 0x4008000000000000ul, 0ul))
+    push(cases, oc("op_f64_GreaterThan_sr", 0x4008000000000000ul, 0x7ff8000000000000ul, 0ul))
+    push(cases, oc("op_f64_GreaterThan_rs", 0x7ff8000000000000ul, 0x4008000000000000ul, 0ul))
+    push(cases, oc("op_f64_GreaterThan_rs", 0x4008000000000000ul, 0x7ff8000000000000ul, 0ul))
+    push(cases, oc("op_f64_GreaterThan_ss", 0x7ff8000000000000ul, 0x4008000000000000ul, 0ul))
+    push(cases, oc("op_f64_GreaterThan_ss", 0x4008000000000000ul, 0x7ff8000000000000ul, 0ul))
+    push(cases, oc("op_f64_LessThanOrEqual_sr", 0x7ff8000000000000ul, 0x4008000000000000ul, 0ul))
+    push(cases, oc("op_f64_LessThanOrEqual_sr", 0x4008000000000000ul, 0x7ff8000000000000ul, 0ul))
+    push(cases, oc("op_f64_LessThanOrEqual_rs", 0x7ff8000000000000ul, 0x4008000000000000ul, 0ul))
+    push(cases, oc("op_f64_LessThanOrEqual_rs", 0x4008000000000000ul, 0x7ff8000000000000ul, 0ul))
+    push(cases, oc("op_f64_LessThanOrEqual_ss", 0x7ff8000000000000ul, 0x4008000000000000ul, 0ul))
+    push(cases, oc("op_f64_LessThanOrEqual_ss", 0x4008000000000000ul, 0x7ff8000000000000ul, 0ul))
+    push(cases, oc("op_f64_GreaterThanOrEqual_sr", 0x7ff8000000000000ul, 0x4008000000000000ul, 0ul))
+    push(cases, oc("op_f64_GreaterThanOrEqual_sr", 0x4008000000000000ul, 0x7ff8000000000000ul, 0ul))
+    push(cases, oc("op_f64_GreaterThanOrEqual_rs", 0x7ff8000000000000ul, 0x4008000000000000ul, 0ul))
+    push(cases, oc("op_f64_GreaterThanOrEqual_rs", 0x4008000000000000ul, 0x7ff8000000000000ul, 0ul))
+    push(cases, oc("op_f64_GreaterThanOrEqual_ss", 0x7ff8000000000000ul, 0x4008000000000000ul, 0ul))
+    push(cases, oc("op_f64_GreaterThanOrEqual_ss", 0x4008000000000000ul, 0x7ff8000000000000ul, 0ul))
 
     // the integer arithmetic: wrapping add / multiply, the operand order
     // of subtract, the masked shift counts, the arithmetic shift of a
@@ -1170,7 +1274,9 @@ def private run_conv_case(var t : TestRun; var rt : M3Runtime; c : ConvCase) {
         emit_int(rt, 3)
     }
     rt.pc = 0
-    let op = m3_OpAt(int(m3_OpWord(name)))
+    let opWord = int(m3_OpWord(name))
+    mark_executed(opWord)
+    let op = m3_OpAt(opWord)
     let r = invoke(op, rt)
     if (c.trap != "") {
         equal(t, r, M3_TRAP, "{name} traps")
@@ -1757,6 +1863,27 @@ def test_loops_and_branches(var t : TestRun; fx : FixtureSource) {
     expect_value(t, rt, brIf, 3, 2, "BranchIf_s taken")
     expect_value(t, rt, brIf, 0, 1, "BranchIf_s not taken")
 
+    // op_BranchIf_r: br_if on the register (the condition moved there by
+    // op_SetRegister_i32 from the arg slot), the same two targets
+    let brIfRPC = emit_op(rt, "op_Entry")
+    let brIfR = fixture_function(rt, brIfRPC, 0)
+    emit_int(rt, brIfR)
+    emit_op(rt, "op_SetRegister_i32")
+    emit_int(rt, 1)
+    emit_op(rt, "op_BranchIf_r")
+    let brIfRPatch = emit_int(rt, -1)
+    emit_op(rt, "op_Const32")
+    emit_u32(rt, 1u)
+    emit_int(rt, 0)
+    emit_op(rt, "op_Return")
+    let brIfRTarget = emit_op(rt, "op_Const32")
+    emit_u32(rt, 2u)
+    emit_int(rt, 0)
+    emit_op(rt, "op_Return")
+    rt.code[brIfRPatch] = u64(brIfRTarget)
+    expect_value(t, rt, brIfR, 3, 2, "BranchIf_r taken")
+    expect_value(t, rt, brIfR, 0, 1, "BranchIf_r not taken")
+
     // op_BranchIfPrologue_s: the prologue runs when the condition holds,
     // a zero condition jumps over it
     let proPC = emit_op(rt, "op_Entry")
@@ -2053,6 +2180,181 @@ def test_slots_and_globals(var t : TestRun; fx : FixtureSource) {
     run_single(rt, pc)
     equal(t, rt.fp0, 2.75lf, "Select_f64_rsr false picks operand2")
 
+    // the remaining Select forms, both arms of each: the f32 operands in
+    // slots 4 / 5 (indexes 8 / 9), the f64 and i64 operands in slots 4 / 6
+    // (indexes 8 / 10), the condition in slot 2 (index 6) or in _r0
+    // op_Select_f32_rsr: condition in _r0, operand2 in a slot, operand1 is _fp0
+    set_stack_f32(rt, 9, 2.5f)
+    rt.fp0 = 7.0lf
+    rt.r0 = 1ul
+    pc = emit_op(rt, "op_Select_f32_rsr")
+    emit_int(rt, 5)   // operand2
+    run_single(rt, pc)
+    equal(t, rt.fp0, 7.0lf, "Select_f32_rsr true keeps _fp0")
+    rt.fp0 = 7.0lf
+    rt.r0 = 0ul
+    pc = emit_op(rt, "op_Select_f32_rsr")
+    emit_int(rt, 5)   // operand2
+    run_single(rt, pc)
+    equal(t, rt.fp0, 2.5lf, "Select_f32_rsr false picks operand2")
+    // op_Select_f32_srs: condition and operand1 in slots, operand2 is _fp0
+    set_stack_f32(rt, 8, 1.5f)
+    set_stack_i32(rt, 6, 1)
+    rt.fp0 = 7.0lf
+    pc = emit_op(rt, "op_Select_f32_srs")
+    emit_int(rt, 2)   // condition
+    emit_int(rt, 4)   // operand1
+    run_single(rt, pc)
+    equal(t, rt.fp0, 1.5lf, "Select_f32_srs true picks operand1")
+    set_stack_i32(rt, 6, 0)
+    rt.fp0 = 7.0lf
+    pc = emit_op(rt, "op_Select_f32_srs")
+    emit_int(rt, 2)   // condition
+    emit_int(rt, 4)   // operand1
+    run_single(rt, pc)
+    equal(t, rt.fp0, 7.0lf, "Select_f32_srs false keeps _fp0")
+    // op_Select_f32_ssr: condition and operand2 in slots, operand1 is _fp0
+    set_stack_i32(rt, 6, 1)
+    rt.fp0 = 7.0lf
+    pc = emit_op(rt, "op_Select_f32_ssr")
+    emit_int(rt, 2)   // condition
+    emit_int(rt, 5)   // operand2
+    run_single(rt, pc)
+    equal(t, rt.fp0, 7.0lf, "Select_f32_ssr true keeps _fp0")
+    set_stack_i32(rt, 6, 0)
+    rt.fp0 = 7.0lf
+    pc = emit_op(rt, "op_Select_f32_ssr")
+    emit_int(rt, 2)   // condition
+    emit_int(rt, 5)   // operand2
+    run_single(rt, pc)
+    equal(t, rt.fp0, 2.5lf, "Select_f32_ssr false picks operand2")
+    // op_Select_f32_sss: the three in slots
+    set_stack_i32(rt, 6, 1)
+    pc = emit_op(rt, "op_Select_f32_sss")
+    emit_int(rt, 2)   // condition
+    emit_int(rt, 5)   // operand2
+    emit_int(rt, 4)   // operand1
+    run_single(rt, pc)
+    equal(t, rt.fp0, 1.5lf, "Select_f32_sss true picks operand1")
+    set_stack_i32(rt, 6, 0)
+    pc = emit_op(rt, "op_Select_f32_sss")
+    emit_int(rt, 2)   // condition
+    emit_int(rt, 5)   // operand2
+    emit_int(rt, 4)   // operand1
+    run_single(rt, pc)
+    equal(t, rt.fp0, 2.5lf, "Select_f32_sss false picks operand2")
+    // op_Select_f64_rrs: condition in _r0, operand1 in a slot, operand2 is _fp0
+    set_stack_f64(rt, 8, 1.25lf)
+    set_stack_f64(rt, 10, 2.75lf)
+    rt.fp0 = 9.5lf
+    rt.r0 = 1ul
+    pc = emit_op(rt, "op_Select_f64_rrs")
+    emit_int(rt, 4)   // operand1
+    run_single(rt, pc)
+    equal(t, rt.fp0, 1.25lf, "Select_f64_rrs true picks operand1")
+    rt.fp0 = 9.5lf
+    rt.r0 = 0ul
+    pc = emit_op(rt, "op_Select_f64_rrs")
+    emit_int(rt, 4)   // operand1
+    run_single(rt, pc)
+    equal(t, rt.fp0, 9.5lf, "Select_f64_rrs false keeps _fp0")
+    // op_Select_f64_rss: condition in _r0, both operands in slots
+    rt.r0 = 1ul
+    pc = emit_op(rt, "op_Select_f64_rss")
+    emit_int(rt, 6)   // operand2
+    emit_int(rt, 4)   // operand1
+    run_single(rt, pc)
+    equal(t, rt.fp0, 1.25lf, "Select_f64_rss true picks operand1")
+    rt.r0 = 0ul
+    pc = emit_op(rt, "op_Select_f64_rss")
+    emit_int(rt, 6)   // operand2
+    emit_int(rt, 4)   // operand1
+    run_single(rt, pc)
+    equal(t, rt.fp0, 2.75lf, "Select_f64_rss false picks operand2")
+    // op_Select_f64_srs: condition and operand1 in slots, operand2 is _fp0
+    set_stack_i32(rt, 6, 1)
+    rt.fp0 = 9.5lf
+    pc = emit_op(rt, "op_Select_f64_srs")
+    emit_int(rt, 2)   // condition
+    emit_int(rt, 4)   // operand1
+    run_single(rt, pc)
+    equal(t, rt.fp0, 1.25lf, "Select_f64_srs true picks operand1")
+    set_stack_i32(rt, 6, 0)
+    rt.fp0 = 9.5lf
+    pc = emit_op(rt, "op_Select_f64_srs")
+    emit_int(rt, 2)   // condition
+    emit_int(rt, 4)   // operand1
+    run_single(rt, pc)
+    equal(t, rt.fp0, 9.5lf, "Select_f64_srs false keeps _fp0")
+    // op_Select_f64_ssr: condition and operand2 in slots, operand1 is _fp0
+    set_stack_i32(rt, 6, 1)
+    rt.fp0 = 9.5lf
+    pc = emit_op(rt, "op_Select_f64_ssr")
+    emit_int(rt, 2)   // condition
+    emit_int(rt, 6)   // operand2
+    run_single(rt, pc)
+    equal(t, rt.fp0, 9.5lf, "Select_f64_ssr true keeps _fp0")
+    set_stack_i32(rt, 6, 0)
+    rt.fp0 = 9.5lf
+    pc = emit_op(rt, "op_Select_f64_ssr")
+    emit_int(rt, 2)   // condition
+    emit_int(rt, 6)   // operand2
+    run_single(rt, pc)
+    equal(t, rt.fp0, 2.75lf, "Select_f64_ssr false picks operand2")
+    // op_Select_i64_rss: condition in _r0 (read before the result lands
+    // there), both operands in slots
+    set_stack_i64(rt, 8, -5l)
+    set_stack_i64(rt, 10, 9l)
+    rt.r0 = 1ul
+    pc = emit_op(rt, "op_Select_i64_rss")
+    emit_int(rt, 6)   // operand2
+    emit_int(rt, 4)   // operand1
+    run_single(rt, pc)
+    equal(t, i64(rt.r0), -5l, "Select_i64_rss true picks operand1")
+    rt.r0 = 0ul
+    pc = emit_op(rt, "op_Select_i64_rss")
+    emit_int(rt, 6)   // operand2
+    emit_int(rt, 4)   // operand1
+    run_single(rt, pc)
+    equal(t, i64(rt.r0), 9l, "Select_i64_rss false picks operand2")
+    // op_Select_i64_srs: condition and operand1 in slots, operand2 is _r0
+    set_stack_i32(rt, 6, 1)
+    rt.r0 = 0x1122334455667788ul
+    pc = emit_op(rt, "op_Select_i64_srs")
+    emit_int(rt, 2)   // condition
+    emit_int(rt, 4)   // operand1
+    run_single(rt, pc)
+    equal(t, i64(rt.r0), -5l, "Select_i64_srs true picks operand1")
+    set_stack_i32(rt, 6, 0)
+    rt.r0 = 0x1122334455667788ul
+    pc = emit_op(rt, "op_Select_i64_srs")
+    emit_int(rt, 2)   // condition
+    emit_int(rt, 4)   // operand1
+    run_single(rt, pc)
+    equal(t, rt.r0, 0x1122334455667788ul, "Select_i64_srs false keeps _r0")
+    // op_Select_i64_ssr: condition and operand2 in slots, operand1 is _r0
+    set_stack_i32(rt, 6, 1)
+    rt.r0 = 0x1122334455667788ul
+    pc = emit_op(rt, "op_Select_i64_ssr")
+    emit_int(rt, 2)   // condition
+    emit_int(rt, 6)   // operand2
+    run_single(rt, pc)
+    equal(t, rt.r0, 0x1122334455667788ul, "Select_i64_ssr true keeps _r0")
+    set_stack_i32(rt, 6, 0)
+    rt.r0 = 0x1122334455667788ul
+    pc = emit_op(rt, "op_Select_i64_ssr")
+    emit_int(rt, 2)   // condition
+    emit_int(rt, 6)   // operand2
+    run_single(rt, pc)
+    equal(t, i64(rt.r0), 9l, "Select_i64_ssr false picks operand2")
+
+    // op_NoOp (word 0): the placeholder of an uncompiled function, no
+    // immediates, traps with m3Err_noCompiler
+    pc = emit_op(rt, "op_NoOp")
+    equal(t, run_single(rt, pc), M3_TRAP, "NoOp traps")
+    equal_str(t, rt.trap, m3Err_noCompiler, "NoOp trap string")
+    equal(t, rt.pc, pc + 1, "NoOp reads no immediate")
+
     // globals: the immediate is the handle into rt.globals
     m3_Realloc_Impl(rt.globals, 2, 0)
     rt.globals[0].valueBits = 0xaaaaaaaa00000042ul
@@ -2159,6 +2461,40 @@ def test_memory_ops(var t : TestRun; fx : FixtureSource) {
     run_single(rt, pc)
     equal(t, rt.r0, 0x067fff80ul, "i32_Load_i32_r unaligned")
 
+    // the i32 loads through a slot address (_s), the same bytes
+    set_stack_u32(rt, 2, 3u)
+    pc = emit_op(rt, "op_i32_Load_i8_s")
+    emit_int(rt, 0)
+    emit_u32(rt, 0u)   // address 3: 0x80
+    run_single(rt, pc)
+    equal(t, rt.r0, 0xffffffffffffff80ul, "i32_Load_i8_s sign-extends -128")
+    pc = emit_op(rt, "op_i32_Load_u8_s")
+    emit_int(rt, 0)
+    emit_u32(rt, 1u)   // address 4: 0xff
+    run_single(rt, pc)
+    equal(t, rt.r0, 0xfful, "i32_Load_u8_s zero-extends")
+    pc = emit_op(rt, "op_i32_Load_i16_s")
+    emit_int(rt, 0)
+    emit_u32(rt, 0u)   // bytes 80 ff -> 0xff80
+    run_single(rt, pc)
+    equal(t, rt.r0, 0xffffffffffffff80ul, "i32_Load_i16_s little-endian, sign-extended")
+    pc = emit_op(rt, "op_i32_Load_u16_s")
+    emit_int(rt, 0)
+    emit_u32(rt, 0u)
+    run_single(rt, pc)
+    equal(t, rt.r0, 0xff80ul, "i32_Load_u16_s zero-extended")
+    pc = emit_op(rt, "op_i32_Load_i32_s")
+    emit_int(rt, 0)
+    emit_u32(rt, 0u)   // bytes 80 ff 7f 06 -> 0x067fff80
+    run_single(rt, pc)
+    equal(t, rt.r0, 0x067fff80ul, "i32_Load_i32_s unaligned")
+    set_stack_u32(rt, 2, 0u)
+    pc = emit_op(rt, "op_i32_Load_i32_s")
+    emit_int(rt, 0)
+    emit_u32(rt, 0u)   // bytes 00 01 02 80 -> 0x80020100, negative
+    run_single(rt, pc)
+    equal(t, rt.r0, 0xffffffff80020100ul, "i32_Load_i32_s sign-extends into the register")
+
     // loads through a slot address (_s)
     set_stack_u32(rt, 2, 3u)
     pc = emit_op(rt, "op_i64_Load_i8_s")
@@ -2212,6 +2548,37 @@ def test_memory_ops(var t : TestRun; fx : FixtureSource) {
     emit_u32(rt, 0u)
     run_single(rt, pc)
     equal(t, rt.r0, 0xfffffffeul, "i64_Load_u32_r zero-extends")
+    // the i64 loads through the register address (_r)
+    rt.r0 = 3ul
+    pc = emit_op(rt, "op_i64_Load_i8_r")
+    emit_u32(rt, 0u)   // address 3: 0x80
+    run_single(rt, pc)
+    equal(t, rt.r0, 0xffffffffffffff80ul, "i64_Load_i8_r sign-extends")
+    rt.r0 = 3ul
+    pc = emit_op(rt, "op_i64_Load_u8_r")
+    emit_u32(rt, 1u)   // address 4: 0xff
+    run_single(rt, pc)
+    equal(t, rt.r0, 0xfful, "i64_Load_u8_r zero-extends")
+    rt.r0 = 3ul
+    pc = emit_op(rt, "op_i64_Load_i16_r")
+    emit_u32(rt, 0u)   // bytes 80 ff -> 0xff80
+    run_single(rt, pc)
+    equal(t, rt.r0, 0xffffffffffffff80ul, "i64_Load_i16_r sign-extends")
+    rt.r0 = 3ul
+    pc = emit_op(rt, "op_i64_Load_u16_r")
+    emit_u32(rt, 0u)
+    run_single(rt, pc)
+    equal(t, rt.r0, 0xff80ul, "i64_Load_u16_r zero-extends")
+    rt.r0 = 3ul
+    pc = emit_op(rt, "op_i64_Load_i32_r")
+    emit_u32(rt, 0u)   // bytes 80 ff 7f 06 -> 0x067fff80
+    run_single(rt, pc)
+    equal(t, rt.r0, 0x067fff80ul, "i64_Load_i32_r positive")
+    rt.r0 = 8ul
+    pc = emit_op(rt, "op_i64_Load_i32_r")
+    emit_u32(rt, 0u)   // bytes fe ff ff ff
+    run_single(rt, pc)
+    equal(t, rt.r0, 0xfffffffffffffffeul, "i64_Load_i32_r sign-extends -2")
     pc = emit_op(rt, "op_i64_Load_i64_s")
     emit_int(rt, 0)
     emit_u32(rt, 0u)   // address 8: fe ff ff ff 0c 0d 0e 0f
@@ -2305,6 +2672,15 @@ def test_memory_ops(var t : TestRun; fx : FixtureSource) {
     emit_u32(rt, 0u)   // address 12
     run_single(rt, pc)
     equal(t, load_u32(rt, 12), 0x55667788u, "i64_Store_i32_rs truncates")
+    set_stack_i64(rt, 4, i64(0x0102030480706050ul))   // slot 2: the value
+    set_stack_u32(rt, 2, 12u)                          // slot 0: the address
+    pc = emit_op(rt, "op_i64_Store_i32_ss")
+    emit_int(rt, 2)   // value
+    emit_int(rt, 0)   // address
+    emit_u32(rt, 0u)   // address 12
+    run_single(rt, pc)
+    equal(t, load_u32(rt, 12), 0x80706050u, "i64_Store_i32_ss truncates")
+    equal(t, load_u32(rt, 16), 0x22334455u, "i64_Store_i32_ss writes four bytes (the i64_Store_i64_rs bytes 16..19 kept)")
     pc = emit_op(rt, "op_i64_Store_i16_rs")
     emit_int(rt, 0)
     emit_u32(rt, 0u)
@@ -2755,6 +3131,36 @@ def test_call_indirect_and_compile(var t : TestRun; fx : FixtureSource) {
 // ============================================================================
 
 
+// Eden: the sweep over the whole table (the part-2 / part-3 sweeps of the
+// family tables cover their ranges; this one covers part 1 too): every word
+// 0..OP_COUNT-1 of g_opIndex was marked by mark_executed, from a program this
+// file assembled and ran or from a table invoke. Runs last.
+def test_every_op_executed(var t : TestRun; fx : FixtureSource) {
+    m3_build_op_table()
+    equal(t, m3_OpCount(), OP_COUNT, "the table registers {OP_COUNT} operations")
+    var named = 0
+    var missing = 0
+    for (name, idx in keys(g_opIndex), values(g_opIndex)) {
+        named++
+        var ran = false
+        if (idx >= 0 && idx < length(executedWords)) {
+            ran = executedWords[idx]
+        }
+        if (!ran) {
+            check(t, false, "never executed: word {idx} {name}")
+            missing++
+        }
+    }
+    equal(t, named, OP_COUNT, "g_opIndex names every word 0..{OP_COUNT - 1}")
+    equal(t, missing, 0, "every operation word is executed by this file")
+}
+
+
+// ============================================================================
+// The runner
+// ============================================================================
+
+
 def public run_tests_m3_exec(var t : TestRun; fx : FixtureSource) {
     begin_test(t, "test_exec_control_flow")
     test_exec_control_flow(t, fx)
@@ -2780,4 +3186,6 @@ def public run_tests_m3_exec(var t : TestRun; fx : FixtureSource) {
     test_memory_ops(t, fx)
     begin_test(t, "test_call_indirect_and_compile")
     test_call_indirect_and_compile(t, fx)
+    begin_test(t, "test_every_op_executed")
+    test_every_op_executed(t, fx)
 }

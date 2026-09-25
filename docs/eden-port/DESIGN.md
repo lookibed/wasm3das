@@ -25,6 +25,7 @@ with the probe cheats described in PIPELINE.md §7 when the editor updates.
 | Output | `print` lines reach `get_logs` (MCP) with a `file:line (function)` line after each; `get_logs` clears the buffer |
 | Entry points | `[export] on_initialize/on_update` and `[cheat]` functions in the project's `main.das`; cheats run asynchronously, results are read from the logs |
 | Cheat registry | keeps names of cheats removed by hot reload until the editor restarts (cosmetic) |
+| Float compare with NaN | **not IEEE in the editor** (probe cheat, f32 and f64 alike): `NaN == NaN` true, `NaN != NaN` false, `NaN == 1` true, `NaN != 1` false, `NaN < 1` true, `NaN <= 1` true, `NaN > 1` false, `NaN >= 1` false. Local 0.6.3/0.6.4 give the C/IEEE results. NaN bits round-trip through `math_bits`, `1/0 = +inf`, `sqrt(-1) = NaN`, `0 == -0` true. Every float comparison the port makes guards with `isnan` (a bit test, works in the editor): `eq` = `!isnan(a) && !isnan(b) && a == b`, `ne` = `isnan(a) \|\| isnan(b) \|\| a != b`, `lt/gt/le/ge` = `!isnan(a) && !isnan(b) && a < b` ...; `m3_math_utils` already tests `isnan` before every ordered compare; the tests carry a NaN row per comparison form |
 | `try` / `recover` | works in the editor: a `panic` inside `try` is caught by `recover`, the game stays `Running` (measured with a probe cheat). Upstream tests that capture a `d_m3Assert` through `try/recover` port unchanged |
 
 The local stand-in for these rules is `scripts/eden/sandbox.das_project`
