@@ -38,8 +38,8 @@ require modules/wasm3das/tests/eden/test_m3_compile
 require modules/wasm3das/tests/eden/test_m3_env
 require modules/wasm3das/tests/eden/test_m3_parse
 require modules/wasm3das/tests/eden/test_m3_bind
-// require modules/wasm3das/tests/eden/test_m3_api_defs
-// require modules/wasm3das/tests/eden/test_wasi_core
+require modules/wasm3das/tests/eden/test_m3_api_defs
+require modules/wasm3das/tests/eden/test_wasi_core
 // require modules/wasm3das/tests/eden/test_m3_api_wasi_fd
 // require modules/wasm3das/tests/eden/test_m3_api_libc
 // require modules/wasm3das/tests/eden/test_m3_api_wasi
@@ -64,8 +64,8 @@ def public run_all_tests(var t : TestRun; fx : FixtureSource) {
     run_tests_m3_env(t, fx)
     run_tests_m3_parse(t, fx)
     run_tests_m3_bind(t, fx)
-    // run_tests_m3_api_defs(t, fx)
-    // run_tests_wasi_core(t, fx)
+    run_tests_m3_api_defs(t, fx)
+    run_tests_wasi_core(t, fx)
     // run_tests_m3_api_wasi_fd(t, fx)
     // run_tests_m3_api_libc(t, fx)
     // run_tests_m3_api_wasi(t, fx)

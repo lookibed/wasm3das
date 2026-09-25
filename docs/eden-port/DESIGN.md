@@ -564,6 +564,10 @@ asking the compiler.
   `reserve` + `push(arr, T())`, shrink with `pop`; the `m3_Malloc_Impl` /
   `m3_Realloc_Impl` helpers of `m3_core` do exactly that, use them for every
   arena of `M3*` structs. `resize` on arrays of scalars is fine.
+- A hex literal takes an unsigned type: `0x1234` is `uint`, `0x1234l` is
+  `uint64` (not `int64`). Comparing it with an `int`/`int64` fails to
+  compile ("no matching functions ... equal(int, uint)"); write signed
+  constants in decimal or cast (`int(0x80)`).
 - `[inline]` does not exist in 0.6.3: drop it (the upstream port used it on
   small helpers).
 - Byte cursors are `(bytes : array<uint8>; var o_value : T&; var io_pos : int&; i_end : int) : M3Result`
