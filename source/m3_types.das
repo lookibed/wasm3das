@@ -122,7 +122,10 @@ require daslib/math_bits                           // Eden: bit views of the M3G
         wasm/wasmEnd/lastOpcodeStart are indices into the module's `wasm`,
         `constants` is `u64[d_m3MaxConstantTableSize]` (one 64-bit word per
         slot; C packs a 64-bit constant into two 32-bit slots), the slot
-        counters and slot arrays keep the upstream `int` widening.
+        counters and slot arrays keep the upstream `int` widening;
+        `scopeStack : array<M3CompilationScope>` (absent in C) holds the
+        enclosing scopes C keeps on the native stack, indexed by
+        M3CompilationScope.outer (DESIGN section 4.4a).
       - M3Compiler is `function<(var rt : M3Runtime; i_opcode : m3opcode_t)
         : M3Result>`: the compilation is rt.compilation and the compiler
         needs the runtime's arenas, so C's IM3Compilation argument is the
@@ -552,6 +555,14 @@ struct M3Compilation {
     regStackIndexPlusOne : int[2]
 
     previousOpcode : m3opcode_t = m3opcode_t(0)
+
+    // Eden: the scope stack (DESIGN.md 4.4a). C keeps the enclosing scopes
+    // on the native stack (CompileBlock's `outerScope` local) and links them
+    // through `block.outer`; here CompileBlock pushes the enclosing scope on
+    // this stack, `_block` stays the current scope and `_block.outer` is the
+    // index of the enclosing one (m3_compile pushes and pops). An absent
+    // C field.
+    scopeStack : array<M3CompilationScope>
 }
 
 

@@ -319,6 +319,35 @@ recursion therefore needs `options stack = 67_108_864` in the Eden host and in
 `.local/app`; the trap `[trap] stack overflow` from `op_Entry` remains the
 documented limit.
 
+### 4.4a The compiler (`m3_compile`)
+
+- `M3OpInfo.operations : int[4]` hold op-table indices; the `M3OP(name, ...)`
+  records are written with op **names** and `m3_build_operations_table()`
+  (called once, after `m3_build_op_table()`) resolves every name through
+  `g_opIndex`, asserting it exists; `M3OP_RESERVED` gives -1 in every slot.
+  `c_operations : array<M3OpInfo>` with C's 253 rows (0x00–0xFC; 0xFD and
+  above are C's NULL → `m3Err_unknownOpcode`, asserted by the upstream
+  test) and `c_operationsFC` with the 12 rows of the 0xFC prefix keep C's
+  layout and order (arrays, since a global fixed array of a struct with
+  initializers needs a full initializer in 0.6.3).
+- `M3Compilation.scopeStack : array<M3CompilationScope>` (added to
+  `m3_types` with an `// Eden:` note) is the stack C keeps on the native
+  stack; `_block` is the current scope, `outer` the index of the enclosing
+  one, `PushBlock`/`PopBlock` push and pop.
+- Patch chains: a forward-branch patch list is a chain of pc indices stored
+  in the code words themselves (the upstream port's pointer chain with
+  indices); `-1` ends the chain.
+- Constants: `numConstantBytes` keeps C's 4-byte-slot accounting; the
+  function's `constants` array holds one 64-bit word per constant **slot**
+  (a 64-bit constant occupies two entries, the second unused) so
+  `length(constants) == numConstantBytes / 4` and `op_Entry` copies them
+  slot for slot.
+- Emit: `EmitOp(rt, op name)` writes `m3_OpWord(name)`; immediates through
+  `EmitWord`/`EmitWord32`/`EmitWord64` of `m3_code`; pcs and handles as
+  `u64(int)` (DESIGN 4.4 table).
+- `CompileFunction(rt, functionIdx)` is what `CompileFunctionHook` of
+  `m3_exec` points to; `m3_env` wires it (`CompileFunctionHook = @@CompileFunction`).
+
 ### 4.5 Host functions
 
 ```das
