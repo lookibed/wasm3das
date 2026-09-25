@@ -286,15 +286,34 @@ no bounds check; `mem_size(rt)` stands for `_mem->length`. Nesting sites of
 restore `rt.pc`/`rt.sp` around the nested call, since C's by-value
 registers are shared fields here.
 
-The op table `g_ops : array<M3Op>` is filled once by `m3_build_op_table()` in
-`m3_exec` from a literal list `[@@op_Entry, @@op_Call, ...]`, in the same
-order as `M3ExecDispatchPass` sorts them (by name). `m3_OpWord(op)` returns the
-index found in `g_opIndex : table<string; int>` at build time; the compiler
-refers to ops by name through `M3OP` records that carry the index instead of
-the function value. `op_Compile` rewrites the word in `rt.code` in place.
+The op table `g_ops : array<M3Op>` and `g_opIndex : table<string; int>` are
+filled once by `m3_build_op_table()` in `m3_exec`, which registers every
+operation by name (`m3_register_op("op_Entry", @@op_Entry)` ...); the index
+is the registration order, and only consistency matters (words store the
+index, `m3_compile` looks names up through the same table), so the table
+can be built up module-part by module-part. `m3_OpWord(name) : u64` /
+`m3_OpAt(idx) : M3Op` / `m3_OpCount()` are the accessors; the compiler's
+`M3OP` records carry op names (resolved to indices when the table is built)
+instead of function values. `op_Compile` rewrites the word in `rt.code` in
+place. `m3_exec` is ported in three parts (infrastructure and calls;
+control, slot, global and memory ops; the arithmetic families), each part
+compiling and passing its tests before the next; the op count is 510 when
+complete (the upstream file's `def op_` count).
 
 Nested execution (C's real calls): `op_Call`, `op_CallIndirect`, `op_Entry`
-and `op_Loop` call `RunLoop` recursively, exactly where C does. Deep wasm
+and `op_Loop` call `RunLoop` recursively, exactly where C does. Fixed by
+`m3_exec` part 1: `Call(rt, pc, sp, r0, fp0) : m3ret_t` saves
+`rt.pc/sp/r0/fp0`, installs the arguments, runs one nested `RunLoop` and
+restores all four (C's by-value registers); it returns `M3_RETURN`,
+`M3_TRAP` (set once by `newTrap`, forwarded by every level) or an escaped
+loop pc. `op_Entry` forwards its nested result; `op_Loop` resets `rt.pc`
+to the loop header and clears the registers per iteration while the
+result equals the header pc. Nothing clears `rt.trap`; `m3_Call` (m3_env)
+resets it before `RunCode`. `op_CallRawFunction` swaps `rt.originStack`
+as C swaps `runtime->stack`, so `m3_Call` uses `rt.originStack` as the
+frame base. `op_Entry` keeps C's strict `sp + maxStackSlots <
+length(rt.stack)` check. An unknown op name in `m3_OpWord` is a
+`d_m3Assert` panic (as upstream `m3_OpIndex`). Deep wasm
 recursion therefore needs `options stack = 67_108_864` in the Eden host and in
 `.local/app`; the trap `[trap] stack overflow` from `op_Entry` remains the
 documented limit.
