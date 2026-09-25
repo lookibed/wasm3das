@@ -130,9 +130,10 @@ require daslib/math_bits                               // Eden: bit casts of cop
         infrastructure, the calls and the control, slot, global and memory
         operations; part 2 the compare, arithmetic, bit and float families
         of the upstream file (op_i32_Equal_rs ... op_u64_Popcnt_s, in file
-        order around the OP_* helpers, as upstream); the conversion
-        families (op_i32_Wrap_i64_r ... op_f64_Reinterpret_i64_s_s) follow
-        at the PART 3 marker in file order.
+        order around the OP_* helpers, as upstream); part 3 the conversion
+        families (op_i32_Wrap_i64_r ... op_f64_Reinterpret_i64_s_s: Wrap,
+        the sign extensions, Trunc, TruncSat, Extend, Demote, Promote,
+        Convert, Reinterpret), which follow part 2 in file order.
       - part 2's register conventions: a compare stores bool_reg, an i32
         result u64(i64(v)) (sign-extended, C's m3reg_t conversion of an
         i32), a u32 / bit-count result u64(v) (zero-extended, as C converts
@@ -143,6 +144,22 @@ require daslib/math_bits                               // Eden: bit casts of cop
         the macro's own newTrap); the signed ShiftRight spells C's
         OP_SHR_32 / OP_SHR_64 on a signed X inline (an arithmetic shift by
         the masked count), as the upstream file does.
+      - part 3's conversions: the wrap is u64(u32(x)), the bits of C's
+        OP_WRAP_I64 mask on the i64 register, so its i32 result is the one
+        zero-extended in rt.r0; the sign extensions narrow with the i8 /
+        i16 / i32 casts and widen back; the trapping truncations read the
+        M3Result of OP_*_TRUNC_* and the saturating ones call
+        OP_*_TRUNC_SAT_* (m3_math_utils, C's range constants), the trap
+        raised here with newTrap; a destination slot (the _s_r / _s_s
+        forms, C's slot_ptr (TYPE)) is read as its index before the
+        conversion and written with set_stack_T; Convert, Demote and
+        Promote are daslang's numeric casts, measured on 0.6.3 and 0.6.4
+        to round as C's (a u64 -> f32 / f64 conversion is correctly
+        rounded, not lowered through a signed path; f64 -> f32 keeps a
+        NaN's high payload bits and overflows to inf like the hardware
+        conversion); Reinterpret goes through the bit casts of
+        daslib/math_bits (the upstream reinterpret<T>), bit-exact, a NaN
+        payload kept.
     Everything else (names, order, control flow, checks, trap strings) is
     the C of m3_exec.h.
 */
@@ -389,8 +406,8 @@ def public Call(var rt : M3Runtime; _pc : pc_t; _sp : m3stack_t; _r0 : m3reg_t; 
 // ============================================================================
 
 
-// PART 2 (the compare, arithmetic, bit and float families of the upstream
-// file, op_i32_Equal_rs ... op_u64_Popcnt_s, upstream lines 621 - 2282):
+// The compare, arithmetic, bit and float families of the upstream file
+// (op_i32_Equal_rs ... op_u64_Popcnt_s, upstream lines 621 - 2282):
 // the compare operations (C: d_m3CommutativeOp_i / d_m3Op_i for the
 // integers, d_m3CommutativeCmpOp_f / d_m3CompareOp_f for the floats, the
 // result is a bool in _r0) precede the OP_* helpers as in the upstream
@@ -2433,10 +2450,1173 @@ def public op_u64_Popcnt_s(var rt : M3Runtime) : m3ret_t {
 }
 
 
-// PART 3: the conversion families of the upstream file (op_i32_Wrap_i64_r
-// ... op_f64_Reinterpret_i64_s_s: Wrap, Extend, Trunc, TruncSat, Convert,
-// Demote, Promote, Reinterpret; upstream lines 2284 - 3220) go here, in
-// file order.
+// The conversion families of the upstream file (op_i32_Wrap_i64_r ...
+// op_f64_Reinterpret_i64_s_s: Wrap, the sign extensions, Trunc, TruncSat,
+// Extend, Demote, Promote, Convert, Reinterpret; upstream lines 2284 - 3220),
+// in file order.
+
+
+// C: op_i32_Wrap_i64_r / _s through OP_WRAP_I64 (`(X) & 0x00000000ffffffff`
+// on the i64 register: the low 32 bits stay zero-extended in _r0, the one
+// i32 result C does not sign-extend), then d_m3UnaryOp_i (i32 Extend8_s /
+// Extend16_s, i64 Extend8_s / Extend16_s / Extend32_s) through the
+// OP_EXTEND*_S_* macros (`(int32_t)(int8_t)(X)`, `(int64_t)(int8_t)(X)` and
+// so on). Eden: the wrap is u64(u32(x)), the same bits as C's mask; the
+// extensions narrow with the i8 / i16 / i32 casts and widen back, an i32
+// result sign-extended into rt.r0, an i64 result its bits.
+
+
+def public op_i32_Wrap_i64_r(var rt : M3Runtime) : m3ret_t {
+    rt.r0 = u64(u32(rt.r0))   // C: _r0 = OP_WRAP_I64 ((i64) _r0)
+    return nextOpDirect(rt)
+}
+
+
+def public op_i32_Wrap_i64_s(var rt : M3Runtime) : m3ret_t {
+    let operand = slot_i64(rt)
+    rt.r0 = u64(u32(operand))   // C: _r0 = OP_WRAP_I64 (operand)
+    return nextOpDirect(rt)
+}
+
+
+def public op_i32_Extend8_s_r(var rt : M3Runtime) : m3ret_t {
+    rt.r0 = u64(i64(i32(i8(i32(u32(rt.r0))))))   // C: _r0 = OP_EXTEND8_S_I32 ((i32) _r0)
+    return nextOpDirect(rt)
+}
+
+
+def public op_i32_Extend8_s_s(var rt : M3Runtime) : m3ret_t {
+    let operand = slot_i32(rt)
+    rt.r0 = u64(i64(i32(i8(operand))))
+    return nextOpDirect(rt)
+}
+
+
+def public op_i32_Extend16_s_r(var rt : M3Runtime) : m3ret_t {
+    rt.r0 = u64(i64(i32(i16(i32(u32(rt.r0))))))   // C: _r0 = OP_EXTEND16_S_I32 ((i32) _r0)
+    return nextOpDirect(rt)
+}
+
+
+def public op_i32_Extend16_s_s(var rt : M3Runtime) : m3ret_t {
+    let operand = slot_i32(rt)
+    rt.r0 = u64(i64(i32(i16(operand))))
+    return nextOpDirect(rt)
+}
+
+
+def public op_i64_Extend8_s_r(var rt : M3Runtime) : m3ret_t {
+    rt.r0 = u64(i64(i8(i64(rt.r0))))   // C: _r0 = OP_EXTEND8_S_I64 ((i64) _r0)
+    return nextOpDirect(rt)
+}
+
+
+def public op_i64_Extend8_s_s(var rt : M3Runtime) : m3ret_t {
+    let operand = slot_i64(rt)
+    rt.r0 = u64(i64(i8(operand)))
+    return nextOpDirect(rt)
+}
+
+
+def public op_i64_Extend16_s_r(var rt : M3Runtime) : m3ret_t {
+    rt.r0 = u64(i64(i16(i64(rt.r0))))   // C: _r0 = OP_EXTEND16_S_I64 ((i64) _r0)
+    return nextOpDirect(rt)
+}
+
+
+def public op_i64_Extend16_s_s(var rt : M3Runtime) : m3ret_t {
+    let operand = slot_i64(rt)
+    rt.r0 = u64(i64(i16(operand)))
+    return nextOpDirect(rt)
+}
+
+
+def public op_i64_Extend32_s_r(var rt : M3Runtime) : m3ret_t {
+    rt.r0 = u64(i64(i32(i64(rt.r0))))   // C: _r0 = OP_EXTEND32_S_I64 ((i64) _r0)
+    return nextOpDirect(rt)
+}
+
+
+def public op_i64_Extend32_s_s(var rt : M3Runtime) : m3ret_t {
+    let operand = slot_i64(rt)
+    rt.r0 = u64(i64(i32(operand)))
+    return nextOpDirect(rt)
+}
+
+
+// C: d_m3TruncMacro (i32 / u32 / i64 / u64 Trunc from f32 / f64) through
+// OP_I32_TRUNC_F32 ... OP_U64_TRUNC_F64 of m3_math_utils, which trap
+// (m3Err_trapIntegerConversion on a NaN, m3Err_trapIntegerOverflow outside
+// C's range constants) instead of storing a result; the _s_r / _s_s forms
+// read the destination slot (C: slot_ptr (TYPE)) before the conversion.
+// Eden (as upstream): the helper returns the M3Result and fills RES; the
+// trap is raised here with newTrap; the destination slot is its index
+// (slot_index) written with set_stack_T; the register stores follow the
+// part-2 conventions (an i32 sign-extended, a u32 zero-extended, 64 bits
+// as they are).
+
+
+def public op_i32_Trunc_f32_r_r(var rt : M3Runtime) : m3ret_t {
+    var RES : i32
+    let result = OP_I32_TRUNC_F32(RES, f32(rt.fp0))
+    if (m3ResultIsError(result)) {
+        return newTrap(rt, result)
+    }
+    rt.r0 = u64(i64(RES))
+    return nextOpDirect(rt)
+}
+
+
+def public op_i32_Trunc_f32_r_s(var rt : M3Runtime) : m3ret_t {
+    let source = slot_f32(rt)
+    var RES : i32
+    let result = OP_I32_TRUNC_F32(RES, source)
+    if (m3ResultIsError(result)) {
+        return newTrap(rt, result)
+    }
+    rt.r0 = u64(i64(RES))
+    return nextOpDirect(rt)
+}
+
+
+def public op_i32_Trunc_f32_s_r(var rt : M3Runtime) : m3ret_t {
+    let dest = slot_index(rt)
+    var RES : i32
+    let result = OP_I32_TRUNC_F32(RES, f32(rt.fp0))
+    if (m3ResultIsError(result)) {
+        return newTrap(rt, result)
+    }
+    set_stack_i32(rt, dest, RES)
+    return nextOpDirect(rt)
+}
+
+
+def public op_i32_Trunc_f32_s_s(var rt : M3Runtime) : m3ret_t {
+    let source = slot_f32(rt)
+    let dest = slot_index(rt)
+    var RES : i32
+    let result = OP_I32_TRUNC_F32(RES, source)
+    if (m3ResultIsError(result)) {
+        return newTrap(rt, result)
+    }
+    set_stack_i32(rt, dest, RES)
+    return nextOpDirect(rt)
+}
+
+
+def public op_u32_Trunc_f32_r_r(var rt : M3Runtime) : m3ret_t {
+    var RES : u32
+    let result = OP_U32_TRUNC_F32(RES, f32(rt.fp0))
+    if (m3ResultIsError(result)) {
+        return newTrap(rt, result)
+    }
+    rt.r0 = u64(RES)
+    return nextOpDirect(rt)
+}
+
+
+def public op_u32_Trunc_f32_r_s(var rt : M3Runtime) : m3ret_t {
+    let source = slot_f32(rt)
+    var RES : u32
+    let result = OP_U32_TRUNC_F32(RES, source)
+    if (m3ResultIsError(result)) {
+        return newTrap(rt, result)
+    }
+    rt.r0 = u64(RES)
+    return nextOpDirect(rt)
+}
+
+
+def public op_u32_Trunc_f32_s_r(var rt : M3Runtime) : m3ret_t {
+    let dest = slot_index(rt)
+    var RES : u32
+    let result = OP_U32_TRUNC_F32(RES, f32(rt.fp0))
+    if (m3ResultIsError(result)) {
+        return newTrap(rt, result)
+    }
+    set_stack_u32(rt, dest, RES)
+    return nextOpDirect(rt)
+}
+
+
+def public op_u32_Trunc_f32_s_s(var rt : M3Runtime) : m3ret_t {
+    let source = slot_f32(rt)
+    let dest = slot_index(rt)
+    var RES : u32
+    let result = OP_U32_TRUNC_F32(RES, source)
+    if (m3ResultIsError(result)) {
+        return newTrap(rt, result)
+    }
+    set_stack_u32(rt, dest, RES)
+    return nextOpDirect(rt)
+}
+
+
+def public op_i32_Trunc_f64_r_r(var rt : M3Runtime) : m3ret_t {
+    var RES : i32
+    let result = OP_I32_TRUNC_F64(RES, rt.fp0)
+    if (m3ResultIsError(result)) {
+        return newTrap(rt, result)
+    }
+    rt.r0 = u64(i64(RES))
+    return nextOpDirect(rt)
+}
+
+
+def public op_i32_Trunc_f64_r_s(var rt : M3Runtime) : m3ret_t {
+    let source = slot_f64(rt)
+    var RES : i32
+    let result = OP_I32_TRUNC_F64(RES, source)
+    if (m3ResultIsError(result)) {
+        return newTrap(rt, result)
+    }
+    rt.r0 = u64(i64(RES))
+    return nextOpDirect(rt)
+}
+
+
+def public op_i32_Trunc_f64_s_r(var rt : M3Runtime) : m3ret_t {
+    let dest = slot_index(rt)
+    var RES : i32
+    let result = OP_I32_TRUNC_F64(RES, rt.fp0)
+    if (m3ResultIsError(result)) {
+        return newTrap(rt, result)
+    }
+    set_stack_i32(rt, dest, RES)
+    return nextOpDirect(rt)
+}
+
+
+def public op_i32_Trunc_f64_s_s(var rt : M3Runtime) : m3ret_t {
+    let source = slot_f64(rt)
+    let dest = slot_index(rt)
+    var RES : i32
+    let result = OP_I32_TRUNC_F64(RES, source)
+    if (m3ResultIsError(result)) {
+        return newTrap(rt, result)
+    }
+    set_stack_i32(rt, dest, RES)
+    return nextOpDirect(rt)
+}
+
+
+def public op_u32_Trunc_f64_r_r(var rt : M3Runtime) : m3ret_t {
+    var RES : u32
+    let result = OP_U32_TRUNC_F64(RES, rt.fp0)
+    if (m3ResultIsError(result)) {
+        return newTrap(rt, result)
+    }
+    rt.r0 = u64(RES)
+    return nextOpDirect(rt)
+}
+
+
+def public op_u32_Trunc_f64_r_s(var rt : M3Runtime) : m3ret_t {
+    let source = slot_f64(rt)
+    var RES : u32
+    let result = OP_U32_TRUNC_F64(RES, source)
+    if (m3ResultIsError(result)) {
+        return newTrap(rt, result)
+    }
+    rt.r0 = u64(RES)
+    return nextOpDirect(rt)
+}
+
+
+def public op_u32_Trunc_f64_s_r(var rt : M3Runtime) : m3ret_t {
+    let dest = slot_index(rt)
+    var RES : u32
+    let result = OP_U32_TRUNC_F64(RES, rt.fp0)
+    if (m3ResultIsError(result)) {
+        return newTrap(rt, result)
+    }
+    set_stack_u32(rt, dest, RES)
+    return nextOpDirect(rt)
+}
+
+
+def public op_u32_Trunc_f64_s_s(var rt : M3Runtime) : m3ret_t {
+    let source = slot_f64(rt)
+    let dest = slot_index(rt)
+    var RES : u32
+    let result = OP_U32_TRUNC_F64(RES, source)
+    if (m3ResultIsError(result)) {
+        return newTrap(rt, result)
+    }
+    set_stack_u32(rt, dest, RES)
+    return nextOpDirect(rt)
+}
+
+
+def public op_i64_Trunc_f32_r_r(var rt : M3Runtime) : m3ret_t {
+    var RES : i64
+    let result = OP_I64_TRUNC_F32(RES, f32(rt.fp0))
+    if (m3ResultIsError(result)) {
+        return newTrap(rt, result)
+    }
+    rt.r0 = u64(RES)
+    return nextOpDirect(rt)
+}
+
+
+def public op_i64_Trunc_f32_r_s(var rt : M3Runtime) : m3ret_t {
+    let source = slot_f32(rt)
+    var RES : i64
+    let result = OP_I64_TRUNC_F32(RES, source)
+    if (m3ResultIsError(result)) {
+        return newTrap(rt, result)
+    }
+    rt.r0 = u64(RES)
+    return nextOpDirect(rt)
+}
+
+
+def public op_i64_Trunc_f32_s_r(var rt : M3Runtime) : m3ret_t {
+    let dest = slot_index(rt)
+    var RES : i64
+    let result = OP_I64_TRUNC_F32(RES, f32(rt.fp0))
+    if (m3ResultIsError(result)) {
+        return newTrap(rt, result)
+    }
+    set_stack_i64(rt, dest, RES)
+    return nextOpDirect(rt)
+}
+
+
+def public op_i64_Trunc_f32_s_s(var rt : M3Runtime) : m3ret_t {
+    let source = slot_f32(rt)
+    let dest = slot_index(rt)
+    var RES : i64
+    let result = OP_I64_TRUNC_F32(RES, source)
+    if (m3ResultIsError(result)) {
+        return newTrap(rt, result)
+    }
+    set_stack_i64(rt, dest, RES)
+    return nextOpDirect(rt)
+}
+
+
+def public op_u64_Trunc_f32_r_r(var rt : M3Runtime) : m3ret_t {
+    var RES : u64
+    let result = OP_U64_TRUNC_F32(RES, f32(rt.fp0))
+    if (m3ResultIsError(result)) {
+        return newTrap(rt, result)
+    }
+    rt.r0 = RES
+    return nextOpDirect(rt)
+}
+
+
+def public op_u64_Trunc_f32_r_s(var rt : M3Runtime) : m3ret_t {
+    let source = slot_f32(rt)
+    var RES : u64
+    let result = OP_U64_TRUNC_F32(RES, source)
+    if (m3ResultIsError(result)) {
+        return newTrap(rt, result)
+    }
+    rt.r0 = RES
+    return nextOpDirect(rt)
+}
+
+
+def public op_u64_Trunc_f32_s_r(var rt : M3Runtime) : m3ret_t {
+    let dest = slot_index(rt)
+    var RES : u64
+    let result = OP_U64_TRUNC_F32(RES, f32(rt.fp0))
+    if (m3ResultIsError(result)) {
+        return newTrap(rt, result)
+    }
+    set_stack_u64(rt, dest, RES)
+    return nextOpDirect(rt)
+}
+
+
+def public op_u64_Trunc_f32_s_s(var rt : M3Runtime) : m3ret_t {
+    let source = slot_f32(rt)
+    let dest = slot_index(rt)
+    var RES : u64
+    let result = OP_U64_TRUNC_F32(RES, source)
+    if (m3ResultIsError(result)) {
+        return newTrap(rt, result)
+    }
+    set_stack_u64(rt, dest, RES)
+    return nextOpDirect(rt)
+}
+
+
+def public op_i64_Trunc_f64_r_r(var rt : M3Runtime) : m3ret_t {
+    var RES : i64
+    let result = OP_I64_TRUNC_F64(RES, rt.fp0)
+    if (m3ResultIsError(result)) {
+        return newTrap(rt, result)
+    }
+    rt.r0 = u64(RES)
+    return nextOpDirect(rt)
+}
+
+
+def public op_i64_Trunc_f64_r_s(var rt : M3Runtime) : m3ret_t {
+    let source = slot_f64(rt)
+    var RES : i64
+    let result = OP_I64_TRUNC_F64(RES, source)
+    if (m3ResultIsError(result)) {
+        return newTrap(rt, result)
+    }
+    rt.r0 = u64(RES)
+    return nextOpDirect(rt)
+}
+
+
+def public op_i64_Trunc_f64_s_r(var rt : M3Runtime) : m3ret_t {
+    let dest = slot_index(rt)
+    var RES : i64
+    let result = OP_I64_TRUNC_F64(RES, rt.fp0)
+    if (m3ResultIsError(result)) {
+        return newTrap(rt, result)
+    }
+    set_stack_i64(rt, dest, RES)
+    return nextOpDirect(rt)
+}
+
+
+def public op_i64_Trunc_f64_s_s(var rt : M3Runtime) : m3ret_t {
+    let source = slot_f64(rt)
+    let dest = slot_index(rt)
+    var RES : i64
+    let result = OP_I64_TRUNC_F64(RES, source)
+    if (m3ResultIsError(result)) {
+        return newTrap(rt, result)
+    }
+    set_stack_i64(rt, dest, RES)
+    return nextOpDirect(rt)
+}
+
+
+def public op_u64_Trunc_f64_r_r(var rt : M3Runtime) : m3ret_t {
+    var RES : u64
+    let result = OP_U64_TRUNC_F64(RES, rt.fp0)
+    if (m3ResultIsError(result)) {
+        return newTrap(rt, result)
+    }
+    rt.r0 = RES
+    return nextOpDirect(rt)
+}
+
+
+def public op_u64_Trunc_f64_r_s(var rt : M3Runtime) : m3ret_t {
+    let source = slot_f64(rt)
+    var RES : u64
+    let result = OP_U64_TRUNC_F64(RES, source)
+    if (m3ResultIsError(result)) {
+        return newTrap(rt, result)
+    }
+    rt.r0 = RES
+    return nextOpDirect(rt)
+}
+
+
+def public op_u64_Trunc_f64_s_r(var rt : M3Runtime) : m3ret_t {
+    let dest = slot_index(rt)
+    var RES : u64
+    let result = OP_U64_TRUNC_F64(RES, rt.fp0)
+    if (m3ResultIsError(result)) {
+        return newTrap(rt, result)
+    }
+    set_stack_u64(rt, dest, RES)
+    return nextOpDirect(rt)
+}
+
+
+def public op_u64_Trunc_f64_s_s(var rt : M3Runtime) : m3ret_t {
+    let source = slot_f64(rt)
+    let dest = slot_index(rt)
+    var RES : u64
+    let result = OP_U64_TRUNC_F64(RES, source)
+    if (m3ResultIsError(result)) {
+        return newTrap(rt, result)
+    }
+    set_stack_u64(rt, dest, RES)
+    return nextOpDirect(rt)
+}
+
+
+// C: d_m3TruncMacro (i32 / u32 / i64 / u64 TruncSat from f32 / f64) through
+// OP_I32_TRUNC_SAT_F32 ... OP_U64_TRUNC_SAT_F64 of m3_math_utils (a NaN
+// gives 0, the range ends saturate to the type's limits; no trap). Eden:
+// the same shapes as the trapping family above, without the result check.
+
+
+def public op_i32_TruncSat_f32_r_r(var rt : M3Runtime) : m3ret_t {
+    var RES : i32
+    OP_I32_TRUNC_SAT_F32(RES, f32(rt.fp0))
+    rt.r0 = u64(i64(RES))
+    return nextOpDirect(rt)
+}
+
+
+def public op_i32_TruncSat_f32_r_s(var rt : M3Runtime) : m3ret_t {
+    let source = slot_f32(rt)
+    var RES : i32
+    OP_I32_TRUNC_SAT_F32(RES, source)
+    rt.r0 = u64(i64(RES))
+    return nextOpDirect(rt)
+}
+
+
+def public op_i32_TruncSat_f32_s_r(var rt : M3Runtime) : m3ret_t {
+    let dest = slot_index(rt)
+    var RES : i32
+    OP_I32_TRUNC_SAT_F32(RES, f32(rt.fp0))
+    set_stack_i32(rt, dest, RES)
+    return nextOpDirect(rt)
+}
+
+
+def public op_i32_TruncSat_f32_s_s(var rt : M3Runtime) : m3ret_t {
+    let source = slot_f32(rt)
+    let dest = slot_index(rt)
+    var RES : i32
+    OP_I32_TRUNC_SAT_F32(RES, source)
+    set_stack_i32(rt, dest, RES)
+    return nextOpDirect(rt)
+}
+
+
+def public op_u32_TruncSat_f32_r_r(var rt : M3Runtime) : m3ret_t {
+    var RES : u32
+    OP_U32_TRUNC_SAT_F32(RES, f32(rt.fp0))
+    rt.r0 = u64(RES)
+    return nextOpDirect(rt)
+}
+
+
+def public op_u32_TruncSat_f32_r_s(var rt : M3Runtime) : m3ret_t {
+    let source = slot_f32(rt)
+    var RES : u32
+    OP_U32_TRUNC_SAT_F32(RES, source)
+    rt.r0 = u64(RES)
+    return nextOpDirect(rt)
+}
+
+
+def public op_u32_TruncSat_f32_s_r(var rt : M3Runtime) : m3ret_t {
+    let dest = slot_index(rt)
+    var RES : u32
+    OP_U32_TRUNC_SAT_F32(RES, f32(rt.fp0))
+    set_stack_u32(rt, dest, RES)
+    return nextOpDirect(rt)
+}
+
+
+def public op_u32_TruncSat_f32_s_s(var rt : M3Runtime) : m3ret_t {
+    let source = slot_f32(rt)
+    let dest = slot_index(rt)
+    var RES : u32
+    OP_U32_TRUNC_SAT_F32(RES, source)
+    set_stack_u32(rt, dest, RES)
+    return nextOpDirect(rt)
+}
+
+
+def public op_i32_TruncSat_f64_r_r(var rt : M3Runtime) : m3ret_t {
+    var RES : i32
+    OP_I32_TRUNC_SAT_F64(RES, rt.fp0)
+    rt.r0 = u64(i64(RES))
+    return nextOpDirect(rt)
+}
+
+
+def public op_i32_TruncSat_f64_r_s(var rt : M3Runtime) : m3ret_t {
+    let source = slot_f64(rt)
+    var RES : i32
+    OP_I32_TRUNC_SAT_F64(RES, source)
+    rt.r0 = u64(i64(RES))
+    return nextOpDirect(rt)
+}
+
+
+def public op_i32_TruncSat_f64_s_r(var rt : M3Runtime) : m3ret_t {
+    let dest = slot_index(rt)
+    var RES : i32
+    OP_I32_TRUNC_SAT_F64(RES, rt.fp0)
+    set_stack_i32(rt, dest, RES)
+    return nextOpDirect(rt)
+}
+
+
+def public op_i32_TruncSat_f64_s_s(var rt : M3Runtime) : m3ret_t {
+    let source = slot_f64(rt)
+    let dest = slot_index(rt)
+    var RES : i32
+    OP_I32_TRUNC_SAT_F64(RES, source)
+    set_stack_i32(rt, dest, RES)
+    return nextOpDirect(rt)
+}
+
+
+def public op_u32_TruncSat_f64_r_r(var rt : M3Runtime) : m3ret_t {
+    var RES : u32
+    OP_U32_TRUNC_SAT_F64(RES, rt.fp0)
+    rt.r0 = u64(RES)
+    return nextOpDirect(rt)
+}
+
+
+def public op_u32_TruncSat_f64_r_s(var rt : M3Runtime) : m3ret_t {
+    let source = slot_f64(rt)
+    var RES : u32
+    OP_U32_TRUNC_SAT_F64(RES, source)
+    rt.r0 = u64(RES)
+    return nextOpDirect(rt)
+}
+
+
+def public op_u32_TruncSat_f64_s_r(var rt : M3Runtime) : m3ret_t {
+    let dest = slot_index(rt)
+    var RES : u32
+    OP_U32_TRUNC_SAT_F64(RES, rt.fp0)
+    set_stack_u32(rt, dest, RES)
+    return nextOpDirect(rt)
+}
+
+
+def public op_u32_TruncSat_f64_s_s(var rt : M3Runtime) : m3ret_t {
+    let source = slot_f64(rt)
+    let dest = slot_index(rt)
+    var RES : u32
+    OP_U32_TRUNC_SAT_F64(RES, source)
+    set_stack_u32(rt, dest, RES)
+    return nextOpDirect(rt)
+}
+
+
+def public op_i64_TruncSat_f32_r_r(var rt : M3Runtime) : m3ret_t {
+    var RES : i64
+    OP_I64_TRUNC_SAT_F32(RES, f32(rt.fp0))
+    rt.r0 = u64(RES)
+    return nextOpDirect(rt)
+}
+
+
+def public op_i64_TruncSat_f32_r_s(var rt : M3Runtime) : m3ret_t {
+    let source = slot_f32(rt)
+    var RES : i64
+    OP_I64_TRUNC_SAT_F32(RES, source)
+    rt.r0 = u64(RES)
+    return nextOpDirect(rt)
+}
+
+
+def public op_i64_TruncSat_f32_s_r(var rt : M3Runtime) : m3ret_t {
+    let dest = slot_index(rt)
+    var RES : i64
+    OP_I64_TRUNC_SAT_F32(RES, f32(rt.fp0))
+    set_stack_i64(rt, dest, RES)
+    return nextOpDirect(rt)
+}
+
+
+def public op_i64_TruncSat_f32_s_s(var rt : M3Runtime) : m3ret_t {
+    let source = slot_f32(rt)
+    let dest = slot_index(rt)
+    var RES : i64
+    OP_I64_TRUNC_SAT_F32(RES, source)
+    set_stack_i64(rt, dest, RES)
+    return nextOpDirect(rt)
+}
+
+
+def public op_u64_TruncSat_f32_r_r(var rt : M3Runtime) : m3ret_t {
+    var RES : u64
+    OP_U64_TRUNC_SAT_F32(RES, f32(rt.fp0))
+    rt.r0 = RES
+    return nextOpDirect(rt)
+}
+
+
+def public op_u64_TruncSat_f32_r_s(var rt : M3Runtime) : m3ret_t {
+    let source = slot_f32(rt)
+    var RES : u64
+    OP_U64_TRUNC_SAT_F32(RES, source)
+    rt.r0 = RES
+    return nextOpDirect(rt)
+}
+
+
+def public op_u64_TruncSat_f32_s_r(var rt : M3Runtime) : m3ret_t {
+    let dest = slot_index(rt)
+    var RES : u64
+    OP_U64_TRUNC_SAT_F32(RES, f32(rt.fp0))
+    set_stack_u64(rt, dest, RES)
+    return nextOpDirect(rt)
+}
+
+
+def public op_u64_TruncSat_f32_s_s(var rt : M3Runtime) : m3ret_t {
+    let source = slot_f32(rt)
+    let dest = slot_index(rt)
+    var RES : u64
+    OP_U64_TRUNC_SAT_F32(RES, source)
+    set_stack_u64(rt, dest, RES)
+    return nextOpDirect(rt)
+}
+
+
+def public op_i64_TruncSat_f64_r_r(var rt : M3Runtime) : m3ret_t {
+    var RES : i64
+    OP_I64_TRUNC_SAT_F64(RES, rt.fp0)
+    rt.r0 = u64(RES)
+    return nextOpDirect(rt)
+}
+
+
+def public op_i64_TruncSat_f64_r_s(var rt : M3Runtime) : m3ret_t {
+    let source = slot_f64(rt)
+    var RES : i64
+    OP_I64_TRUNC_SAT_F64(RES, source)
+    rt.r0 = u64(RES)
+    return nextOpDirect(rt)
+}
+
+
+def public op_i64_TruncSat_f64_s_r(var rt : M3Runtime) : m3ret_t {
+    let dest = slot_index(rt)
+    var RES : i64
+    OP_I64_TRUNC_SAT_F64(RES, rt.fp0)
+    set_stack_i64(rt, dest, RES)
+    return nextOpDirect(rt)
+}
+
+
+def public op_i64_TruncSat_f64_s_s(var rt : M3Runtime) : m3ret_t {
+    let source = slot_f64(rt)
+    let dest = slot_index(rt)
+    var RES : i64
+    OP_I64_TRUNC_SAT_F64(RES, source)
+    set_stack_i64(rt, dest, RES)
+    return nextOpDirect(rt)
+}
+
+
+def public op_u64_TruncSat_f64_r_r(var rt : M3Runtime) : m3ret_t {
+    var RES : u64
+    OP_U64_TRUNC_SAT_F64(RES, rt.fp0)
+    rt.r0 = RES
+    return nextOpDirect(rt)
+}
+
+
+def public op_u64_TruncSat_f64_r_s(var rt : M3Runtime) : m3ret_t {
+    let source = slot_f64(rt)
+    var RES : u64
+    OP_U64_TRUNC_SAT_F64(RES, source)
+    rt.r0 = RES
+    return nextOpDirect(rt)
+}
+
+
+def public op_u64_TruncSat_f64_s_r(var rt : M3Runtime) : m3ret_t {
+    let dest = slot_index(rt)
+    var RES : u64
+    OP_U64_TRUNC_SAT_F64(RES, rt.fp0)
+    set_stack_u64(rt, dest, RES)
+    return nextOpDirect(rt)
+}
+
+
+def public op_u64_TruncSat_f64_s_s(var rt : M3Runtime) : m3ret_t {
+    let source = slot_f64(rt)
+    let dest = slot_index(rt)
+    var RES : u64
+    OP_U64_TRUNC_SAT_F64(RES, source)
+    set_stack_u64(rt, dest, RES)
+    return nextOpDirect(rt)
+}
+
+
+// C: d_m3TypeModifyOp (i64 Extend from i32 / u32, f32 Demote from f64, f64
+// Promote from f32: `REG_TO = (TO) ((FROM) REG_FROM)`, the _s form from
+// `slot (FROM)`) and d_m3TypeConvertOp (f32 / f64 Convert from i32 / u32 /
+// i64 / u64: the same cast into the register, the _s_r / _s_s forms into
+// `slot (TO)`). Eden: daslang's numeric casts, measured on 0.6.3 and 0.6.4
+// to be C's (u64 -> f32 / f64 correctly rounded above the top bit as well,
+// i64 -> f32 ties to even, f64 -> f32 keeps a NaN's high payload bits and
+// overflows to inf like the hardware conversion); the register stores
+// follow the part-2 conventions, an f32 widened into rt.fp0.
+
+
+def public op_i64_Extend_i32_r(var rt : M3Runtime) : m3ret_t {
+    rt.r0 = u64(i64(i32(u32(rt.r0))))   // C: _r0 = (i64) ((i32) _r0)
+    return nextOpDirect(rt)
+}
+
+
+def public op_i64_Extend_i32_s(var rt : M3Runtime) : m3ret_t {
+    let from = slot_i32(rt)
+    rt.r0 = u64(i64(from))
+    return nextOpDirect(rt)
+}
+
+
+def public op_i64_Extend_u32_r(var rt : M3Runtime) : m3ret_t {
+    rt.r0 = u64(u32(rt.r0))   // C: _r0 = (i64) ((u32) _r0)
+    return nextOpDirect(rt)
+}
+
+
+def public op_i64_Extend_u32_s(var rt : M3Runtime) : m3ret_t {
+    let from = slot_u32(rt)
+    rt.r0 = u64(from)
+    return nextOpDirect(rt)
+}
+
+
+def public op_f32_Demote_f64_r(var rt : M3Runtime) : m3ret_t {
+    rt.fp0 = f64(f32(rt.fp0))   // C: _fp0 = (f32) ((f64) _fp0)
+    return nextOpDirect(rt)
+}
+
+
+def public op_f32_Demote_f64_s(var rt : M3Runtime) : m3ret_t {
+    let from = slot_f64(rt)
+    rt.fp0 = f64(f32(from))
+    return nextOpDirect(rt)
+}
+
+
+def public op_f64_Promote_f32_r(var rt : M3Runtime) : m3ret_t {
+    rt.fp0 = f64(f32(rt.fp0))   // C: _fp0 = (f64) ((f32) _fp0)
+    return nextOpDirect(rt)
+}
+
+
+def public op_f64_Promote_f32_s(var rt : M3Runtime) : m3ret_t {
+    let from = slot_f32(rt)
+    rt.fp0 = f64(from)
+    return nextOpDirect(rt)
+}
+
+
+def public op_f32_Convert_i32_r_r(var rt : M3Runtime) : m3ret_t {
+    rt.fp0 = f64(f32(i32(u32(rt.r0))))   // C: _fp0 = (f32) ((i32) _r0)
+    return nextOpDirect(rt)
+}
+
+
+def public op_f32_Convert_i32_s_r(var rt : M3Runtime) : m3ret_t {
+    set_slot_f32(rt, f32(i32(u32(rt.r0))))   // C: slot (f32) = (f32) ((i32) _r0)
+    return nextOpDirect(rt)
+}
+
+
+def public op_f32_Convert_i32_r_s(var rt : M3Runtime) : m3ret_t {
+    let from = slot_i32(rt)
+    rt.fp0 = f64(f32(from))
+    return nextOpDirect(rt)
+}
+
+
+def public op_f32_Convert_i32_s_s(var rt : M3Runtime) : m3ret_t {
+    let from = slot_i32(rt)
+    set_slot_f32(rt, f32(from))
+    return nextOpDirect(rt)
+}
+
+
+def public op_f32_Convert_u32_r_r(var rt : M3Runtime) : m3ret_t {
+    rt.fp0 = f64(f32(u32(rt.r0)))   // C: _fp0 = (f32) ((u32) _r0)
+    return nextOpDirect(rt)
+}
+
+
+def public op_f32_Convert_u32_s_r(var rt : M3Runtime) : m3ret_t {
+    set_slot_f32(rt, f32(u32(rt.r0)))
+    return nextOpDirect(rt)
+}
+
+
+def public op_f32_Convert_u32_r_s(var rt : M3Runtime) : m3ret_t {
+    let from = slot_u32(rt)
+    rt.fp0 = f64(f32(from))
+    return nextOpDirect(rt)
+}
+
+
+def public op_f32_Convert_u32_s_s(var rt : M3Runtime) : m3ret_t {
+    let from = slot_u32(rt)
+    set_slot_f32(rt, f32(from))
+    return nextOpDirect(rt)
+}
+
+
+def public op_f32_Convert_i64_r_r(var rt : M3Runtime) : m3ret_t {
+    rt.fp0 = f64(f32(i64(rt.r0)))   // C: _fp0 = (f32) ((i64) _r0)
+    return nextOpDirect(rt)
+}
+
+
+def public op_f32_Convert_i64_s_r(var rt : M3Runtime) : m3ret_t {
+    set_slot_f32(rt, f32(i64(rt.r0)))
+    return nextOpDirect(rt)
+}
+
+
+def public op_f32_Convert_i64_r_s(var rt : M3Runtime) : m3ret_t {
+    let from = slot_i64(rt)
+    rt.fp0 = f64(f32(from))
+    return nextOpDirect(rt)
+}
+
+
+def public op_f32_Convert_i64_s_s(var rt : M3Runtime) : m3ret_t {
+    let from = slot_i64(rt)
+    set_slot_f32(rt, f32(from))
+    return nextOpDirect(rt)
+}
+
+
+def public op_f32_Convert_u64_r_r(var rt : M3Runtime) : m3ret_t {
+    rt.fp0 = f64(f32(rt.r0))   // C: _fp0 = (f32) ((u64) _r0)
+    return nextOpDirect(rt)
+}
+
+
+def public op_f32_Convert_u64_s_r(var rt : M3Runtime) : m3ret_t {
+    set_slot_f32(rt, f32(rt.r0))
+    return nextOpDirect(rt)
+}
+
+
+def public op_f32_Convert_u64_r_s(var rt : M3Runtime) : m3ret_t {
+    let from = slot_u64(rt)
+    rt.fp0 = f64(f32(from))
+    return nextOpDirect(rt)
+}
+
+
+def public op_f32_Convert_u64_s_s(var rt : M3Runtime) : m3ret_t {
+    let from = slot_u64(rt)
+    set_slot_f32(rt, f32(from))
+    return nextOpDirect(rt)
+}
+
+
+def public op_f64_Convert_i32_r_r(var rt : M3Runtime) : m3ret_t {
+    rt.fp0 = f64(i32(u32(rt.r0)))   // C: _fp0 = (f64) ((i32) _r0)
+    return nextOpDirect(rt)
+}
+
+
+def public op_f64_Convert_i32_s_r(var rt : M3Runtime) : m3ret_t {
+    set_slot_f64(rt, f64(i32(u32(rt.r0))))   // C: slot (f64) = (f64) ((i32) _r0)
+    return nextOpDirect(rt)
+}
+
+
+def public op_f64_Convert_i32_r_s(var rt : M3Runtime) : m3ret_t {
+    let from = slot_i32(rt)
+    rt.fp0 = f64(from)
+    return nextOpDirect(rt)
+}
+
+
+def public op_f64_Convert_i32_s_s(var rt : M3Runtime) : m3ret_t {
+    let from = slot_i32(rt)
+    set_slot_f64(rt, f64(from))
+    return nextOpDirect(rt)
+}
+
+
+def public op_f64_Convert_u32_r_r(var rt : M3Runtime) : m3ret_t {
+    rt.fp0 = f64(u32(rt.r0))   // C: _fp0 = (f64) ((u32) _r0)
+    return nextOpDirect(rt)
+}
+
+
+def public op_f64_Convert_u32_s_r(var rt : M3Runtime) : m3ret_t {
+    set_slot_f64(rt, f64(u32(rt.r0)))
+    return nextOpDirect(rt)
+}
+
+
+def public op_f64_Convert_u32_r_s(var rt : M3Runtime) : m3ret_t {
+    let from = slot_u32(rt)
+    rt.fp0 = f64(from)
+    return nextOpDirect(rt)
+}
+
+
+def public op_f64_Convert_u32_s_s(var rt : M3Runtime) : m3ret_t {
+    let from = slot_u32(rt)
+    set_slot_f64(rt, f64(from))
+    return nextOpDirect(rt)
+}
+
+
+def public op_f64_Convert_i64_r_r(var rt : M3Runtime) : m3ret_t {
+    rt.fp0 = f64(i64(rt.r0))   // C: _fp0 = (f64) ((i64) _r0)
+    return nextOpDirect(rt)
+}
+
+
+def public op_f64_Convert_i64_s_r(var rt : M3Runtime) : m3ret_t {
+    set_slot_f64(rt, f64(i64(rt.r0)))
+    return nextOpDirect(rt)
+}
+
+
+def public op_f64_Convert_i64_r_s(var rt : M3Runtime) : m3ret_t {
+    let from = slot_i64(rt)
+    rt.fp0 = f64(from)
+    return nextOpDirect(rt)
+}
+
+
+def public op_f64_Convert_i64_s_s(var rt : M3Runtime) : m3ret_t {
+    let from = slot_i64(rt)
+    set_slot_f64(rt, f64(from))
+    return nextOpDirect(rt)
+}
+
+
+def public op_f64_Convert_u64_r_r(var rt : M3Runtime) : m3ret_t {
+    rt.fp0 = f64(rt.r0)   // C: _fp0 = (f64) ((u64) _r0)
+    return nextOpDirect(rt)
+}
+
+
+def public op_f64_Convert_u64_s_r(var rt : M3Runtime) : m3ret_t {
+    set_slot_f64(rt, f64(rt.r0))
+    return nextOpDirect(rt)
+}
+
+
+def public op_f64_Convert_u64_r_s(var rt : M3Runtime) : m3ret_t {
+    let from = slot_u64(rt)
+    rt.fp0 = f64(from)
+    return nextOpDirect(rt)
+}
+
+
+def public op_f64_Convert_u64_s_s(var rt : M3Runtime) : m3ret_t {
+    let from = slot_u64(rt)
+    set_slot_f64(rt, f64(from))
+    return nextOpDirect(rt)
+}
+
+
+// C: d_m3ReinterpretOp (i32 <- f32, i64 <- f64 into _r0; f32 <- i32, f64 <-
+// i64 into _fp0) through a union of the two types (`u.c = (FROM) SRC;
+// REG = u.t`, the _s forms through `slot (FROM)` / `slot (TO)`). Eden: the
+// bit casts of daslib/math_bits (float_bits_to_int / int_bits_to_float,
+// double_bits_to_uint64 / uint64_bits_to_double and their signed forms),
+// bit-exact, a NaN payload kept; an i32 pattern is sign-extended into rt.r0
+// as C's i64 register takes the union's i32 member, an f32 pattern widened
+// into rt.fp0 (C: the f64 register holds the f32).
+
+
+def public op_i32_Reinterpret_f32_r_r(var rt : M3Runtime) : m3ret_t {
+    rt.r0 = u64(i64(float_bits_to_int(f32(rt.fp0))))   // C: u.c = (f32) _fp0; _r0 = u.t
+    return nextOpDirect(rt)
+}
+
+
+def public op_i32_Reinterpret_f32_r_s(var rt : M3Runtime) : m3ret_t {
+    let source = slot_f32(rt)
+    rt.r0 = u64(i64(float_bits_to_int(source)))
+    return nextOpDirect(rt)
+}
+
+
+def public op_i32_Reinterpret_f32_s_r(var rt : M3Runtime) : m3ret_t {
+    set_slot_i32(rt, float_bits_to_int(f32(rt.fp0)))   // C: slot (i32) = u.t
+    return nextOpDirect(rt)
+}
+
+
+def public op_i32_Reinterpret_f32_s_s(var rt : M3Runtime) : m3ret_t {
+    let source = slot_f32(rt)
+    set_slot_i32(rt, float_bits_to_int(source))
+    return nextOpDirect(rt)
+}
+
+
+def public op_i64_Reinterpret_f64_r_r(var rt : M3Runtime) : m3ret_t {
+    rt.r0 = double_bits_to_uint64(rt.fp0)   // C: u.c = (f64) _fp0; _r0 = u.t
+    return nextOpDirect(rt)
+}
+
+
+def public op_i64_Reinterpret_f64_r_s(var rt : M3Runtime) : m3ret_t {
+    let source = slot_f64(rt)
+    rt.r0 = double_bits_to_uint64(source)
+    return nextOpDirect(rt)
+}
+
+
+def public op_i64_Reinterpret_f64_s_r(var rt : M3Runtime) : m3ret_t {
+    set_slot_i64(rt, double_bits_to_int64(rt.fp0))   // C: slot (i64) = u.t
+    return nextOpDirect(rt)
+}
+
+
+def public op_i64_Reinterpret_f64_s_s(var rt : M3Runtime) : m3ret_t {
+    let source = slot_f64(rt)
+    set_slot_i64(rt, double_bits_to_int64(source))
+    return nextOpDirect(rt)
+}
+
+
+def public op_f32_Reinterpret_i32_r_r(var rt : M3Runtime) : m3ret_t {
+    rt.fp0 = f64(int_bits_to_float(i32(u32(rt.r0))))   // C: u.c = (i32) _r0; _fp0 = u.t
+    return nextOpDirect(rt)
+}
+
+
+def public op_f32_Reinterpret_i32_r_s(var rt : M3Runtime) : m3ret_t {
+    let source = slot_i32(rt)
+    rt.fp0 = f64(int_bits_to_float(source))
+    return nextOpDirect(rt)
+}
+
+
+def public op_f32_Reinterpret_i32_s_r(var rt : M3Runtime) : m3ret_t {
+    set_slot_f32(rt, int_bits_to_float(i32(u32(rt.r0))))   // C: slot (f32) = u.t
+    return nextOpDirect(rt)
+}
+
+
+def public op_f32_Reinterpret_i32_s_s(var rt : M3Runtime) : m3ret_t {
+    let source = slot_i32(rt)
+    set_slot_f32(rt, int_bits_to_float(source))
+    return nextOpDirect(rt)
+}
+
+
+def public op_f64_Reinterpret_i64_r_r(var rt : M3Runtime) : m3ret_t {
+    rt.fp0 = uint64_bits_to_double(rt.r0)   // C: u.c = (i64) _r0; _fp0 = u.t
+    return nextOpDirect(rt)
+}
+
+
+def public op_f64_Reinterpret_i64_r_s(var rt : M3Runtime) : m3ret_t {
+    let source = slot_i64(rt)
+    rt.fp0 = int64_bits_to_double(source)
+    return nextOpDirect(rt)
+}
+
+
+def public op_f64_Reinterpret_i64_s_r(var rt : M3Runtime) : m3ret_t {
+    set_slot_f64(rt, uint64_bits_to_double(rt.r0))   // C: slot (f64) = u.t
+    return nextOpDirect(rt)
+}
+
+
+def public op_f64_Reinterpret_i64_s_s(var rt : M3Runtime) : m3ret_t {
+    let source = slot_i64(rt)
+    set_slot_f64(rt, int64_bits_to_double(source))
+    return nextOpDirect(rt)
+}
 
 
 def public op_GetGlobal_s32(var rt : M3Runtime) : m3ret_t {
@@ -4031,14 +5211,15 @@ def public op_i64_Store_i64_ss(var rt : M3Runtime) : m3ret_t {
 // order of the upstream file (op_NoOp first, then the families in file
 // order); the index is the registration order, and only consistency between
 // this table and the compiler's name lookups matters. Idempotent: a second
-// call rebuilds the same table. Later parts of the port append their
-// registrations at the PART 2 / PART 3 markers, in file order.
+// call rebuilds the same table. The three parts of the port register in
+// file order: op_NoOp, the part-2 families, the part-3 conversions, then
+// the part-1 operations from op_GetGlobal_s32 on.
 def public m3_build_op_table() {
     clear(g_ops)
     clear(g_opIndex)
     m3_register_op("op_NoOp", @@op_NoOp)
-    // PART 2: op_i32_Equal_rs ... op_u64_Popcnt_s (the compare, arithmetic,
-    // bit and float families, upstream lines 621 - 2282)
+    // op_i32_Equal_rs ... op_u64_Popcnt_s (the compare, arithmetic, bit and
+    // float families, upstream lines 621 - 2282)
     m3_register_op("op_i32_Equal_rs", @@op_i32_Equal_rs)
     m3_register_op("op_i32_Equal_ss", @@op_i32_Equal_ss)
     m3_register_op("op_i32_NotEqual_rs", @@op_i32_NotEqual_rs)
@@ -4289,8 +5470,140 @@ def public m3_build_op_table() {
     m3_register_op("op_u64_Ctz_s", @@op_u64_Ctz_s)
     m3_register_op("op_u64_Popcnt_r", @@op_u64_Popcnt_r)
     m3_register_op("op_u64_Popcnt_s", @@op_u64_Popcnt_s)
-    // PART 3: op_i32_Wrap_i64_r ... op_f64_Reinterpret_i64_s_s (the
-    // conversion families, upstream lines 2284 - 3220) register here
+    // op_i32_Wrap_i64_r ... op_f64_Reinterpret_i64_s_s (the conversion
+    // families, upstream lines 2284 - 3220)
+    m3_register_op("op_i32_Wrap_i64_r", @@op_i32_Wrap_i64_r)
+    m3_register_op("op_i32_Wrap_i64_s", @@op_i32_Wrap_i64_s)
+    m3_register_op("op_i32_Extend8_s_r", @@op_i32_Extend8_s_r)
+    m3_register_op("op_i32_Extend8_s_s", @@op_i32_Extend8_s_s)
+    m3_register_op("op_i32_Extend16_s_r", @@op_i32_Extend16_s_r)
+    m3_register_op("op_i32_Extend16_s_s", @@op_i32_Extend16_s_s)
+    m3_register_op("op_i64_Extend8_s_r", @@op_i64_Extend8_s_r)
+    m3_register_op("op_i64_Extend8_s_s", @@op_i64_Extend8_s_s)
+    m3_register_op("op_i64_Extend16_s_r", @@op_i64_Extend16_s_r)
+    m3_register_op("op_i64_Extend16_s_s", @@op_i64_Extend16_s_s)
+    m3_register_op("op_i64_Extend32_s_r", @@op_i64_Extend32_s_r)
+    m3_register_op("op_i64_Extend32_s_s", @@op_i64_Extend32_s_s)
+    m3_register_op("op_i32_Trunc_f32_r_r", @@op_i32_Trunc_f32_r_r)
+    m3_register_op("op_i32_Trunc_f32_r_s", @@op_i32_Trunc_f32_r_s)
+    m3_register_op("op_i32_Trunc_f32_s_r", @@op_i32_Trunc_f32_s_r)
+    m3_register_op("op_i32_Trunc_f32_s_s", @@op_i32_Trunc_f32_s_s)
+    m3_register_op("op_u32_Trunc_f32_r_r", @@op_u32_Trunc_f32_r_r)
+    m3_register_op("op_u32_Trunc_f32_r_s", @@op_u32_Trunc_f32_r_s)
+    m3_register_op("op_u32_Trunc_f32_s_r", @@op_u32_Trunc_f32_s_r)
+    m3_register_op("op_u32_Trunc_f32_s_s", @@op_u32_Trunc_f32_s_s)
+    m3_register_op("op_i32_Trunc_f64_r_r", @@op_i32_Trunc_f64_r_r)
+    m3_register_op("op_i32_Trunc_f64_r_s", @@op_i32_Trunc_f64_r_s)
+    m3_register_op("op_i32_Trunc_f64_s_r", @@op_i32_Trunc_f64_s_r)
+    m3_register_op("op_i32_Trunc_f64_s_s", @@op_i32_Trunc_f64_s_s)
+    m3_register_op("op_u32_Trunc_f64_r_r", @@op_u32_Trunc_f64_r_r)
+    m3_register_op("op_u32_Trunc_f64_r_s", @@op_u32_Trunc_f64_r_s)
+    m3_register_op("op_u32_Trunc_f64_s_r", @@op_u32_Trunc_f64_s_r)
+    m3_register_op("op_u32_Trunc_f64_s_s", @@op_u32_Trunc_f64_s_s)
+    m3_register_op("op_i64_Trunc_f32_r_r", @@op_i64_Trunc_f32_r_r)
+    m3_register_op("op_i64_Trunc_f32_r_s", @@op_i64_Trunc_f32_r_s)
+    m3_register_op("op_i64_Trunc_f32_s_r", @@op_i64_Trunc_f32_s_r)
+    m3_register_op("op_i64_Trunc_f32_s_s", @@op_i64_Trunc_f32_s_s)
+    m3_register_op("op_u64_Trunc_f32_r_r", @@op_u64_Trunc_f32_r_r)
+    m3_register_op("op_u64_Trunc_f32_r_s", @@op_u64_Trunc_f32_r_s)
+    m3_register_op("op_u64_Trunc_f32_s_r", @@op_u64_Trunc_f32_s_r)
+    m3_register_op("op_u64_Trunc_f32_s_s", @@op_u64_Trunc_f32_s_s)
+    m3_register_op("op_i64_Trunc_f64_r_r", @@op_i64_Trunc_f64_r_r)
+    m3_register_op("op_i64_Trunc_f64_r_s", @@op_i64_Trunc_f64_r_s)
+    m3_register_op("op_i64_Trunc_f64_s_r", @@op_i64_Trunc_f64_s_r)
+    m3_register_op("op_i64_Trunc_f64_s_s", @@op_i64_Trunc_f64_s_s)
+    m3_register_op("op_u64_Trunc_f64_r_r", @@op_u64_Trunc_f64_r_r)
+    m3_register_op("op_u64_Trunc_f64_r_s", @@op_u64_Trunc_f64_r_s)
+    m3_register_op("op_u64_Trunc_f64_s_r", @@op_u64_Trunc_f64_s_r)
+    m3_register_op("op_u64_Trunc_f64_s_s", @@op_u64_Trunc_f64_s_s)
+    m3_register_op("op_i32_TruncSat_f32_r_r", @@op_i32_TruncSat_f32_r_r)
+    m3_register_op("op_i32_TruncSat_f32_r_s", @@op_i32_TruncSat_f32_r_s)
+    m3_register_op("op_i32_TruncSat_f32_s_r", @@op_i32_TruncSat_f32_s_r)
+    m3_register_op("op_i32_TruncSat_f32_s_s", @@op_i32_TruncSat_f32_s_s)
+    m3_register_op("op_u32_TruncSat_f32_r_r", @@op_u32_TruncSat_f32_r_r)
+    m3_register_op("op_u32_TruncSat_f32_r_s", @@op_u32_TruncSat_f32_r_s)
+    m3_register_op("op_u32_TruncSat_f32_s_r", @@op_u32_TruncSat_f32_s_r)
+    m3_register_op("op_u32_TruncSat_f32_s_s", @@op_u32_TruncSat_f32_s_s)
+    m3_register_op("op_i32_TruncSat_f64_r_r", @@op_i32_TruncSat_f64_r_r)
+    m3_register_op("op_i32_TruncSat_f64_r_s", @@op_i32_TruncSat_f64_r_s)
+    m3_register_op("op_i32_TruncSat_f64_s_r", @@op_i32_TruncSat_f64_s_r)
+    m3_register_op("op_i32_TruncSat_f64_s_s", @@op_i32_TruncSat_f64_s_s)
+    m3_register_op("op_u32_TruncSat_f64_r_r", @@op_u32_TruncSat_f64_r_r)
+    m3_register_op("op_u32_TruncSat_f64_r_s", @@op_u32_TruncSat_f64_r_s)
+    m3_register_op("op_u32_TruncSat_f64_s_r", @@op_u32_TruncSat_f64_s_r)
+    m3_register_op("op_u32_TruncSat_f64_s_s", @@op_u32_TruncSat_f64_s_s)
+    m3_register_op("op_i64_TruncSat_f32_r_r", @@op_i64_TruncSat_f32_r_r)
+    m3_register_op("op_i64_TruncSat_f32_r_s", @@op_i64_TruncSat_f32_r_s)
+    m3_register_op("op_i64_TruncSat_f32_s_r", @@op_i64_TruncSat_f32_s_r)
+    m3_register_op("op_i64_TruncSat_f32_s_s", @@op_i64_TruncSat_f32_s_s)
+    m3_register_op("op_u64_TruncSat_f32_r_r", @@op_u64_TruncSat_f32_r_r)
+    m3_register_op("op_u64_TruncSat_f32_r_s", @@op_u64_TruncSat_f32_r_s)
+    m3_register_op("op_u64_TruncSat_f32_s_r", @@op_u64_TruncSat_f32_s_r)
+    m3_register_op("op_u64_TruncSat_f32_s_s", @@op_u64_TruncSat_f32_s_s)
+    m3_register_op("op_i64_TruncSat_f64_r_r", @@op_i64_TruncSat_f64_r_r)
+    m3_register_op("op_i64_TruncSat_f64_r_s", @@op_i64_TruncSat_f64_r_s)
+    m3_register_op("op_i64_TruncSat_f64_s_r", @@op_i64_TruncSat_f64_s_r)
+    m3_register_op("op_i64_TruncSat_f64_s_s", @@op_i64_TruncSat_f64_s_s)
+    m3_register_op("op_u64_TruncSat_f64_r_r", @@op_u64_TruncSat_f64_r_r)
+    m3_register_op("op_u64_TruncSat_f64_r_s", @@op_u64_TruncSat_f64_r_s)
+    m3_register_op("op_u64_TruncSat_f64_s_r", @@op_u64_TruncSat_f64_s_r)
+    m3_register_op("op_u64_TruncSat_f64_s_s", @@op_u64_TruncSat_f64_s_s)
+    m3_register_op("op_i64_Extend_i32_r", @@op_i64_Extend_i32_r)
+    m3_register_op("op_i64_Extend_i32_s", @@op_i64_Extend_i32_s)
+    m3_register_op("op_i64_Extend_u32_r", @@op_i64_Extend_u32_r)
+    m3_register_op("op_i64_Extend_u32_s", @@op_i64_Extend_u32_s)
+    m3_register_op("op_f32_Demote_f64_r", @@op_f32_Demote_f64_r)
+    m3_register_op("op_f32_Demote_f64_s", @@op_f32_Demote_f64_s)
+    m3_register_op("op_f64_Promote_f32_r", @@op_f64_Promote_f32_r)
+    m3_register_op("op_f64_Promote_f32_s", @@op_f64_Promote_f32_s)
+    m3_register_op("op_f32_Convert_i32_r_r", @@op_f32_Convert_i32_r_r)
+    m3_register_op("op_f32_Convert_i32_s_r", @@op_f32_Convert_i32_s_r)
+    m3_register_op("op_f32_Convert_i32_r_s", @@op_f32_Convert_i32_r_s)
+    m3_register_op("op_f32_Convert_i32_s_s", @@op_f32_Convert_i32_s_s)
+    m3_register_op("op_f32_Convert_u32_r_r", @@op_f32_Convert_u32_r_r)
+    m3_register_op("op_f32_Convert_u32_s_r", @@op_f32_Convert_u32_s_r)
+    m3_register_op("op_f32_Convert_u32_r_s", @@op_f32_Convert_u32_r_s)
+    m3_register_op("op_f32_Convert_u32_s_s", @@op_f32_Convert_u32_s_s)
+    m3_register_op("op_f32_Convert_i64_r_r", @@op_f32_Convert_i64_r_r)
+    m3_register_op("op_f32_Convert_i64_s_r", @@op_f32_Convert_i64_s_r)
+    m3_register_op("op_f32_Convert_i64_r_s", @@op_f32_Convert_i64_r_s)
+    m3_register_op("op_f32_Convert_i64_s_s", @@op_f32_Convert_i64_s_s)
+    m3_register_op("op_f32_Convert_u64_r_r", @@op_f32_Convert_u64_r_r)
+    m3_register_op("op_f32_Convert_u64_s_r", @@op_f32_Convert_u64_s_r)
+    m3_register_op("op_f32_Convert_u64_r_s", @@op_f32_Convert_u64_r_s)
+    m3_register_op("op_f32_Convert_u64_s_s", @@op_f32_Convert_u64_s_s)
+    m3_register_op("op_f64_Convert_i32_r_r", @@op_f64_Convert_i32_r_r)
+    m3_register_op("op_f64_Convert_i32_s_r", @@op_f64_Convert_i32_s_r)
+    m3_register_op("op_f64_Convert_i32_r_s", @@op_f64_Convert_i32_r_s)
+    m3_register_op("op_f64_Convert_i32_s_s", @@op_f64_Convert_i32_s_s)
+    m3_register_op("op_f64_Convert_u32_r_r", @@op_f64_Convert_u32_r_r)
+    m3_register_op("op_f64_Convert_u32_s_r", @@op_f64_Convert_u32_s_r)
+    m3_register_op("op_f64_Convert_u32_r_s", @@op_f64_Convert_u32_r_s)
+    m3_register_op("op_f64_Convert_u32_s_s", @@op_f64_Convert_u32_s_s)
+    m3_register_op("op_f64_Convert_i64_r_r", @@op_f64_Convert_i64_r_r)
+    m3_register_op("op_f64_Convert_i64_s_r", @@op_f64_Convert_i64_s_r)
+    m3_register_op("op_f64_Convert_i64_r_s", @@op_f64_Convert_i64_r_s)
+    m3_register_op("op_f64_Convert_i64_s_s", @@op_f64_Convert_i64_s_s)
+    m3_register_op("op_f64_Convert_u64_r_r", @@op_f64_Convert_u64_r_r)
+    m3_register_op("op_f64_Convert_u64_s_r", @@op_f64_Convert_u64_s_r)
+    m3_register_op("op_f64_Convert_u64_r_s", @@op_f64_Convert_u64_r_s)
+    m3_register_op("op_f64_Convert_u64_s_s", @@op_f64_Convert_u64_s_s)
+    m3_register_op("op_i32_Reinterpret_f32_r_r", @@op_i32_Reinterpret_f32_r_r)
+    m3_register_op("op_i32_Reinterpret_f32_r_s", @@op_i32_Reinterpret_f32_r_s)
+    m3_register_op("op_i32_Reinterpret_f32_s_r", @@op_i32_Reinterpret_f32_s_r)
+    m3_register_op("op_i32_Reinterpret_f32_s_s", @@op_i32_Reinterpret_f32_s_s)
+    m3_register_op("op_i64_Reinterpret_f64_r_r", @@op_i64_Reinterpret_f64_r_r)
+    m3_register_op("op_i64_Reinterpret_f64_r_s", @@op_i64_Reinterpret_f64_r_s)
+    m3_register_op("op_i64_Reinterpret_f64_s_r", @@op_i64_Reinterpret_f64_s_r)
+    m3_register_op("op_i64_Reinterpret_f64_s_s", @@op_i64_Reinterpret_f64_s_s)
+    m3_register_op("op_f32_Reinterpret_i32_r_r", @@op_f32_Reinterpret_i32_r_r)
+    m3_register_op("op_f32_Reinterpret_i32_r_s", @@op_f32_Reinterpret_i32_r_s)
+    m3_register_op("op_f32_Reinterpret_i32_s_r", @@op_f32_Reinterpret_i32_s_r)
+    m3_register_op("op_f32_Reinterpret_i32_s_s", @@op_f32_Reinterpret_i32_s_s)
+    m3_register_op("op_f64_Reinterpret_i64_r_r", @@op_f64_Reinterpret_i64_r_r)
+    m3_register_op("op_f64_Reinterpret_i64_r_s", @@op_f64_Reinterpret_i64_r_s)
+    m3_register_op("op_f64_Reinterpret_i64_s_r", @@op_f64_Reinterpret_i64_s_r)
+    m3_register_op("op_f64_Reinterpret_i64_s_s", @@op_f64_Reinterpret_i64_s_s)
     m3_register_op("op_GetGlobal_s32", @@op_GetGlobal_s32)
     m3_register_op("op_GetGlobal_s64", @@op_GetGlobal_s64)
     m3_register_op("op_SetGlobal_i32", @@op_SetGlobal_i32)
