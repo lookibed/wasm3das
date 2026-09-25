@@ -176,6 +176,21 @@ Decisions fixed by `m3_types` (the struct table is in its header):
   import; `Compile_Call` reports `function import missing` for an import
   whose `moduleIdx` is still -1. Module handles into `rt.modules` are
   never reused; `m3_FreeModule` leaves a released slot.
+- Fixed by `m3_env` (contract for `m3_parse`): `m3_NewRuntime` builds the
+  op tables and wires `CompileFunctionHook`/`ResizeMemoryHook`; a module
+  counts as loaded while its `runtime` is 0, so `m3_parse` registers
+  modules with `runtime = -1`; imports are added first and counted in
+  `numFuncImports` (the "imported" test of `v_FindFunction` is
+  `index < numFuncImports`); `names`/`numNames`/`export_name` are set as
+  C sets them; the custom section handler is read from `rt.environment`.
+  Varargs calls are arrays (`m3_Call(rt, f, array<u64>)`, `m3_CallV` with
+  `M3TaggedValue`s, `m3_GetResults` fills `array<u64>`); `m3_GetMemory`
+  returns an index into `rt.mem`. A panic inside load, compile or run
+  becomes `"wasm3 panic in <where>"` (recover cannot read the message).
+  A global exported as `""`: `M3Global` needs an explicit export flag
+  (C tests `global->name != NULL`); `m3_parse` adds `isExported : bool`
+  to `M3Global` (with an `// Eden:` note in `m3_types`) and `m3_FindGlobal`
+  uses it.
 - `M3Module.startFunction : i32 = -1` from construction (C callocs 0 and
   sets -1 in `m3_parse.c` before use; `m3_LoadModule` runs any index >= 0).
 - `cstr_t = string` cannot tell C's `NULL` from `""`. C relies on the
