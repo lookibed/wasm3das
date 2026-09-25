@@ -446,8 +446,9 @@ typedef public M3Op = function<(var rt : M3Runtime) : int>
 
     Eden: M3MemoryHeader (C m3_core.h: runtime, maxStack, length) is absent.
     It was the header of the malloc'd linear memory block; the linear memory
-    is rt.mem, its length is `length(rt.mem)`, and the stack limit is
-    `length(rt.stack)` (DESIGN.md sections 4.2, 4.3).
+    is rt.mem, its length is `length(rt.mem)`, and the stack limit
+    (maxStack) is `rt.numStackSlots`; rt.stack has 4 spare words past it
+    (DESIGN.md sections 4.2, 4.3).
 */
 
 

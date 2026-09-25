@@ -35,7 +35,7 @@ require modules/wasm3das/source/m3_core
       - test_env_new_runtime_environment_survives_wiring: the runtime keeps
         the environment's configuration (its custom section handler) and
         userdata; Eden: its copy holds the five interned block-result types,
-        the stack is exactly numStackSlots words, the tables are built.
+        the stack is numStackSlots + 4 words, the tables are built.
       - test_env_runtime_releases_linked_module_without_owning_environment:
         Runtime_Release frees the linked module (released slot) and the
         stack; the environment value still makes a new runtime.
@@ -63,9 +63,19 @@ require modules/wasm3das/source/m3_core
         a small stack give "[trap] unreachable executed" and
         "[trap] stack overflow" as the m3_Call result; lastCalled is cleared;
         the next call succeeds;
+      - test_env_call_args_past_stack: on a 4-slot stack, m3_Call /
+        m3_CallV / m3_CallArgv write arguments into C's 4 spare slots and
+        op_Entry traps "[trap] stack overflow" (trap point numStackSlots);
+        arguments past the spare slots trap before the write (C: undefined
+        behaviour); a fitting call succeeds afterwards;
       - test_env_memory_grow: memory.grow / memory.size through
         ResizeMemory, the maximum, a store past the first page, m3_GetMemory
         as an index into rt.mem, ResizeMemory's limits and memoryLimit;
+      - test_env_memory_page_bytes: C's u32 numPages * pageSize: 65536
+        pages of 64 KiB are 0 bytes (numPages 65536), M3_MIN with
+        memoryLimit of the wrapped and of the 40000-page product, the
+        40000-page allocation without a limit (m3Err_mallocFailed, the
+        sandbox limit), a 16-byte page size;
       - test_env_find_function_names: the NULL-vs-"" rule (DESIGN 4.1): an
         import with field name "" is not found by "", a function exported
         as "" is, an internal name is found, a re-exported import is found
@@ -349,9 +359,9 @@ def test_env_new_runtime_environment_survives_wiring(var t : TestRun; fx : Fixtu
     equal(t, length(runtime.funcTypes), 5, "five distinct interned types")
     equal(t, env.retFuncTypes[1], -1, "the caller's environment value is unchanged")
 
-    // Eden: the stack is exactly numStackSlots words (DESIGN 4.4, 4.5)
+    // Eden: the stack is numStackSlots + 4 words, C's 4 spare slots (DESIGN 4.3, 4.5)
     equal(t, runtime.numStackSlots, 16384u, "numStackSlots = bytes / sizeof (m3slot_t)")
-    equal(t, length(runtime.stack), 16384, "rt.stack has numStackSlots words")
+    equal(t, length(runtime.stack), 16384 + 4, "rt.stack has numStackSlots + 4 words")
     equal(t, runtime.originStack, 0, "originStack")
     equal(t, length(c_operations), 253, "operation table built")
     equal(t, m3_OpCount(), 510, "op table built")
@@ -384,7 +394,7 @@ def test_env_runtime_releases_linked_module_without_owning_environment(var t : T
 
     // the environment is not owned by the runtime: it still makes runtimes
     var again <- m3_NewRuntime(env, 1024u, -1)
-    equal(t, length(again.stack), 256, "a new runtime from the same environment")
+    equal(t, length(again.stack), 256 + 4, "a new runtime from the same environment")
     m3_FreeRuntime(again)
     m3_FreeEnvironment(env)
 }
@@ -939,6 +949,69 @@ def test_env_trap_and_stack_overflow(var t : TestRun; fx : FixtureSource) {
 }
 
 
+// C m3_NewRuntime allocates i_stackSizeInBytes + 4 slots and m3_Call* write
+// the argument cells before op_Entry checks the frame against numStackSlots
+def test_env_call_args_past_stack(var t : TestRun; fx : FixtureSource) {
+    var rt <- new_runtime(16u)   // 4 slots, 4 spare
+    equal(t, rt.numStackSlots, 4u, "numStackSlots")
+    equal(t, length(rt.stack), 8, "rt.stack has the 4 spare slots")
+    let m = add_module(rt, "tight")
+    let tPair = add_type(rt, m, [T_I32], [T_I32, T_I32])
+    let tOne = add_type(rt, m, [T_I32], [T_I32])
+    let tFive = add_type(rt, m, [T_I64], [T_I64, T_I64, T_I64, T_I64, T_I64])
+    let tNone = add_type(rt, m, no_types(), no_types())
+    let pair = add_function(rt, m, tPair, [0x00u8, 0x20u8, 0x00u8, 0x0bu8])   // local.get 0
+    let one = add_function(rt, m, tOne, [0x00u8, 0x20u8, 0x00u8, 0x0bu8])     // local.get 0
+    let five = add_function(rt, m, tFive, [0x00u8, 0x20u8, 0x00u8, 0x0bu8])   // local.get 0
+    let nop = add_function(rt, m, tNone, [0x00u8, 0x0bu8])
+    export_function(rt, pair, "pair")
+    export_function(rt, one, "one")
+    export_function(rt, five, "five")
+    export_function(rt, nop, "nop")
+    is_ok(t, m3_LoadModule(rt, m), "m3_LoadModule tight")
+    var f : IM3Function = -1
+    for (name in ["pair", "one", "five", "nop"]) {
+        is_ok(t, m3_FindFunction(rt, f, name), "m3_FindFunction {name}")
+    }
+
+    // ret + args = 6 slots > 4: the second argument goes to spare slot 4,
+    // then op_Entry traps (C: the same writes into its 4 spare slots)
+    is_err(t, m3_Call(rt, pair, [m3_bits_from_i32(7), m3_bits_from_i32(9)]), m3Err_trapStackOverflow, "m3_Call: args past numStackSlots trap")
+    equal(t, stack_i32(rt, 2), 7, "the first argument in slot 2")
+    equal(t, stack_i32(rt, 4), 9, "the second argument in spare slot 4")
+    equal(t, rt.lastCalled, -1, "lastCalled cleared")
+    var tagged : array<M3TaggedValue>
+    for (n in [11, 13]) {
+        var v = M3TaggedValue(_type = M3ValueType.c_m3Type_i32)
+        tagged_set_i32(v, n)
+        push(tagged, v)
+    }
+    is_err(t, m3_CallV(rt, pair, tagged), m3Err_trapStackOverflow, "m3_CallV: args past numStackSlots trap")
+    equal(t, stack_i32(rt, 4), 13, "m3_CallV wrote spare slot 4")
+    is_err(t, m3_CallArgv(rt, pair, ["21", "23"]), m3Err_trapStackOverflow, "m3_CallArgv: args past numStackSlots trap")
+    equal(t, stack_i32(rt, 4), 23, "m3_CallArgv wrote spare slot 4")
+
+    // ret + arg = 4 slots: op_Entry's strict `sp + maxStackSlots < maxStack`
+    // with maxStack = numStackSlots, not length(rt.stack)
+    is_err(t, m3_Call(rt, one, [m3_bits_from_i32(3)]), m3Err_trapStackOverflow, "a frame of numStackSlots traps")
+
+    // ret + args = 12 slots, 4 past the spare ones: C writes past its
+    // allocation; Eden traps before the first cell that does not fit
+    for (i in range(length(rt.stack))) {
+        rt.stack[i] = 0ul
+    }
+    is_err(t, m3_Call(rt, five, [1ul, 2ul, 3ul, 4ul, 5ul]), m3Err_trapStackOverflow, "args past the spare slots trap")
+    equal(t, stack_u64(rt, 6), 3ul, "the third argument filled the last spare slots")
+    equal(t, rt.lastCalled, -1, "lastCalled cleared")
+    equal(t, rt.sp, -1, "the registers are untouched")
+
+    var noArgs : array<u64>
+    is_ok(t, m3_Call(rt, nop, noArgs), "a call that fits after the traps")
+    equal(t, rt.lastCalled, nop, "lastCalled after success")
+    m3_FreeRuntime(rt)
+}
+
+
 // ============================================================================
 // Eden: memory.grow through ResizeMemory
 // ============================================================================
@@ -994,6 +1067,60 @@ def test_env_memory_grow(var t : TestRun; fx : FixtureSource) {
     equal(t, rt.memory.numPages, 3u, "numPages is the requested count")
     equal(t, length(rt.mem), 70004, "the bytes are limited by memoryLimit")
     equal(t, load_u32(rt, 70000), 0x12345678u, "the bytes survive the resize")
+
+    m3_FreeRuntime(rt)
+}
+
+
+// C ResizeMemory: `size_t numPageBytes = numPagesToAlloc * pageSize` is a
+// u32 product (it wraps at 65536 pages of 64 KiB), then M3_MIN with
+// memoryLimit. Byte counts above 0x7fffffff are not allocated here (a
+// sandbox limit, m3Err_mallocFailed; see m3_env's header): the 40000-page
+// case is checked under a memoryLimit and through its failed allocation.
+def test_env_memory_page_bytes(var t : TestRun; fx : FixtureSource) {
+    var rt <- new_runtime(64u * 1024u)
+    let m = add_module(rt, "big")
+    let tGrow = add_type(rt, m, [T_I32], [T_I32])
+    let tSize = add_type(rt, m, [T_I32], no_types())
+    export_function(rt, add_function(rt, m, tGrow, [0x00u8, 0x20u8, 0x00u8, 0x40u8, 0x00u8, 0x0bu8]), "grow")   // memory.grow
+    export_function(rt, add_function(rt, m, tSize, [0x00u8, 0x3fu8, 0x00u8, 0x0bu8]), "size")                   // memory.size
+    rt.modules[m].memoryInfo.initPages = 1u
+    is_ok(t, m3_LoadModule(rt, m), "m3_LoadModule big")
+    equal(t, rt.memory.maxPages, 65536u, "maxPages 0 is 65536")
+    equal(t, rt.memory.pageSize, 65536u, "the default page size")
+
+    // memory.grow to 65536 pages: 65536 * 65536 wraps to 0 bytes (C)
+    var out = 0
+    is_ok(t, call_i32_i32(rt, "grow", 65535, out), "grow(65535)")
+    equal(t, out, 1, "memory.grow returns the previous size")
+    equal(t, rt.memory.numPages, 65536u, "numPages 65536")
+    equal(t, length(rt.mem), 0, "65536 pages of 64 KiB are 0 bytes, as C's u32 product")
+    equal(t, m3_GetMemorySize(rt), 0u, "m3_GetMemorySize 0")
+    var size = 1u
+    equal(t, m3_GetMemory(rt, size, 0u), -1, "m3_GetMemory: no bytes")
+    is_ok(t, call_void_i32(rt, "size", out), "size()")
+    equal(t, out, 65536, "memory.size is the page count")
+
+    // M3_MIN with memoryLimit applies to the wrapped value
+    rt.memoryLimit = 4096u
+    is_ok(t, ResizeMemory(rt, 65536u), "ResizeMemory(65536) with memoryLimit")
+    equal(t, length(rt.mem), 0, "M3_MIN (0, memoryLimit) is 0")
+
+    // 40000 pages: the u32 product 2621440000 limited by memoryLimit
+    is_ok(t, ResizeMemory(rt, 40000u), "ResizeMemory(40000) with memoryLimit")
+    equal(t, rt.memory.numPages, 40000u, "numPages 40000")
+    equal(t, length(rt.mem), 4096, "M3_MIN (2621440000, memoryLimit)")
+
+    // without the limit C allocates 2621440000 bytes; Eden cannot (see above)
+    rt.memoryLimit = 0u
+    is_err(t, ResizeMemory(rt, 40000u), m3Err_mallocFailed, "ResizeMemory(40000) past the daslang array size")
+    equal(t, rt.memory.numPages, 40000u, "numPages unchanged by the failed allocation")
+    equal(t, length(rt.mem), 4096, "rt.mem unchanged by the failed allocation")
+
+    // the product is the u32 one for other page sizes too
+    rt.memory.pageSize = 16u
+    is_ok(t, ResizeMemory(rt, 100u), "ResizeMemory with 16-byte pages")
+    equal(t, length(rt.mem), 1600, "100 pages of 16 bytes")
 
     m3_FreeRuntime(rt)
 }
@@ -1294,8 +1421,12 @@ def public run_tests_m3_env(var t : TestRun; fx : FixtureSource) {
     test_env_call_typed_values(t, fx)
     begin_test(t, "test_env_trap_and_stack_overflow")
     test_env_trap_and_stack_overflow(t, fx)
+    begin_test(t, "test_env_call_args_past_stack")
+    test_env_call_args_past_stack(t, fx)
     begin_test(t, "test_env_memory_grow")
     test_env_memory_grow(t, fx)
+    begin_test(t, "test_env_memory_page_bytes")
+    test_env_memory_page_bytes(t, fx)
     begin_test(t, "test_env_find_function_names")
     test_env_find_function_names(t, fx)
     begin_test(t, "test_env_host_panic_restores_origin_stack")

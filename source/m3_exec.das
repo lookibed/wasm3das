@@ -92,7 +92,8 @@ require daslib/math_bits                               // Eden: bit casts of cop
             the entry used by m3_Call with rt.pc = function.compiled and
             rt.sp = the frame base.
       - op_Entry's stack check is C's `_sp + maxStackSlots < _mem->maxStack`
-        with length(rt.stack) as maxStack (DESIGN 4.3, same trap string); the
+        with rt.numStackSlots as maxStack (C: stack + numStackSlots; rt.stack
+        has C's 4 spare slots past it; DESIGN 4.3, same trap string); the
         memset of numLocalBytes zeroes numLocalBytes / sizeof (m3slot_t)
         words after the ret+arg slots (one word per slot) and the memcpy of
         the constants copies the function's `constants` words after them.
@@ -3856,7 +3857,9 @@ def public op_Entry(var rt : M3Runtime) : m3ret_t {
     let _function = immediate_handle(rt)   // C: IM3Function function = immediate (IM3Function)
     // C: IM3Memory memory = m3MemInfo (_mem) — Eden: absent
     let stackEnd = rt.sp + int(rt.functions[_function].maxStackSlots)
-    if (d_m3SkipStackCheck || stackEnd < length(rt.stack)) {   // C: (_sp + maxStackSlots) < _mem->maxStack
+    // Eden: maxStack is rt.numStackSlots (C: stack + numStackSlots), not
+    // length(rt.stack), which has C's 4 spare slots past it (DESIGN 4.3)
+    if (d_m3SkipStackCheck || stackEnd < int(rt.numStackSlots)) {   // C: (_sp + maxStackSlots) < _mem->maxStack
         // DEBUG-only hit counter omitted when DEBUG is not part of the Das module configuration.
         // C: u8 * stack = (u8 *) ((m3slot_t *) _sp + function->numRetAndArgSlots)
         var stack = rt.sp + int(rt.functions[_function].numRetAndArgSlots)

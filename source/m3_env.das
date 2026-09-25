@@ -60,10 +60,15 @@ require daslib/math_bits                                // Eden: the f32 / f64 v
         from m3_NewEnvironment). All idempotent.
       - m3_NewRuntime returns the M3Runtime value (C: a pointer, NULL on
         allocation failure, which cannot happen observably here). The stack
-        is rt.stack with exactly numStackSlots = i_stackSizeInBytes / 4 words
-        (one u64 word per slot, DESIGN 4.3; C allocates 4 spare slots past
-        maxStack that nothing reads) and originStack = 0; op_Entry's
-        overflow point is length(rt.stack). userdata is an int token.
+        is rt.stack with numStackSlots + 4 words, numStackSlots =
+        i_stackSizeInBytes / 4 (one u64 word per slot, DESIGN 4.3; C
+        allocates i_stackSizeInBytes + 4 * sizeof (m3slot_t)), and
+        originStack = 0; op_Entry's overflow point is rt.numStackSlots (C:
+        maxStack = stack + numStackSlots). m3_Call / m3_CallVL / m3_CallArgv
+        write their argument cells before op_Entry runs, so a function whose
+        ret + arg slots pass numStackSlots by up to 4 has its arguments
+        written into the spare slots and then traps `[trap] stack overflow`
+        in op_Entry, as C. userdata is an int token.
       - the module list (C: runtime->modules, linked through module->next)
         is the arena rt.modules: a module is linked while its `runtime` is
         0 (m3_LoadModule sets it, m3_FreeModule clears it). ForEachModule
@@ -91,9 +96,15 @@ require daslib/math_bits                                // Eden: the f32 / f64 v
         expression leaves the result m3Err_none and o_expressed untouched.
       - ResizeMemory: the linear memory is rt.mem (DESIGN 4.2); the resize
         is `resize(rt.mem, numPageBytes)` (zero-filled like m3_Realloc) and
-        the M3MemoryHeader writes (length, runtime, maxStack) are absent. A
-        size a daslang array cannot hold (above 0x7fffffff bytes) is C's
-        failed realloc, m3Err_mallocFailed.
+        the M3MemoryHeader writes (length, runtime, maxStack) are absent.
+        numPageBytes is C's u32 product numPages * pageSize, wrapping as C
+        (65536 pages of 64 KiB are 0 bytes, numPages 65536), then M3_MIN
+        with memoryLimit. A byte count above 0x7fffffff (32768 to 65535
+        pages of 64 KiB without a memoryLimit below it), which C allocates,
+        cannot be held here: daslang's length() is int and aborts past
+        INT32_MAX and the editor has no long_length, while every rt.mem
+        index is an int. It is C's failed realloc, m3Err_mallocFailed (a
+        sandbox limit, not C behaviour).
       - InitDataSegments(rt, io_module): C's io_memory is rt.memory / rt.mem.
         C's `not io_memory->mallocated` (ResizeMemory never ran) is
         rt.memory.pageSize == 0 (InitMemory sets it before the first
@@ -160,7 +171,14 @@ require daslib/math_bits                                // Eden: the f32 / f64 v
         The arguments go to rt.stack from GetStackPointerForArgs =
         rt.originStack + numRets * c_ioSlotCount (C: (u64 *) runtime->stack
         + numRets), one u64 cell = c_ioSlotCount slots per value (C: s += 8);
-        a 32-bit value is stored zero-extended (DESIGN 4.4).
+        a 32-bit value is stored zero-extended (DESIGN 4.4). Nothing bounds
+        these writes in C: past the 4 spare slots (a function with more
+        ret + arg slots than numStackSlots + 4, which neither the compiler
+        nor the loader refuses) C writes past its stack allocation (undefined
+        behaviour). Eden checks each argument before writing it
+        (ArgCellOutOfStack: the i32 / f32 store covers one slot, the i64 /
+        f64 store two, as C's) and returns m3Err_trapStackOverflow with
+        lastCalled = -1, the result op_Entry gives when the cells still fit.
       - m3_GetResults(rt, f, i_retc, o_retBits : array<u64>) returns the
         result bits (C: o_retptrs[]); m3_GetResultsV / m3_GetResultsVL fill
         an array<M3TaggedValue> (upstream). Results are read at
@@ -720,9 +738,9 @@ def public m3_NewRuntime(i_environment : M3Environment; i_stackSizeInBytes : u32
     runtime.userdata = i_userdata
 
     // C: runtime->originStack = m3_Malloc ("Wasm Stack", i_stackSizeInBytes + 4*sizeof (m3slot_t));
-    // Eden: one u64 word per slot, exactly numStackSlots of them (see the header)
+    // Eden: one u64 word per slot, numStackSlots + 4 of them (C's 4 spare slots, see the header)
     runtime.numStackSlots = i_stackSizeInBytes / u32(typeinfo sizeof(type<m3slot_t>))
-    resize(runtime.stack, int(runtime.numStackSlots))
+    resize(runtime.stack, int(runtime.numStackSlots) + 4)
     runtime.originStack = 0
     // C: runtime->stack = runtime->originStack; Eden: the frame base is originStack (DESIGN 4.4)
 
@@ -969,7 +987,10 @@ def public ResizeMemory(var io_runtime : M3Runtime; i_numPages : u32) : M3Result
     // C: #if 0 // Temporary fix for memory allocation ... #endif (inactive)
 
     if (numPagesToAlloc <= io_runtime.memory.maxPages) {
-        var numPageBytes = u64(numPagesToAlloc) * u64(io_runtime.memory.pageSize)
+        // C: size_t numPageBytes = numPagesToAlloc * io_runtime->memory.pageSize;
+        // the product is u32 and wraps before the widening (65536 pages of
+        // 64 KiB are 0 bytes); Eden: kept as the u32
+        var numPageBytes : u32 = numPagesToAlloc * io_runtime.memory.pageSize
 
         if (d_m3MaxLinearMemoryPages > 0u && numPagesToAlloc > d_m3MaxLinearMemoryPages) {
             return "linear memory limitation exceeded"   // C: _throwif
@@ -977,15 +998,16 @@ def public ResizeMemory(var io_runtime : M3Runtime; i_numPages : u32) : M3Result
 
         // Limit the amount of memory that gets actually allocated
         if (io_runtime.memoryLimit != 0u) {
-            numPageBytes = min(numPageBytes, u64(io_runtime.memoryLimit))
+            numPageBytes = min(numPageBytes, io_runtime.memoryLimit)   // C: M3_MIN (numPageBytes, io_runtime->memoryLimit)
         }
 
         // C: numBytes = numPageBytes + sizeof (M3MemoryHeader); numPreviousBytes ...;
         //    newMem = m3_Realloc ("Wasm Linear Memory", memory->mallocated, numBytes, numPreviousBytes);
         //    _throwifnull (newMem);
-        // Eden: rt.mem is resized in place; a size a daslang array cannot
-        // hold is the failed realloc (see the header)
-        if (numPageBytes > 0x7ffffffful) {
+        // Eden: rt.mem is resized in place. A byte count above 0x7fffffff
+        // cannot be a daslang array (length() is int and aborts past it; the
+        // editor has no long_length), so it is the failed realloc (see the header)
+        if (numPageBytes > 0x7fffffffu) {
             return m3Err_mallocFailed
         }
         resize(io_runtime.mem, int(numPageBytes))
@@ -993,7 +1015,7 @@ def public ResizeMemory(var io_runtime : M3Runtime; i_numPages : u32) : M3Result
         io_runtime.memory.numPages = numPagesToAlloc
 
         // C: memory->mallocated->length / runtime / maxStack; Eden: absent
-        // (length(rt.mem), the runtime itself, length(rt.stack); DESIGN 4.2)
+        // (length(rt.mem), the runtime itself, rt.numStackSlots; DESIGN 4.2, 4.3)
     } else {
         result = m3Err_wasmMemoryOverflow
     }
@@ -1563,6 +1585,23 @@ def public GetStackPointerForArgs(i_runtime : M3Runtime; i_function : IM3Functio
 }
 
 
+// Eden: true when C's argument store of `_type` at slot `s` would reach
+// past its stack allocation (numStackSlots + 4 slots, rt.stack): an i32 /
+// f32 store covers one slot, an i64 / f64 store c_ioSlotCount slots. C does
+// not check (undefined behaviour); m3_Call* return m3Err_trapStackOverflow
+// instead (see the header). Any other type writes nothing (C returns
+// "unknown argument type" first).
+def private ArgCellOutOfStack(i_runtime : M3Runtime; s : int; _type : u8) : bool {
+    var width = 0
+    if (_type == c_m3Type_i32 || (d_m3HasFloat && _type == c_m3Type_f32)) {
+        width = 1
+    } elif (_type == c_m3Type_i64 || (d_m3HasFloat && _type == c_m3Type_f64)) {
+        width = c_ioSlotCount
+    }
+    return width > 0 && s + width > length(i_runtime.stack)
+}
+
+
 // C: M3Result m3_CallV (IM3Function i_function, ...)
 // Eden: the typed argument array (see the header)
 def public m3_CallV(var i_runtime : M3Runtime; i_function : IM3Function; i_args : array<M3TaggedValue>) : M3Result {
@@ -1609,6 +1648,11 @@ def public m3_CallVL(var i_runtime : M3Runtime; i_function : IM3Function; i_args
 
     for (i in range(int(i_runtime.funcTypes[ftype].numArgs))) {
         let _type = GetFuncTypeParamType(i_runtime, ftype, u16(i))   // C: d_FuncArgType (ftype, i)
+        if (ArgCellOutOfStack(i_runtime, s, _type)) {
+            // Eden: C writes past its stack allocation here (see the header)
+            i_runtime.lastCalled = -1
+            return m3Err_trapStackOverflow
+        }
         if (_type == c_m3Type_i32) {
             set_stack_i32(i_runtime, s, tagged_get_i32(i_args[i]))
         } elif (_type == c_m3Type_i64) {
@@ -1659,6 +1703,11 @@ def public m3_Call(var i_runtime : M3Runtime; i_function : IM3Function; i_args :
 
     for (i in range(int(i_runtime.funcTypes[ftype].numArgs))) {
         let _type = GetFuncTypeParamType(i_runtime, ftype, u16(i))   // C: d_FuncArgType (ftype, i)
+        if (ArgCellOutOfStack(i_runtime, s, _type)) {
+            // Eden: C writes past its stack allocation here (see the header)
+            i_runtime.lastCalled = -1
+            return m3Err_trapStackOverflow
+        }
         if (_type == c_m3Type_i32) {
             set_stack_i32(i_runtime, s, m3_bits_to_i32(i_args[i]))   // C: *(i32*)(s) = *(i32*)i_argptrs[i]
         } elif (_type == c_m3Type_i64) {
@@ -1710,6 +1759,11 @@ def public m3_CallArgv(var i_runtime : M3Runtime; i_function : IM3Function; i_ar
 
     for (i in range(int(i_runtime.funcTypes[ftype].numArgs))) {
         let _type = GetFuncTypeParamType(i_runtime, ftype, u16(i))   // C: d_FuncArgType (ftype, i)
+        if (ArgCellOutOfStack(i_runtime, s, _type)) {
+            // Eden: C writes past its stack allocation here (see the header)
+            i_runtime.lastCalled = -1
+            return m3Err_trapStackOverflow
+        }
         if (_type == c_m3Type_i32) {
             set_stack_i32(i_runtime, s, i32(u32(m3_strtoull(i_argv[i]))))   // C: strtoul (i_argv[i], NULL, 10)
         } elif (_type == c_m3Type_i64) {

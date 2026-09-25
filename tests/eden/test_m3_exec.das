@@ -121,13 +121,15 @@ var private noResizeHook : function<(var rt : M3Runtime; i_numPages : u32) : M3R
 var private noCompileHook : function<(var rt : M3Runtime; io_function : IM3Function) : M3Result>
 
 
-// a runtime with `slots` stack words (every bit set, so a write that
-// touches fewer bits than a word is visible), the op table built
+// a runtime with `slots` stack slots (numStackSlots, op_Entry's trap point)
+// and C's 4 spare words after them, as m3_NewRuntime (DESIGN 4.3); every
+// bit set, so a write that touches fewer bits than a word is visible; the
+// op table built
 def private exec_runtime(slots : int) : M3Runtime {
     m3_build_op_table()
     var rt = M3Runtime()
-    resize(rt.stack, slots)
-    for (i in range(slots)) {
+    resize(rt.stack, slots + 4)
+    for (i in range(slots + 4)) {
         rt.stack[i] = 0xfffffffffffffffful
     }
     rt.numStackSlots = u32(slots)
@@ -1663,9 +1665,10 @@ def test_nested_call(var t : TestRun; fx : FixtureSource) {
     equal(t, rt.sp, 0, "rt.sp restored by Call after a trap")
     equal(t, stack_i32(rt, 0), 0, "the caller did not continue after the trap")
 
-    // op_Entry: stack overflow when sp + maxStackSlots reaches the stack end
+    // op_Entry: stack overflow when sp + maxStackSlots reaches numStackSlots
+    // (C: maxStack), not length(rt.stack), which has the 4 spare slots
     let bigPC = emit_op(rt, "op_Entry")
-    let big = new_function(rt, length(rt.stack), 2, 0)
+    let big = new_function(rt, int(rt.numStackSlots), 2, 0)
     rt.functions[big].compiled = bigPC
     emit_int(rt, big)
     emit_op(rt, "op_Return")
@@ -1673,7 +1676,7 @@ def test_nested_call(var t : TestRun; fx : FixtureSource) {
     equal(t, rBig, M3_TRAP, "op_Entry traps when the frame does not fit")
     equal_str(t, rt.trap, m3Err_trapStackOverflow, "... with the stack overflow trap")
     let fitPC = emit_op(rt, "op_Entry")
-    let fit = new_function(rt, length(rt.stack) - 1, 2, 0)
+    let fit = new_function(rt, int(rt.numStackSlots) - 1, 2, 0)
     rt.functions[fit].compiled = fitPC
     emit_int(rt, fit)
     emit_op(rt, "op_Return")

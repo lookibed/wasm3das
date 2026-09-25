@@ -16,7 +16,7 @@
     {"name": "m3_exec_defs",   "status": "done", "source": "m3_exec_defs.das",   "eden_tests": "test_m3_exec_defs.das",   "upstream_tests": [], "note": "no upstream test file; the Eden file tests the slot/memory/immediate accessors of DESIGN 4.2-4.4 directly"},
     {"name": "m3_exec",        "status": "done", "source": "m3_exec.das",        "eden_tests": "test_m3_exec.das",        "upstream_tests": ["test_m3_exec.das"]},
     {"name": "m3_compile",     "status": "done", "source": "m3_compile.das",     "eden_tests": "test_m3_compile.das",     "upstream_tests": ["test_m3_compile.das"]},
-    {"name": "m3_env",         "status": "verify", "source": "m3_env.das",         "eden_tests": "test_m3_env.das",         "upstream_tests": ["test_m3_env.das"]},
+    {"name": "m3_env",         "status": "done", "source": "m3_env.das",         "eden_tests": "test_m3_env.das",         "upstream_tests": ["test_m3_env.das"]},
     {"name": "m3_parse",       "status": "todo", "source": "m3_parse.das",       "eden_tests": "test_m3_parse.das",       "upstream_tests": ["test_m3_parse.das"]},
     {"name": "m3_bind",        "status": "todo", "source": "m3_bind.das",        "eden_tests": "test_m3_bind.das",        "upstream_tests": ["test_m3_bind.das"]},
     {"name": "m3_api_defs",    "status": "todo", "source": "m3_api_defs.das",    "eden_tests": null, "note": "helpers exercised by test_m3_api_libc / test_m3_api_wasi"},
