@@ -121,9 +121,10 @@ require strings                                         // Eden: length of an ar
                       second in absolute value (the resolution of get_clock
                       at the anchor), exact in every difference, never
                       stepping backwards;
-          MONOTONIC = the same value: a monotonic clock whose epoch is the
-                      anchor's wall-clock second (Linux: the boot; neither
-                      POSIX nor WASI fixes it);
+          MONOTONIC = 1 s + ns elapsed since the anchor: an uptime-like
+                      count (Linux: since boot; neither POSIX nor WASI fixes
+                      the origin), small enough that a guest converting
+                      absolute seconds to f32 keeps fine steps;
           PROCESS_CPUTIME_ID, THREAD_CPUTIME_ID = ns elapsed since the
                       anchor: the sandbox has no CPU-time clock, and the
                       elapsed wall time keeps the clock monotonic and
@@ -266,8 +267,13 @@ def private clock_gettime(clk_id : i32; var spec : timespec&) : i32 {
     let elapsed = get_time_nsec(wasi_clock_base_ticks)
     var nsec : i64 = 0l
 
-    if (clk_id == CLOCK_REALTIME || clk_id == CLOCK_MONOTONIC) {
+    if (clk_id == CLOCK_REALTIME) {
         nsec = wasi_clock_base_nsec + elapsed
+    } elif (clk_id == CLOCK_MONOTONIC) {
+        // Eden: Linux's CLOCK_MONOTONIC counts from boot, not from the epoch;
+        // here it counts from the anchor plus a 1 s base (never 0), so a guest
+        // converting absolute monotonic seconds to f32 keeps sub-ms steps
+        nsec = NSEC_PER_SEC + elapsed
     } elif (clk_id == CLOCK_PROCESS_CPUTIME_ID || clk_id == CLOCK_THREAD_CPUTIME_ID) {
         nsec = elapsed
     } else {

@@ -59,8 +59,8 @@ require daslib/strings_boost
         restored afterwards. The run ends with C's exit protocol: either
         m3Err_trapExit with exit_code 0 or a plain return.
       - test_clock_monotonic: every WASI clock id reads without going
-        backwards over repeated reads, REALTIME and MONOTONIC are
-        nanoseconds past 2020, the CPU-time clocks are small, id 4 (past
+        backwards over repeated reads, REALTIME is nanoseconds past 2020,
+        MONOTONIC counts from the anchor plus a 1 s base, the CPU-time clocks are small, id 4 (past
         the WASI ids) is INVAL, clock_res_get is the 1 ms default for all
         four ids.
       - test_random_get_fills: a 0-byte request succeeds and writes
@@ -760,8 +760,12 @@ def test_clock_monotonic(var t : TestRun; fx : FixtureSource) {
             prev = now
         }
         check(t, ok, "clock {id}: 50 reads succeed and never go backwards")
-        if (id == WASI_CLOCKID_REALTIME || id == WASI_CLOCKID_MONOTONIC) {
+        if (id == WASI_CLOCKID_REALTIME) {
             check(t, prev > 1600000000ul * 1000000000ul, "clock {id} is nanoseconds past 2020")
+        } elif (id == WASI_CLOCKID_MONOTONIC) {
+            // Eden: counts from the anchor plus a 1 s base, like an uptime (Linux: since boot)
+            check(t, prev >= 1000000000ul, "clock {id} starts at the 1 s base")
+            check(t, prev < 1600000000ul * 1000000000ul, "clock {id} is not epoch time")
         } else {
             check(t, prev < 1600000000ul * 1000000000ul, "clock {id} is the time elapsed since the anchor")
         }
