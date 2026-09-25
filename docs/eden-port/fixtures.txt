@@ -7,3 +7,4 @@ lang/fib64.wasm
 lang/fib32_tail.wasm
 lang/fib.c.wasm
 wasi/simple/test.wasm
+wasi/simple/0.txt

@@ -463,6 +463,32 @@ the Eden port does the same. `_throwifnull(PTR)` tests a handle against
 (`numConstantBytes`); the Eden `m3_compile` passes the element count
 (`numConstants`). `m3_AllocStruct(S)` is `S()`.
 
+### 4.7b-wasi The file-system backend
+
+`m3_api_wasi_fd` keeps C's fd table and every C function, but the host
+operations it performs (open, read, write, seek, close, stat, readdir if
+C has it, the preopen of ".") go through
+`struct M3WasiFsBackend` of lambdas held by the runtime-side WASI
+context. The default backend, used in the editor, serves fd 0 from
+`rt.stdinBuffer` and appends fd 1/2 to `rt.stdoutBuffer` /
+`rt.stderrBuffer` (and has no files: open returns C's `WASI_ENOENT` /
+`ENOTCAPABLE` as Wasm3 does when a path is missing). `.local/app`
+installs a backend over `daslib/fio` (allowed only under `.local/`) so
+`run-wasi-test.py` sees real stdio and files. The fd layer never
+requires `fio`; its errno mapping from the backend's results is C's.
+
+Fixed by `m3_api_wasi_fd` (contract for `m3_api_wasi`): C's
+`m3_wasi_context_t` lives in `m3_api_wasi_fd` with two added fields,
+`fds : array<int>` (WASI fd → backend handle, -1 closed) and `backend`.
+Contexts are in the global `m3_wasi_contexts`; a raw function reaches its
+context through `ctx.userdata`, the context's index (token). A backend
+lambda returns the POSIX result or the negated Linux errno; a null lambda
+falls back to the in-memory default, so the editor keeps no function
+value in a global (hot-reload safe). `m3_api_wasi` uses this context type,
+creates the context before `wasi_fd_open_preopens`, and links every WASI
+import with `m3_LinkRawFunctionEx(..., token)` (C links the fd functions
+without a context).
+
 ### 4.7c Bytes and strings in host functions
 
 A daslang string cannot hold a NUL byte. `m3ApiReadString` is for
