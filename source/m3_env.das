@@ -1030,6 +1030,10 @@ def public ResizeMemory(var io_runtime : M3Runtime; i_numPages : u32) : M3Result
         if (numPageBytes > 0x7fffffffu) {
             return m3Err_mallocFailed
         }
+        // Eden: reserve the exact size first. resize() alone rounds the
+        // capacity up to a power of two (64 MiB of pages allocates 128 MiB),
+        // and the editor caps a script context's heap at 100 MiB (DESIGN 1)
+        reserve(io_runtime.mem, int(numPageBytes))
         resize(io_runtime.mem, int(numPageBytes))
 
         io_runtime.memory.numPages = numPagesToAlloc

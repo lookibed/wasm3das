@@ -19,7 +19,13 @@ changed=0
 # --- fixtures ---
 mapfile -t fixtures < <(grep -vE '^\s*(#|$)' "$FIXTURES" | sed 's/\s*#.*$//; s/^\s*//; s/\s*$//')
 for name in "${fixtures[@]}"; do
-    src="$repo/wasm3c/test/$name"
+    # names under manual/ are the upstream benchmark fixtures
+    # (.upstream/tests/manual, run_fixtures.py); the rest are wasm3c/test
+    if [[ "$name" == manual/* ]]; then
+        src="$repo/.upstream/tests/manual/${name#manual/}"
+    else
+        src="$repo/wasm3c/test/$name"
+    fi
     dst="$eden_root/assets/wasm/$name.data"
     if [[ ! -f "$src" ]]; then
         echo "install_host: fixture missing in wasm3c/test: $name" >&2

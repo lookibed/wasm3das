@@ -252,6 +252,72 @@ def run_fixture(fixture : string; funcName : string; args : array<string>; isSta
 }
 
 
+// the upstream benchmark (run_fixtures.py) inside the editor: one fixture
+// export, timed with the engine's clock. Prints one parseable line:
+// WASM3 BENCH <fixture> <function> result=<i32|error> load_ms=<ms> call_ms=<ms> total_ms=<ms>
+// load = parse + load + link (spectest, libc, WASI), call = m3_CallArgv +
+// m3_GetResults; the result is the first return value as signed i32, as
+// run_fixtures.py compares it
+def bench_fixture(fixture : string; funcName : string; args : array<string>) {
+    let t0 = ref_time_ticks()
+    let bytes <- load_fixture_bytes(fixture)
+    if (length(bytes) == 0) {
+        print("WASM3 BENCH {fixture} {funcName} result=error:fixture-not-loaded load_ms=0 call_ms=0 total_ms=0")
+        return
+    }
+    var env <- m3_NewEnvironment()
+    var rt <- m3_NewRuntime(env, 64u * 1024u, -1)
+    var result : M3Result = m3Err_none
+    let parsed = m3_ParseModule(rt, bytes)
+    result = parsed._0
+    let wasmModule = parsed._1
+    if (result == m3Err_none) {
+        result = m3_LoadModule(rt, wasmModule)
+    }
+    if (result == m3Err_none) {
+        result = m3_LinkSpecTest(rt, wasmModule)
+    }
+    if (result == m3Err_none) {
+        result = m3_LinkLibC(rt, wasmModule)
+    }
+    if (result == m3Err_none) {
+        result = m3_LinkWASI(rt, wasmModule)
+    }
+    var func : IM3Function = -1
+    if (result == m3Err_none) {
+        result = m3_FindFunction(rt, func, funcName)
+    }
+    let loadNs = get_time_nsec(t0)
+    let t1 = ref_time_ticks()
+    var value = "error"
+    if (result == m3Err_none) {
+        result = m3_CallArgv(rt, func, args)
+        if (result == m3Err_none) {
+            var rets : array<u64>
+            let retCount = m3_GetRetCount(rt, func)
+            result = m3_GetResults(rt, func, retCount, rets)
+            if (result == m3Err_none && length(rets) > 0) {
+                value = "{m3_bits_to_i32(rets[0])}"
+            }
+        }
+    }
+    let callNs = get_time_nsec(t1)
+    if (result != m3Err_none) {
+        value = "error:{result}"
+    }
+    print("WASM3 BENCH {fixture} {funcName} result={value} load_ms={double(loadNs) / 1000000.0lf} call_ms={double(callNs) / 1000000.0lf} total_ms={double(loadNs + callNs) / 1000000.0lf}")
+    m3_FreeRuntime(rt)
+    m3_FreeEnvironment(env)
+}
+
+
+[cheat]
+def wasm3_bench(fixture : string; funcName : string; a1 : string = ""; a2 : string = "") {
+    let args <- collect_args(a1, a2, "", "", "")
+    bench_fixture(fixture, funcName, args)
+}
+
+
 def collect_args(a1, a2, a3, a4, a5 : string) : array<string> {
     var args : array<string>
     for (a in fixed_array(a1, a2, a3, a4, a5)) {

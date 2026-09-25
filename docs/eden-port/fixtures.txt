@@ -8,3 +8,23 @@ lang/fib32_tail.wasm
 lang/fib.c.wasm
 wasi/simple/test.wasm
 wasi/simple/0.txt
+# upstream benchmark fixtures (.upstream/tests/manual, run_fixtures.py): cheat wasm3_bench, script scripts/eden/bench_editor.py
+manual/chipmunk-profile/generated/chipmunk_profile.wasm
+manual/fixtures/test.wasm
+manual/float-compare/generated/float_hash.wasm
+manual/hash-compare/generated/hash_loop.wasm
+manual/i64-compare/generated/i64_hash.wasm
+manual/real-archive-secret/generated/secret_reader.wasm
+manual/real-world-binjgb/generated/binjgb.wasm
+manual/real-world-chipmunk/generated/chipmunk.wasm
+manual/real-world-h264bsd-mp4/generated/h264mp4.wasm
+manual/real-world-libjpeg-turbo-mjpeg/generated/libjpeg_turbo_mjpeg.wasm
+manual/real-world-libjpeg-turbo/generated/libjpeg_turbo.wasm
+manual/real-world-lodepng/generated/lodepng.wasm
+manual/real-world-miniz-file/generated/miniz_file.wasm
+manual/real-world-miniz-full/generated/miniz_full.wasm
+manual/real-world-miniz/generated/miniz.wasm
+manual/real-world-plmpeg-stream/generated/plmpeg.wasm
+manual/real-world-plmpeg/generated/plmpeg.wasm
+manual/real-world-tinyexpr/generated/tinyexpr.wasm
+manual/self-hosting-luanoffi-builder/generated/self_hosting_luanoffi_builder.wasm

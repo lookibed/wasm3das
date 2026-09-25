@@ -1,0 +1,822 @@
+[
+ {
+  "name": "fixtures/add",
+  "wasm": "fixtures/test.wasm",
+  "func": "add",
+  "args": [
+   "1",
+   "2"
+  ],
+  "baseline": 3
+ },
+ {
+  "name": "hash_loop 123456789 200000",
+  "wasm": "hash-compare/generated/hash_loop.wasm",
+  "func": "hash_loop",
+  "args": [
+   "123456789",
+   "200000"
+  ],
+  "baseline": -1767246609
+ },
+ {
+  "name": "hash_loop 1 65536",
+  "wasm": "hash-compare/generated/hash_loop.wasm",
+  "func": "hash_loop",
+  "args": [
+   "1",
+   "65536"
+  ],
+  "baseline": 1645510779
+ },
+ {
+  "name": "hash_f32 2048",
+  "wasm": "float-compare/generated/float_hash.wasm",
+  "func": "hash_f32",
+  "args": [
+   "2048"
+  ],
+  "baseline": 206320613
+ },
+ {
+  "name": "hash_f64 2048",
+  "wasm": "float-compare/generated/float_hash.wasm",
+  "func": "hash_f64",
+  "args": [
+   "2048"
+  ],
+  "baseline": -736305322
+ },
+ {
+  "name": "hash_i64_mix 512",
+  "wasm": "i64-compare/generated/i64_hash.wasm",
+  "func": "hash_i64_mix",
+  "args": [
+   "512"
+  ],
+  "baseline": -921783428
+ },
+ {
+  "name": "hash_i64_div 512",
+  "wasm": "i64-compare/generated/i64_hash.wasm",
+  "func": "hash_i64_div",
+  "args": [
+   "512"
+  ],
+  "baseline": -1398093681
+ },
+ {
+  "name": "probe_div_s64",
+  "wasm": "i64-compare/generated/i64_hash.wasm",
+  "func": "probe_div_s64",
+  "args": [],
+  "baseline": 674596155
+ },
+ {
+  "name": "probe_rem_s64",
+  "wasm": "i64-compare/generated/i64_hash.wasm",
+  "func": "probe_rem_s64",
+  "args": [],
+  "baseline": 0
+ },
+ {
+  "name": "probe_div_u64",
+  "wasm": "i64-compare/generated/i64_hash.wasm",
+  "func": "probe_div_u64",
+  "args": [],
+  "baseline": 1290282190
+ },
+ {
+  "name": "probe_rem_u64",
+  "wasm": "i64-compare/generated/i64_hash.wasm",
+  "func": "probe_rem_u64",
+  "args": [],
+  "baseline": 0
+ },
+ {
+  "name": "tinyexpr_hash 256",
+  "wasm": "real-world-tinyexpr/generated/tinyexpr.wasm",
+  "func": "tinyexpr_hash",
+  "args": [
+   "256"
+  ],
+  "baseline": 141480662
+ },
+ {
+  "name": "tinyexpr_error_code",
+  "wasm": "real-world-tinyexpr/generated/tinyexpr.wasm",
+  "func": "tinyexpr_error_code",
+  "args": [],
+  "baseline": 6
+ },
+ {
+  "name": "miniz_roundtrip_hash 6",
+  "wasm": "real-world-miniz/generated/miniz.wasm",
+  "func": "miniz_roundtrip_hash",
+  "args": [
+   "6"
+  ],
+  "baseline": 58679047
+ },
+ {
+  "name": "miniz_probe_compressed_size 6",
+  "wasm": "real-world-miniz/generated/miniz.wasm",
+  "func": "miniz_probe_compressed_size",
+  "args": [
+   "6"
+  ],
+  "baseline": 2152
+ },
+ {
+  "name": "miniz_probe_crc32",
+  "wasm": "real-world-miniz/generated/miniz.wasm",
+  "func": "miniz_probe_crc32",
+  "args": [],
+  "baseline": 2035028898
+ },
+ {
+  "name": "miniz_probe_adler32",
+  "wasm": "real-world-miniz/generated/miniz.wasm",
+  "func": "miniz_probe_adler32",
+  "args": [],
+  "baseline": 1263729890
+ },
+ {
+  "name": "miniz_probe_fold_hash",
+  "wasm": "real-world-miniz/generated/miniz.wasm",
+  "func": "miniz_probe_fold_hash",
+  "args": [],
+  "baseline": 828487727
+ },
+ {
+  "name": "miniz_full_hash 6",
+  "wasm": "real-world-miniz-full/generated/miniz_full.wasm",
+  "func": "miniz_full_hash",
+  "args": [
+   "6"
+  ],
+  "baseline": -2109846306
+ },
+ {
+  "name": "miniz_full_num_files 6",
+  "wasm": "real-world-miniz-full/generated/miniz_full.wasm",
+  "func": "miniz_full_probe_num_files",
+  "args": [
+   "6"
+  ],
+  "baseline": 3
+ },
+ {
+  "name": "miniz_full_archive_size 6",
+  "wasm": "real-world-miniz-full/generated/miniz_full.wasm",
+  "func": "miniz_full_probe_archive_size",
+  "args": [
+   "6"
+  ],
+  "baseline": 3200
+ },
+ {
+  "name": "miniz_full_locate_mix 6",
+  "wasm": "real-world-miniz-full/generated/miniz_full.wasm",
+  "func": "miniz_full_probe_locate_mix",
+  "args": [
+   "6"
+  ],
+  "baseline": 258
+ },
+ {
+  "name": "miniz_full_extract_hash 6",
+  "wasm": "real-world-miniz-full/generated/miniz_full.wasm",
+  "func": "miniz_full_probe_extract_hash",
+  "args": [
+   "6"
+  ],
+  "baseline": 1129688585
+ },
+ {
+  "name": "miniz_full_validate 6",
+  "wasm": "real-world-miniz-full/generated/miniz_full.wasm",
+  "func": "miniz_full_probe_validate",
+  "args": [
+   "6"
+  ],
+  "baseline": 1
+ },
+ {
+  "name": "miniz_file_hash 6",
+  "wasm": "real-world-miniz-file/generated/miniz_file.wasm",
+  "func": "miniz_file_hash",
+  "args": [
+   "6"
+  ],
+  "baseline": -138697996
+ },
+ {
+  "name": "miniz_file_num_files 6",
+  "wasm": "real-world-miniz-file/generated/miniz_file.wasm",
+  "func": "miniz_file_probe_num_files",
+  "args": [
+   "6"
+  ],
+  "baseline": 4
+ },
+ {
+  "name": "miniz_file_archive_size 6",
+  "wasm": "real-world-miniz-file/generated/miniz_file.wasm",
+  "func": "miniz_file_probe_archive_size",
+  "args": [
+   "6"
+  ],
+  "baseline": 3473
+ },
+ {
+  "name": "miniz_file_extract_hash 6",
+  "wasm": "real-world-miniz-file/generated/miniz_file.wasm",
+  "func": "miniz_file_probe_extract_hash",
+  "args": [
+   "6"
+  ],
+  "baseline": 1747784103
+ },
+ {
+  "name": "miniz_file_in_place 6",
+  "wasm": "real-world-miniz-file/generated/miniz_file.wasm",
+  "func": "miniz_file_probe_in_place",
+  "args": [
+   "6"
+  ],
+  "baseline": 1
+ },
+ {
+  "name": "lodepng_roundtrip 0",
+  "wasm": "real-world-lodepng/generated/lodepng.wasm",
+  "func": "lodepng_roundtrip_hash",
+  "args": [
+   "0"
+  ],
+  "baseline": -1680879972
+ },
+ {
+  "name": "lodepng_encoded_size 0",
+  "wasm": "real-world-lodepng/generated/lodepng.wasm",
+  "func": "lodepng_probe_encoded_size",
+  "args": [
+   "0"
+  ],
+  "baseline": 3870
+ },
+ {
+  "name": "lodepng_decode_hash 0",
+  "wasm": "real-world-lodepng/generated/lodepng.wasm",
+  "func": "lodepng_probe_decode_hash",
+  "args": [
+   "0"
+  ],
+  "baseline": -2110661857
+ },
+ {
+  "name": "lodepng_input_hash 0",
+  "wasm": "real-world-lodepng/generated/lodepng.wasm",
+  "func": "lodepng_probe_input_hash",
+  "args": [
+   "0"
+  ],
+  "baseline": -2110663679
+ },
+ {
+  "name": "lodepng_png_hash 0",
+  "wasm": "real-world-lodepng/generated/lodepng.wasm",
+  "func": "lodepng_probe_png_hash",
+  "args": [
+   "0"
+  ],
+  "baseline": 79205344
+ },
+ {
+  "name": "lodepng_roundtrip 1",
+  "wasm": "real-world-lodepng/generated/lodepng.wasm",
+  "func": "lodepng_roundtrip_hash",
+  "args": [
+   "1"
+  ],
+  "baseline": -998874337
+ },
+ {
+  "name": "lodepng_encoded_size 1",
+  "wasm": "real-world-lodepng/generated/lodepng.wasm",
+  "func": "lodepng_probe_encoded_size",
+  "args": [
+   "1"
+  ],
+  "baseline": 6518
+ },
+ {
+  "name": "lodepng_decode_hash 1",
+  "wasm": "real-world-lodepng/generated/lodepng.wasm",
+  "func": "lodepng_probe_decode_hash",
+  "args": [
+   "1"
+  ],
+  "baseline": 496467531
+ },
+ {
+  "name": "lodepng_input_hash 1",
+  "wasm": "real-world-lodepng/generated/lodepng.wasm",
+  "func": "lodepng_probe_input_hash",
+  "args": [
+   "1"
+  ],
+  "baseline": 496461629
+ },
+ {
+  "name": "lodepng_png_hash 1",
+  "wasm": "real-world-lodepng/generated/lodepng.wasm",
+  "func": "lodepng_probe_png_hash",
+  "args": [
+   "1"
+  ],
+  "baseline": -1526580224
+ },
+ {
+  "name": "chipmunk_hash_scene 60",
+  "wasm": "real-world-chipmunk/generated/chipmunk.wasm",
+  "func": "chipmunk_hash_scene",
+  "args": [
+   "60"
+  ],
+  "baseline": -1855749543
+ },
+ {
+  "name": "chipmunk_hash_scene 600",
+  "wasm": "real-world-chipmunk/generated/chipmunk.wasm",
+  "func": "chipmunk_hash_scene",
+  "args": [
+   "600"
+  ],
+  "baseline": 792478063
+ },
+ {
+  "name": "chipmunk_variant 600",
+  "wasm": "real-world-chipmunk/generated/chipmunk.wasm",
+  "func": "chipmunk_hash_scene_variant",
+  "args": [
+   "600"
+  ],
+  "baseline": -455480843
+ },
+ {
+  "name": "chipmunk_probe_x 0 600",
+  "wasm": "real-world-chipmunk/generated/chipmunk.wasm",
+  "func": "chipmunk_probe_body_x",
+  "args": [
+   "0",
+   "600"
+  ],
+  "baseline": -1071644672
+ },
+ {
+  "name": "chipmunk_probe_y 1 600",
+  "wasm": "real-world-chipmunk/generated/chipmunk.wasm",
+  "func": "chipmunk_probe_body_y",
+  "args": [
+   "1",
+   "600"
+  ],
+  "baseline": -216627709
+ },
+ {
+  "name": "chipmunk_probe_angle 2 600",
+  "wasm": "real-world-chipmunk/generated/chipmunk.wasm",
+  "func": "chipmunk_probe_angle",
+  "args": [
+   "2",
+   "600"
+  ],
+  "baseline": -343754584
+ },
+ {
+  "name": "secret_expected_length",
+  "wasm": "real-archive-secret/generated/secret_reader.wasm",
+  "func": "miniz_secret_expected_length",
+  "args": [],
+  "baseline": 14
+ },
+ {
+  "name": "secret_expected_crc32",
+  "wasm": "real-archive-secret/generated/secret_reader.wasm",
+  "func": "miniz_secret_probe_expected_crc32",
+  "args": [],
+  "baseline": -197449106
+ },
+ {
+  "name": "profile_memory_walk 400",
+  "wasm": "chipmunk-profile/generated/chipmunk_profile.wasm",
+  "func": "profile_memory_walk",
+  "args": [
+   "400"
+  ],
+  "baseline": null
+ },
+ {
+  "name": "profile_math_shim 400",
+  "wasm": "chipmunk-profile/generated/chipmunk_profile.wasm",
+  "func": "profile_math_shim",
+  "args": [
+   "400"
+  ],
+  "baseline": null
+ },
+ {
+  "name": "profile_branch_state 400",
+  "wasm": "chipmunk-profile/generated/chipmunk_profile.wasm",
+  "func": "profile_branch_state",
+  "args": [
+   "400"
+  ],
+  "baseline": null
+ },
+ {
+  "name": "profile_space_freefall 120",
+  "wasm": "chipmunk-profile/generated/chipmunk_profile.wasm",
+  "func": "profile_space_freefall",
+  "args": [
+   "120"
+  ],
+  "baseline": null
+ },
+ {
+  "name": "profile_space_collision 120",
+  "wasm": "chipmunk-profile/generated/chipmunk_profile.wasm",
+  "func": "profile_space_collision",
+  "args": [
+   "120"
+  ],
+  "baseline": null
+ },
+ {
+  "name": "profile_space_full 120",
+  "wasm": "chipmunk-profile/generated/chipmunk_profile.wasm",
+  "func": "profile_space_full",
+  "args": [
+   "120"
+  ],
+  "baseline": null
+ },
+ {
+  "name": "h264mp4_decode_hash 8",
+  "wasm": "real-world-h264bsd-mp4/generated/h264mp4.wasm",
+  "func": "h264mp4_decode_hash",
+  "args": [
+   "8"
+  ],
+  "baseline": -419184337
+ },
+ {
+  "name": "h264mp4_width",
+  "wasm": "real-world-h264bsd-mp4/generated/h264mp4.wasm",
+  "func": "h264mp4_probe_width",
+  "args": [],
+  "baseline": 96
+ },
+ {
+  "name": "h264mp4_height",
+  "wasm": "real-world-h264bsd-mp4/generated/h264mp4.wasm",
+  "func": "h264mp4_probe_height",
+  "args": [],
+  "baseline": 64
+ },
+ {
+  "name": "h264mp4_frame_count 8",
+  "wasm": "real-world-h264bsd-mp4/generated/h264mp4.wasm",
+  "func": "h264mp4_probe_frame_count",
+  "args": [
+   "8"
+  ],
+  "baseline": 8
+ },
+ {
+  "name": "h264mp4_first_frame",
+  "wasm": "real-world-h264bsd-mp4/generated/h264mp4.wasm",
+  "func": "h264mp4_probe_first_frame_hash",
+  "args": [],
+  "baseline": -53578803
+ },
+ {
+  "name": "h264mp4_last_frame 8",
+  "wasm": "real-world-h264bsd-mp4/generated/h264mp4.wasm",
+  "func": "h264mp4_probe_last_frame_hash",
+  "args": [
+   "8"
+  ],
+  "baseline": 131893473
+ },
+ {
+  "name": "plmpeg_decode_hash 8",
+  "wasm": "real-world-plmpeg/generated/plmpeg.wasm",
+  "func": "plmpeg_decode_hash",
+  "args": [
+   "8"
+  ],
+  "baseline": -1675151828
+ },
+ {
+  "name": "plmpeg_width",
+  "wasm": "real-world-plmpeg/generated/plmpeg.wasm",
+  "func": "plmpeg_probe_width",
+  "args": [],
+  "baseline": 96
+ },
+ {
+  "name": "plmpeg_height",
+  "wasm": "real-world-plmpeg/generated/plmpeg.wasm",
+  "func": "plmpeg_probe_height",
+  "args": [],
+  "baseline": 64
+ },
+ {
+  "name": "plmpeg_frame_count 8",
+  "wasm": "real-world-plmpeg/generated/plmpeg.wasm",
+  "func": "plmpeg_probe_frame_count",
+  "args": [
+   "8"
+  ],
+  "baseline": 8
+ },
+ {
+  "name": "plmpeg_first_frame",
+  "wasm": "real-world-plmpeg/generated/plmpeg.wasm",
+  "func": "plmpeg_probe_first_frame_hash",
+  "args": [],
+  "baseline": 1251253572
+ },
+ {
+  "name": "plmpeg_last_frame 8",
+  "wasm": "real-world-plmpeg/generated/plmpeg.wasm",
+  "func": "plmpeg_probe_last_frame_hash",
+  "args": [
+   "8"
+  ],
+  "baseline": 1609960924
+ },
+ {
+  "name": "plmpeg_stream_decode_hash 8",
+  "wasm": "real-world-plmpeg-stream/generated/plmpeg.wasm",
+  "func": "plmpeg_decode_hash",
+  "args": [
+   "8"
+  ],
+  "baseline": -1675151828
+ },
+ {
+  "name": "plmpeg_stream_width",
+  "wasm": "real-world-plmpeg-stream/generated/plmpeg.wasm",
+  "func": "plmpeg_probe_width",
+  "args": [],
+  "baseline": 96
+ },
+ {
+  "name": "plmpeg_stream_height",
+  "wasm": "real-world-plmpeg-stream/generated/plmpeg.wasm",
+  "func": "plmpeg_probe_height",
+  "args": [],
+  "baseline": 64
+ },
+ {
+  "name": "plmpeg_stream_frame_count 8",
+  "wasm": "real-world-plmpeg-stream/generated/plmpeg.wasm",
+  "func": "plmpeg_probe_frame_count",
+  "args": [
+   "8"
+  ],
+  "baseline": 8
+ },
+ {
+  "name": "plmpeg_stream_first_frame",
+  "wasm": "real-world-plmpeg-stream/generated/plmpeg.wasm",
+  "func": "plmpeg_probe_first_frame_hash",
+  "args": [],
+  "baseline": 1251253572
+ },
+ {
+  "name": "plmpeg_stream_last_frame 8",
+  "wasm": "real-world-plmpeg-stream/generated/plmpeg.wasm",
+  "func": "plmpeg_probe_last_frame_hash",
+  "args": [
+   "8"
+  ],
+  "baseline": 1609960924
+ },
+ {
+  "name": "libjpeg_decode_hash",
+  "wasm": "real-world-libjpeg-turbo/generated/libjpeg_turbo.wasm",
+  "func": "libjpeg_turbo_decode_hash",
+  "args": [],
+  "baseline": 950757193
+ },
+ {
+  "name": "libjpeg_width",
+  "wasm": "real-world-libjpeg-turbo/generated/libjpeg_turbo.wasm",
+  "func": "libjpeg_turbo_probe_width",
+  "args": [],
+  "baseline": 227
+ },
+ {
+  "name": "libjpeg_height",
+  "wasm": "real-world-libjpeg-turbo/generated/libjpeg_turbo.wasm",
+  "func": "libjpeg_turbo_probe_height",
+  "args": [],
+  "baseline": 149
+ },
+ {
+  "name": "libjpeg_components",
+  "wasm": "real-world-libjpeg-turbo/generated/libjpeg_turbo.wasm",
+  "func": "libjpeg_turbo_probe_components",
+  "args": [],
+  "baseline": 3
+ },
+ {
+  "name": "libjpeg_input_hash",
+  "wasm": "real-world-libjpeg-turbo/generated/libjpeg_turbo.wasm",
+  "func": "libjpeg_turbo_probe_input_hash",
+  "args": [],
+  "baseline": 1227945443
+ },
+ {
+  "name": "libjpeg_rgb_size",
+  "wasm": "real-world-libjpeg-turbo/generated/libjpeg_turbo.wasm",
+  "func": "libjpeg_turbo_probe_rgb_size",
+  "args": [],
+  "baseline": 101469
+ },
+ {
+  "name": "mjpeg_decode_hash 12",
+  "wasm": "real-world-libjpeg-turbo-mjpeg/generated/libjpeg_turbo_mjpeg.wasm",
+  "func": "libjpeg_turbo_mjpeg_decode_hash",
+  "args": [
+   "12"
+  ],
+  "baseline": -598443464
+ },
+ {
+  "name": "mjpeg_width",
+  "wasm": "real-world-libjpeg-turbo-mjpeg/generated/libjpeg_turbo_mjpeg.wasm",
+  "func": "libjpeg_turbo_mjpeg_probe_width",
+  "args": [],
+  "baseline": 96
+ },
+ {
+  "name": "mjpeg_height",
+  "wasm": "real-world-libjpeg-turbo-mjpeg/generated/libjpeg_turbo_mjpeg.wasm",
+  "func": "libjpeg_turbo_mjpeg_probe_height",
+  "args": [],
+  "baseline": 64
+ },
+ {
+  "name": "mjpeg_components",
+  "wasm": "real-world-libjpeg-turbo-mjpeg/generated/libjpeg_turbo_mjpeg.wasm",
+  "func": "libjpeg_turbo_mjpeg_probe_components",
+  "args": [],
+  "baseline": 3
+ },
+ {
+  "name": "mjpeg_frame_count 12",
+  "wasm": "real-world-libjpeg-turbo-mjpeg/generated/libjpeg_turbo_mjpeg.wasm",
+  "func": "libjpeg_turbo_mjpeg_probe_frame_count",
+  "args": [
+   "12"
+  ],
+  "baseline": 12
+ },
+ {
+  "name": "mjpeg_first_frame",
+  "wasm": "real-world-libjpeg-turbo-mjpeg/generated/libjpeg_turbo_mjpeg.wasm",
+  "func": "libjpeg_turbo_mjpeg_probe_first_frame_hash",
+  "args": [],
+  "baseline": -924446984
+ },
+ {
+  "name": "mjpeg_last_frame 12",
+  "wasm": "real-world-libjpeg-turbo-mjpeg/generated/libjpeg_turbo_mjpeg.wasm",
+  "func": "libjpeg_turbo_mjpeg_probe_last_frame_hash",
+  "args": [
+   "12"
+  ],
+  "baseline": 1556833302
+ },
+ {
+  "name": "mjpeg_input_hash",
+  "wasm": "real-world-libjpeg-turbo-mjpeg/generated/libjpeg_turbo_mjpeg.wasm",
+  "func": "libjpeg_turbo_mjpeg_probe_input_hash",
+  "args": [],
+  "baseline": 755618084
+ },
+ {
+  "name": "binjgb_decode_hash 16",
+  "wasm": "real-world-binjgb/generated/binjgb.wasm",
+  "func": "binjgb_decode_hash",
+  "args": [
+   "16"
+  ],
+  "baseline": -1323964910
+ },
+ {
+  "name": "binjgb_width",
+  "wasm": "real-world-binjgb/generated/binjgb.wasm",
+  "func": "binjgb_probe_width",
+  "args": [],
+  "baseline": 160
+ },
+ {
+  "name": "binjgb_height",
+  "wasm": "real-world-binjgb/generated/binjgb.wasm",
+  "func": "binjgb_probe_height",
+  "args": [],
+  "baseline": 144
+ },
+ {
+  "name": "binjgb_frame_count 16",
+  "wasm": "real-world-binjgb/generated/binjgb.wasm",
+  "func": "binjgb_probe_frame_count",
+  "args": [
+   "16"
+  ],
+  "baseline": 16
+ },
+ {
+  "name": "binjgb_first_frame",
+  "wasm": "real-world-binjgb/generated/binjgb.wasm",
+  "func": "binjgb_probe_first_frame_hash",
+  "args": [],
+  "baseline": 1015431621
+ },
+ {
+  "name": "binjgb_last_frame 16",
+  "wasm": "real-world-binjgb/generated/binjgb.wasm",
+  "func": "binjgb_probe_last_frame_hash",
+  "args": [
+   "16"
+  ],
+  "baseline": 838717591
+ },
+ {
+  "name": "builder_case_count",
+  "wasm": "self-hosting-luanoffi-builder/generated/self_hosting_luanoffi_builder.wasm",
+  "func": "builder_case_count",
+  "args": [],
+  "baseline": 3
+ },
+ {
+  "name": "builder_c0_code_hash",
+  "wasm": "self-hosting-luanoffi-builder/generated/self_hosting_luanoffi_builder.wasm",
+  "func": "builder_probe_code_hash",
+  "args": [
+   "0"
+  ],
+  "baseline": null
+ },
+ {
+  "name": "builder_c0_run_hash",
+  "wasm": "self-hosting-luanoffi-builder/generated/self_hosting_luanoffi_builder.wasm",
+  "func": "builder_run_case_hash",
+  "args": [
+   "0"
+  ],
+  "baseline": null
+ },
+ {
+  "name": "builder_c1_code_hash",
+  "wasm": "self-hosting-luanoffi-builder/generated/self_hosting_luanoffi_builder.wasm",
+  "func": "builder_probe_code_hash",
+  "args": [
+   "1"
+  ],
+  "baseline": null
+ },
+ {
+  "name": "builder_c1_run_hash",
+  "wasm": "self-hosting-luanoffi-builder/generated/self_hosting_luanoffi_builder.wasm",
+  "func": "builder_run_case_hash",
+  "args": [
+   "1"
+  ],
+  "baseline": null
+ },
+ {
+  "name": "builder_c2_code_hash",
+  "wasm": "self-hosting-luanoffi-builder/generated/self_hosting_luanoffi_builder.wasm",
+  "func": "builder_probe_code_hash",
+  "args": [
+   "2"
+  ],
+  "baseline": null
+ },
+ {
+  "name": "builder_c2_run_hash",
+  "wasm": "self-hosting-luanoffi-builder/generated/self_hosting_luanoffi_builder.wasm",
+  "func": "builder_run_case_hash",
+  "args": [
+   "2"
+  ],
+  "baseline": null
+ }
+]
