@@ -37,23 +37,38 @@ require math
     the default backend (rt.stdinBuffer / stdoutBuffer / stderrBuffer, no
     files).
 
-    Changed assertion: path_open with dirfd 1 is ENOTDIR (C: openat on the
-    stdout descriptor, which is not a directory); upstream checked its own
-    EBADF. A dirfd past the preopen table is still EBADF.
+    Changed assertions (C is the Linux build, HAS_IOVEC):
+      - path_open with dirfd 1 is ENOTDIR (C: openat on the stdout
+        descriptor, which is not a directory); upstream checked its own
+        EBADF. A dirfd past the preopen table is still EBADF.
+      - test_fd_write: fd_write of only empty iovecs on an unknown fd is
+        BADF (upstream: SUCCESS, the non-HAS_IOVEC loop never called
+        write); fd_datasync of a directory is SUCCESS (Linux fdatasync of
+        a directory is 0; upstream: -1, as fio modeled it).
 
     Eden tests (no upstream counterpart):
       - test_stdout_iovecs_nul: three iovecs with NUL bytes land byte-exact
         in rt.stdoutBuffer; fd 2 in rt.stderrBuffer.
       - test_stdin_read: fd_read consumes rt.stdinBuffer (NUL included),
-        stops after the short iovec, then reads 0 at the end.
+        fills the iovecs in order up to what it held, then reads 0.
       - test_bad_fd: every fd call on a descriptor that is not open, a write
         to stdin, and a token that names no context.
-      - test_iovec_out_of_bounds: the iovec array, a buffer and the count
-        out of bounds trap with m3Err_trapOutOfBoundsMemoryAccess before
-        any byte moves; an empty iovec is skipped (non-HAS_IOVEC branch).
+      - test_iovec_out_of_bounds: the iovec array, a buffer (also a later
+        one, and an empty one) and the count out of bounds trap with
+        m3Err_trapOutOfBoundsMemoryAccess before any byte moves
+        (copy_iov_to_host of the HAS_IOVEC branch).
       - test_path_open_default: the default backend has no files (NOENT,
         with O_CREAT too), a standard stream is not a directory (NOTDIR),
         "." opens, stdin does not seek (SPIPE).
+      - test_iovec_linux: readv/writev semantics the Linux build shows:
+        BADF with no or only empty iovecs on a bad / wrong-direction fd,
+        INVAL past IOV_MAX, a partial transfer is SUCCESS with its count.
+      - test_fd_datasync_default: the standard streams are fdatasync()'s -1
+        (EINVAL on a character device), the preopens SUCCESS.
+      - test_path_open_dot_flags: "." / "./" with O_CREAT, O_CREAT|O_EXCL,
+        O_TRUNC, write access, O_EXCL alone, as Linux open(2).
+      - test_dir_seek_default: per-open directory offsets with tmpfs lseek
+        semantics, SPIPE on the standard streams, directory reads.
       - test_linked_fd_write: fd_write linked with m3_LinkRawFunctionEx and
         the context token into a hand-built module and called through
         m3_Call; its trap leaves m3_Call.
@@ -75,6 +90,7 @@ let private OFF_BUF0 = 0x400u
 let private OFF_BUF1 = 0x500u
 let private OFF_BUF2 = 0x580u
 let private OFF_COUNT = 0x600u
+let private OFF_MANY = 0x1000u   // 1025 empty iovecs: 8200 bytes of zeroed memory
 
 
 // ============================================================================
@@ -85,6 +101,7 @@ let private OFF_COUNT = 0x600u
 struct FakeFile {
     path : string = ""
     data : array<u8>
+    cap : int = -1      // the size the file cannot grow past (a full disk), -1 = none
 }
 
 
@@ -182,39 +199,63 @@ def private fake_open(var rt : M3Runtime; dirHandle : int; path : string; flags 
 }
 
 
-def private fake_read(var rt : M3Runtime; handle : int; var buf : array<u8>; len : int) : int {
+def private total_length(bufs : array<array<u8>>) : int {
+    var total = 0
+    for (b in bufs) {
+        total += length(b)
+    }
+    return total
+}
+
+
+// Linux readv on a file: EBADF, EINVAL past IOV_MAX, EISDIR for a directory
+// (unless 0 bytes are asked), EBADF when not open for reading
+def private fake_readv(var rt : M3Runtime; handle : int; var bufs : array<array<u8>>) : int {
     if (handle >= 0 && handle <= 2) {
-        return wasi_default_read(rt, handle, buf, len)
+        return wasi_default_readv(rt, handle, bufs)
     }
     if (!fake_is_open(handle)) {
         return -EBADF
     }
-    if (g_fake_handles[handle].kind == FH_DIR) {
-        return -EISDIR
+    if (length(bufs) > IOV_MAX) {
+        return -EINVAL
     }
     if ((g_fake_handles[handle].flags & O_ACCMODE) == O_WRONLY) {
         return -EBADF
     }
+    let total = total_length(bufs)
+    if (g_fake_handles[handle].kind == FH_DIR) {
+        return total == 0 ? 0 : -EISDIR
+    }
     let file = g_fake_handles[handle].file
     let pos = g_fake_handles[handle].pos
-    let n = max(0, min(len, length(g_fake_files[file].data) - pos))
-    resize(buf, n)
-    for (i in range(n)) {
-        buf[i] = g_fake_files[file].data[pos + i]
+    let n = max(0, min(total, length(g_fake_files[file].data) - pos))
+    var k = 0
+    for (b in bufs) {
+        let take = min(length(b), n - k)
+        for (i in range(take)) {
+            b[i] = g_fake_files[file].data[pos + k + i]
+        }
+        k += take
     }
     g_fake_handles[handle].pos = pos + n
     return n
 }
 
 
-def private fake_write(var rt : M3Runtime; handle : int; bytes : array<u8>) : int {
+// Linux writev on a file: as readv; a file at its cap takes what fits and
+// returns that count (a partial transfer), ENOSPC when nothing fits
+def private fake_writev(var rt : M3Runtime; handle : int; bufs : array<array<u8>>) : int {
     if (handle >= 0 && handle <= 2) {
-        return wasi_default_write(rt, handle, bytes)
+        return wasi_default_writev(rt, handle, bufs)
     }
-    if (!fake_is_open(handle) || g_fake_handles[handle].kind == FH_DIR) {
+    if (!fake_is_open(handle)) {
         return -EBADF
     }
-    if ((g_fake_handles[handle].flags & O_ACCMODE) == O_RDONLY) {
+    if (length(bufs) > IOV_MAX) {
+        return -EINVAL
+    }
+    if (g_fake_handles[handle].kind == FH_DIR || (g_fake_handles[handle].flags & O_ACCMODE) == O_RDONLY) {
         return -EBADF
     }
     let file = g_fake_handles[handle].file
@@ -222,16 +263,29 @@ def private fake_write(var rt : M3Runtime; handle : int; bytes : array<u8>) : in
         g_fake_handles[handle].pos = length(g_fake_files[file].data)
     }
     var pos = g_fake_handles[handle].pos
-    for (b in bytes) {
-        if (pos < length(g_fake_files[file].data)) {
-            g_fake_files[file].data[pos] = b
-        } else {
-            push(g_fake_files[file].data, b)
+    let total = total_length(bufs)
+    let cap = g_fake_files[file].cap
+    let limit = cap < 0 ? total : min(total, max(0, cap - pos))
+    if (limit == 0 && total > 0) {
+        return -ENOSPC
+    }
+    var n = 0
+    for (b in bufs) {
+        for (x in b) {
+            if (n == limit) {
+                break
+            }
+            if (pos < length(g_fake_files[file].data)) {
+                g_fake_files[file].data[pos] = x
+            } else {
+                push(g_fake_files[file].data, x)
+            }
+            pos++
+            n++
         }
-        pos++
     }
     g_fake_handles[handle].pos = pos
-    return length(bytes)
+    return n
 }
 
 
@@ -242,12 +296,11 @@ def private fake_lseek(var rt : M3Runtime; handle : int; offset : i64; whence : 
     if (!fake_is_open(handle)) {
         return i64(-EBADF)
     }
-    if (g_fake_handles[handle].kind == FH_DIR) {
-        return 0l
-    }
     var origin = 0l
     if (whence == SEEK_CUR) {
         origin = i64(g_fake_handles[handle].pos)
+    } elif (whence == SEEK_END && g_fake_handles[handle].kind == FH_DIR) {
+        return i64(-EINVAL)   // a tmpfs directory (dcache_dir_lseek), as the default backend's
     } elif (whence == SEEK_END) {
         origin = i64(length(g_fake_files[g_fake_handles[handle].file].data))
     } elif (whence != SEEK_SET) {
@@ -281,7 +334,7 @@ def private fake_fdatasync(var rt : M3Runtime; handle : int) : int {
     if (!fake_is_open(handle)) {
         return -EBADF
     }
-    return g_fake_handles[handle].kind == FH_DIR ? -EINVAL : 0
+    return 0   // Linux fdatasync of a regular file or a directory
 }
 
 
@@ -315,11 +368,11 @@ def private fake_backend() : M3WasiFsBackend {
     b.open <- @(var rt : M3Runtime; dirHandle : int; path : string; flags : int; mode : int) : int {
         return fake_open(rt, dirHandle, path, flags, mode)
     }
-    b.read <- @(var rt : M3Runtime; handle : int; var buf : array<u8>; len : int) : int {
-        return fake_read(rt, handle, buf, len)
+    b.readv <- @(var rt : M3Runtime; handle : int; var bufs : array<array<u8>>) : int {
+        return fake_readv(rt, handle, bufs)
     }
-    b.write <- @(var rt : M3Runtime; handle : int; bytes : array<u8>) : int {
-        return fake_write(rt, handle, bytes)
+    b.writev <- @(var rt : M3Runtime; handle : int; bufs : array<array<u8>>) : int {
+        return fake_writev(rt, handle, bufs)
     }
     b.lseek <- @(var rt : M3Runtime; handle : int; offset : i64; whence : int) : i64 {
         return fake_lseek(rt, handle, offset, whence)
@@ -649,8 +702,8 @@ def test_path_open(var t : TestRun; fx : FixtureSource) {
 }
 
 
-// fd_read fills the iovecs in order and stops after a short read, which is
-// the non-HAS_IOVEC branch of the C function.
+// fd_read fills the iovecs in order with one readv (the HAS_IOVEC branch
+// of the C function, the one the Linux build compiles).
 def test_fd_read(var t : TestRun; fx : FixtureSource) {
     var rt <- new_runtime()
     let token = new_wasi(rt, true)
@@ -737,15 +790,15 @@ def test_fd_write(var t : TestRun; fx : FixtureSource) {
     let idx = fake_find(SCRATCH_TXT)
     check(t, idx != -1 && same_bytes(g_fake_files[idx].data, bytes_of(SIMPLE_TXT_BODY)), "the fake file system holds the bytes")
 
-    // C: write() on an unknown descriptor fails with EBADF, but only once it
-    // reaches a non-empty iovec.
+    // C: writev() on an unknown descriptor fails with EBADF, whatever the
+    // iovecs hold (Linux: writev(99, v, 1) and writev(99, v, 0) are EBADF).
     equal(t, call_fd_write(t, rt, token, 99u, OFF_IOVS, 1u, OFF_COUNT), u32(WASI_ERRNO_BADF), "fd_write of an unknown fd is BADF")
     mem_write_iovec(rt, OFF_IOVS, 0u, OFF_BUF0, 0u)
-    equal(t, call_fd_write(t, rt, token, 99u, OFF_IOVS, 1u, OFF_COUNT), u32(WASI_ERRNO_SUCCESS), "only empty iovecs never reach write()")
-    equal(t, mem_read32(rt, OFF_COUNT), 0u, "nwritten is 0")
+    equal(t, call_fd_write(t, rt, token, 99u, OFF_IOVS, 1u, OFF_COUNT), u32(WASI_ERRNO_BADF), "only empty iovecs still reach writev(): BADF")
+    equal(t, call_fd_write(t, rt, token, 99u, OFF_IOVS, 0u, OFF_COUNT), u32(WASI_ERRNO_BADF), "no iovecs still reach writev(): BADF")
 
-    // A directory is fdatasync's -1 case here.
-    equal(t, call_fd_datasync(t, rt, token, 3u), 0xFFFFFFFFu, "fd_datasync of a directory returns -1")
+    // Linux fdatasync of a directory is 0 (measured on ext4 and tmpfs).
+    equal(t, call_fd_datasync(t, rt, token, 3u), u32(WASI_ERRNO_SUCCESS), "fd_datasync of a directory succeeds")
 
     m3_FreeRuntime(rt)
 }
@@ -807,7 +860,7 @@ def test_stdin_read(var t : TestRun; fx : FixtureSource) {
     let want1 <- [0x21u8, 0x0au8]
     check(t, same_bytes(got0, want0), "the first iovec is full, NUL included")
     check(t, same_bytes(got1, want1), "the second iovec got the short rest")
-    equal(t, mem_read8(rt, OFF_BUF2), 0u8, "the loop stopped after the short read")
+    equal(t, mem_read8(rt, OFF_BUF2), 0u8, "readv filled only the bytes stdin held")
     equal(t, length(rt.stdinBuffer), 0, "the read consumed rt.stdinBuffer")
     equal(t, call_fd_read(t, rt, token, 0u, OFF_IOVS, 1u, OFF_COUNT), u32(WASI_ERRNO_SUCCESS), "fd_read(0) at the end")
     equal(t, mem_read32(rt, OFF_COUNT), 0u, "nread is 0 at the end of stdin")
@@ -856,21 +909,33 @@ def test_iovec_out_of_bounds(var t : TestRun; fx : FixtureSource) {
     mem_write_iovec(rt, OFF_IOVS, 0u, OFF_BUF0, 3u)
     is_err(t, call_raw(rt, @@m3_wasi_generic_fd_write, token, [1ul, u64(OFF_IOVS), 1ul, 65533ul]), oob, "fd_write: nwritten past the end")
 
-    // a buffer: the first iovec is in bounds, the second is not; C checks
-    // each buffer just before its write, so the first write happened
+    // a buffer: the first iovec is in bounds, the second is not; C's
+    // copy_iov_to_host checks every buffer before the one writev, so
+    // nothing was written
     mem_write_iovec(rt, OFF_IOVS, 1u, 65530u, 10u)
     is_err(t, call_raw(rt, @@m3_wasi_generic_fd_write, token, [1ul, u64(OFF_IOVS), 2ul, u64(OFF_COUNT)]), oob, "fd_write: buffer past the end")
-    equal(t, length(rt.stdoutBuffer), 3, "the in-bounds iovec before it was written (non-HAS_IOVEC order)")
+    equal(t, length(rt.stdoutBuffer), 0, "the in-bounds iovec before it was not written (HAS_IOVEC order)")
+    rt.stdinBuffer <- [7u8, 8u8, 9u8]
+    is_err(t, call_raw(rt, @@m3_wasi_generic_fd_read, token, [0ul, u64(OFF_IOVS), 2ul, u64(OFF_COUNT)]), oob, "fd_read: buffer past the end")
+    equal(t, length(rt.stdinBuffer), 3, "nothing was read before the trap")
+    equal(t, mem_read8(rt, OFF_BUF0), 0x61u8, "the in-bounds iovec is untouched")
     mem_write_iovec(rt, OFF_IOVS, 0u, 0xfffffff0u, 4u)
     is_err(t, call_raw(rt, @@m3_wasi_generic_fd_write, token, [1ul, u64(OFF_IOVS), 1ul, u64(OFF_COUNT)]), oob, "fd_write: buffer at 0xfffffff0")
     rt.stdinBuffer <- [1u8, 2u8]
     is_err(t, call_raw(rt, @@m3_wasi_generic_fd_read, token, [0ul, u64(OFF_IOVS), 1ul, u64(OFF_COUNT)]), oob, "fd_read: buffer at 0xfffffff0")
     equal(t, length(rt.stdinBuffer), 2, "the trap came before the read")
 
-    // an empty iovec is skipped before its check (C: `if (len == 0) continue`)
+    // an empty iovec is checked too (C: m3ApiCheckMem(iov_base, 0) in
+    // copy_iov_to_host); one that ends exactly at the memory end is fine
     mem_write_iovec(rt, OFF_IOVS, 0u, 0xfffffff0u, 0u)
-    equal(t, call_fd_write(t, rt, token, 1u, OFF_IOVS, 1u, OFF_COUNT), u32(WASI_ERRNO_SUCCESS), "an empty iovec out of bounds is skipped")
+    is_err(t, call_raw(rt, @@m3_wasi_generic_fd_write, token, [1ul, u64(OFF_IOVS), 1ul, u64(OFF_COUNT)]), oob, "fd_write: an empty iovec out of bounds traps")
+    is_err(t, call_raw(rt, @@m3_wasi_generic_fd_read, token, [0ul, u64(OFF_IOVS), 1ul, u64(OFF_COUNT)]), oob, "fd_read: an empty iovec out of bounds traps")
+    mem_write_iovec(rt, OFF_IOVS, 0u, 65537u, 0u)
+    is_err(t, call_raw(rt, @@m3_wasi_generic_fd_write, token, [1ul, u64(OFF_IOVS), 1ul, u64(OFF_COUNT)]), oob, "fd_write: an empty iovec one past the end traps")
+    mem_write_iovec(rt, OFF_IOVS, 0u, 65536u, 0u)
+    equal(t, call_fd_write(t, rt, token, 1u, OFF_IOVS, 1u, OFF_COUNT), u32(WASI_ERRNO_SUCCESS), "an empty iovec at the memory end is in bounds")
     equal(t, mem_read32(rt, OFF_COUNT), 0u, "nwritten is 0")
+    equal(t, length(rt.stdoutBuffer), 0, "no trapped call wrote to stdout")
 
     // the other checked pointers
     is_err(t, call_raw(rt, @@m3_wasi_generic_fd_prestat_get, token, [3ul, 65532ul]), oob, "fd_prestat_get: buf past the end")
@@ -902,6 +967,167 @@ def test_path_open_default(var t : TestRun; fx : FixtureSource) {
     equal(t, mem_read8(rt, OFF_OUT), WASI_FILETYPE_DIRECTORY, "it is a directory")
 
     equal(t, call_preview1_fd_seek(t, rt, token, 0u, 0l, 1u, OFF_OUT), u32(WASI_ERRNO_SPIPE), "stdin does not seek")
+    m3_FreeRuntime(rt)
+}
+
+
+// The HAS_IOVEC branch as the Linux build runs it: one readv/writev whose
+// errno is the answer even with no bytes to move (a), IOV_MAX (d), and a
+// partial transfer that is SUCCESS with its count (e). b) and c) are in
+// test_iovec_out_of_bounds.
+def test_iovec_linux(var t : TestRun; fx : FixtureSource) {
+    var rt <- new_runtime()
+    let token = new_wasi(rt, false)
+    mem_write_iovec(rt, OFF_IOVS, 0u, OFF_BUF0, 0u)
+    mem_write_iovec(rt, OFF_IOVS, 1u, OFF_BUF1, 0u)
+
+    // a) writev(99, v, 0) and readv(1, v, 0) are EBADF on Linux
+    equal(t, call_fd_write(t, rt, token, 99u, OFF_IOVS, 0u, OFF_COUNT), u32(WASI_ERRNO_BADF), "fd_write(99) of no iovecs is BADF")
+    equal(t, call_fd_write(t, rt, token, 99u, OFF_IOVS, 2u, OFF_COUNT), u32(WASI_ERRNO_BADF), "fd_write(99) of empty iovecs is BADF")
+    equal(t, call_fd_read(t, rt, token, 99u, OFF_IOVS, 0u, OFF_COUNT), u32(WASI_ERRNO_BADF), "fd_read(99) of no iovecs is BADF")
+    equal(t, call_fd_read(t, rt, token, 1u, OFF_IOVS, 0u, OFF_COUNT), u32(WASI_ERRNO_BADF), "fd_read(1) of no iovecs is BADF: stdout is not readable")
+    equal(t, call_fd_read(t, rt, token, 1u, OFF_IOVS, 2u, OFF_COUNT), u32(WASI_ERRNO_BADF), "fd_read(1) of empty iovecs is BADF")
+    equal(t, call_fd_write(t, rt, token, 0u, OFF_IOVS, 0u, OFF_COUNT), u32(WASI_ERRNO_BADF), "fd_write(0) of no iovecs is BADF: stdin is not writable")
+    equal(t, call_fd_close(t, rt, token, 2u), u32(WASI_ERRNO_SUCCESS), "fd_close(2)")
+    equal(t, call_fd_write(t, rt, token, 2u, OFF_IOVS, 0u, OFF_COUNT), u32(WASI_ERRNO_BADF), "fd_write of no iovecs on a closed fd is BADF")
+    // ... and a readable/writable fd moves 0 bytes successfully
+    mem_write32(rt, OFF_COUNT, 0xdeadu)
+    equal(t, call_fd_write(t, rt, token, 1u, OFF_IOVS, 0u, OFF_COUNT), u32(WASI_ERRNO_SUCCESS), "fd_write(1) of no iovecs")
+    equal(t, mem_read32(rt, OFF_COUNT), 0u, "nwritten is 0")
+    mem_write32(rt, OFF_COUNT, 0xdeadu)
+    equal(t, call_fd_read(t, rt, token, 0u, OFF_IOVS, 2u, OFF_COUNT), u32(WASI_ERRNO_SUCCESS), "fd_read(0) of empty iovecs")
+    equal(t, mem_read32(rt, OFF_COUNT), 0u, "nread is 0")
+
+    // d) more than IOV_MAX (1024) iovecs is EINVAL (Linux writev(1, v, 1025));
+    // the array of empty iovecs {0, 0} is the zeroed memory at OFF_MANY
+    equal(t, call_fd_write(t, rt, token, 1u, OFF_MANY, 1025u, OFF_COUNT), u32(WASI_ERRNO_INVAL), "fd_write of 1025 iovecs is INVAL")
+    equal(t, call_fd_read(t, rt, token, 0u, OFF_MANY, 1025u, OFF_COUNT), u32(WASI_ERRNO_INVAL), "fd_read of 1025 iovecs is INVAL")
+    equal(t, call_fd_write(t, rt, token, 0u, OFF_MANY, 1025u, OFF_COUNT), u32(WASI_ERRNO_INVAL), "IOV_MAX is checked before the direction (Linux)")
+    equal(t, call_fd_write(t, rt, token, 99u, OFF_MANY, 1025u, OFF_COUNT), u32(WASI_ERRNO_BADF), "a closed fd is BADF before IOV_MAX")
+    equal(t, call_fd_write(t, rt, token, 1u, OFF_MANY, 1024u, OFF_COUNT), u32(WASI_ERRNO_SUCCESS), "1024 iovecs are allowed")
+    equal(t, mem_read32(rt, OFF_COUNT), 0u, "nwritten of 1024 empty iovecs is 0")
+    m3_FreeRuntime(rt)
+
+    // e) a partial transfer is SUCCESS with its count, even where the
+    // one-write-per-iovec loop would have met the error on the next write
+    var frt <- new_runtime()
+    let ftoken = new_wasi(frt, true)
+    let path_len = mem_write_string(frt, OFF_PATH, SCRATCH_TXT)
+    let oflags = u32(WASI_OFLAGS_CREAT) | u32(WASI_OFLAGS_TRUNC)
+    equal(t, call_path_open(t, frt, ftoken, 3u, OFF_PATH, path_len, oflags, WASI_RIGHTS_FD_WRITE, 0u, OFF_OUT),
+          u32(WASI_ERRNO_SUCCESS), "path_open of a scratch file")
+    let fd = mem_read32(frt, OFF_OUT)
+    let idx = fake_find(SCRATCH_TXT)
+    check(t, idx != -1, "the scratch file exists")
+    if (idx != -1) {
+        g_fake_files[idx].cap = 5   // the disk is full after 5 bytes
+    }
+    let head = mem_write_string(frt, OFF_BUF0, "Hello")
+    let tail = mem_write_string(frt, OFF_BUF1, " world")
+    mem_write_iovec(frt, OFF_IOVS, 0u, OFF_BUF0, head)
+    mem_write_iovec(frt, OFF_IOVS, 1u, OFF_BUF1, tail)
+    equal(t, call_fd_write(t, frt, ftoken, fd, OFF_IOVS, 2u, OFF_COUNT), u32(WASI_ERRNO_SUCCESS), "a partial writev is SUCCESS")
+    equal(t, mem_read32(frt, OFF_COUNT), 5u, "nwritten is the partial count")
+    equal(t, call_fd_write(t, frt, ftoken, fd, OFF_IOVS, 2u, OFF_COUNT), u32(WASI_ERRNO_NOSPC), "the next writev reports the error")
+    if (idx != -1) {
+        check(t, same_bytes(g_fake_files[idx].data, bytes_of("Hello")), "the file holds the first iovec")
+    }
+    // fd_read over a partial readv: the bytes land in order across iovecs
+    equal(t, call_fd_read(t, frt, ftoken, fd, OFF_IOVS, 2u, OFF_COUNT), u32(WASI_ERRNO_BADF), "a write-only fd does not read")
+    let rfd = open_simple_txt(t, frt, ftoken, 3u)
+    mem_write_iovec(frt, OFF_IOVS, 0u, OFF_BUF0, 3u)
+    mem_write_iovec(frt, OFF_IOVS, 1u, OFF_BUF1, 0u)
+    mem_write_iovec(frt, OFF_IOVS, 2u, OFF_BUF2, 20u)
+    equal(t, call_fd_read(t, frt, ftoken, rfd, OFF_IOVS, 3u, OFF_COUNT), u32(WASI_ERRNO_SUCCESS), "fd_read of three iovecs")
+    equal(t, mem_read32(frt, OFF_COUNT), 11u, "nread is the file, short of the 23 asked")
+    equal_str(t, mem_read_string(frt, OFF_BUF0, 3u), "Hel", "first iovec")
+    equal_str(t, mem_read_string(frt, OFF_BUF2, 8u), "lo world", "the empty iovec is passed over, the third gets the rest")
+    equal(t, mem_read8(frt, OFF_BUF2 + 8u), 0u8, "nothing past the count")
+    m3_FreeRuntime(frt)
+}
+
+
+// Linux fdatasync: EINVAL on the standard streams (character devices), 0
+// on a directory; fd_datasync passes fdatasync()'s -1 through.
+def test_fd_datasync_default(var t : TestRun; fx : FixtureSource) {
+    var rt <- new_runtime()
+    let token = new_wasi(rt, false)
+    for (fd in urange(3u)) {
+        equal(t, call_fd_datasync(t, rt, token, fd), 0xFFFFFFFFu, "fd_datasync of a standard stream is fdatasync()'s -1")
+    }
+    equal(t, call_fd_datasync(t, rt, token, 3u), u32(WASI_ERRNO_SUCCESS), "fd_datasync of preopen 3 (a directory)")
+    equal(t, call_fd_datasync(t, rt, token, 4u), u32(WASI_ERRNO_SUCCESS), "fd_datasync of preopen 4 (a directory)")
+    equal(t, call_fd_datasync(t, rt, token, 99u), 0xFFFFFFFFu, "fd_datasync of an unknown fd")
+    m3_FreeRuntime(rt)
+}
+
+
+// Linux open(".") on an existing directory: O_CREAT|O_EXCL is EEXIST
+// (checked first), O_CREAT is EISDIR, O_TRUNC or write access is EISDIR,
+// O_EXCL alone is ignored.
+def test_path_open_dot_flags(var t : TestRun; fx : FixtureSource) {
+    var rt <- new_runtime()
+    let token = new_wasi(rt, false)
+    let r = WASI_RIGHTS_FD_READ
+    let rw = WASI_RIGHTS_FD_READ | WASI_RIGHTS_FD_WRITE
+    let creat = u32(WASI_OFLAGS_CREAT)
+    let excl = u32(WASI_OFLAGS_EXCL)
+    let trunc = u32(WASI_OFLAGS_TRUNC)
+    for (dirName in [".", "./"]) {
+        let len = mem_write_string(rt, OFF_PATH, dirName)
+        equal(t, call_path_open(t, rt, token, 3u, OFF_PATH, len, creat, r, 0u, OFF_OUT), u32(WASI_ERRNO_ISDIR), "\"{dirName}\"O_CREAT is ISDIR")
+        equal(t, call_path_open(t, rt, token, 3u, OFF_PATH, len, creat | excl, r, 0u, OFF_OUT), u32(WASI_ERRNO_EXIST), "\"{dirName}\"O_CREAT|O_EXCL is EXIST")
+        equal(t, call_path_open(t, rt, token, 4u, OFF_PATH, len, creat | excl | trunc, rw, 0u, OFF_OUT), u32(WASI_ERRNO_EXIST), "\"{dirName}\"EXIST comes before ISDIR")
+        equal(t, call_path_open(t, rt, token, 3u, OFF_PATH, len, trunc, r, 0u, OFF_OUT), u32(WASI_ERRNO_ISDIR), "\"{dirName}\"O_TRUNC is ISDIR")
+        equal(t, call_path_open(t, rt, token, 3u, OFF_PATH, len, creat | trunc, r, 0u, OFF_OUT), u32(WASI_ERRNO_ISDIR), "\"{dirName}\"O_CREAT|O_TRUNC is ISDIR")
+        equal(t, call_path_open(t, rt, token, 3u, OFF_PATH, len, 0u, rw, 0u, OFF_OUT), u32(WASI_ERRNO_ISDIR), "\"{dirName}\"for writing is ISDIR")
+        equal(t, call_path_open(t, rt, token, 3u, OFF_PATH, len, excl, r, 0u, OFF_OUT), u32(WASI_ERRNO_SUCCESS), "\"{dirName}\"O_EXCL alone opens")
+        let fd = mem_read32(rt, OFF_OUT)
+        equal(t, call_fdstat_get(t, rt, token, fd, OFF_OUT), u32(WASI_ERRNO_SUCCESS), "fd_fdstat_get of the opened directory")
+        equal(t, mem_read8(rt, OFF_OUT), WASI_FILETYPE_DIRECTORY, "it is a directory")
+        equal(t, call_fd_close(t, rt, token, fd), u32(WASI_ERRNO_SUCCESS), "fd_close")
+    }
+    m3_FreeRuntime(rt)
+}
+
+
+// The default directory seeks as Linux's tmpfs (dcache_dir_lseek): each
+// open has its own offset, SET/CUR move it, SEEK_END and a negative result
+// are INVAL; a standard stream is SPIPE. Its reads are ISDIR unless empty.
+def test_dir_seek_default(var t : TestRun; fx : FixtureSource) {
+    var rt <- new_runtime()
+    let token = new_wasi(rt, false)
+    // snapshot_preview1 whence: 0 = SET, 1 = CUR, 2 = END
+    equal(t, call_preview1_fd_seek(t, rt, token, 3u, 5l, 0u, OFF_OUT), u32(WASI_ERRNO_SUCCESS), "SEEK_SET 5")
+    equal(t, mem_read64(rt, OFF_OUT), 5ul, "the offset is 5")
+    equal(t, call_preview1_fd_seek(t, rt, token, 3u, 3l, 1u, OFF_OUT), u32(WASI_ERRNO_SUCCESS), "SEEK_CUR 3")
+    equal(t, mem_read64(rt, OFF_OUT), 8ul, "the offset is 8")
+    equal(t, call_preview1_fd_seek(t, rt, token, 3u, -100l, 1u, OFF_OUT), u32(WASI_ERRNO_INVAL), "SEEK_CUR below 0 is INVAL")
+    equal(t, call_preview1_fd_seek(t, rt, token, 3u, -1l, 0u, OFF_OUT), u32(WASI_ERRNO_INVAL), "SEEK_SET -1 is INVAL")
+    equal(t, call_preview1_fd_seek(t, rt, token, 3u, 0l, 2u, OFF_OUT), u32(WASI_ERRNO_INVAL), "SEEK_END is INVAL")
+    equal(t, call_unstable_fd_seek(t, rt, token, 3u, 0l, 1u, OFF_OUT), u32(WASI_ERRNO_INVAL), "unstable SEEK_END is INVAL")
+    equal(t, call_unstable_fd_seek(t, rt, token, 3u, 0l, 0u, OFF_OUT), u32(WASI_ERRNO_SUCCESS), "unstable SEEK_CUR 0")
+    equal(t, mem_read64(rt, OFF_OUT), 8ul, "the failed seeks left the offset at 8")
+    equal(t, call_preview1_fd_seek(t, rt, token, 4u, 0l, 1u, OFF_OUT), u32(WASI_ERRNO_SUCCESS), "SEEK_CUR 0 on preopen 4")
+    equal(t, mem_read64(rt, OFF_OUT), 0ul, "preopen 4 is another open with its own offset")
+    for (fd in urange(3u)) {
+        equal(t, call_preview1_fd_seek(t, rt, token, fd, 0l, 0u, OFF_OUT), u32(WASI_ERRNO_SPIPE), "a standard stream is SPIPE")
+    }
+
+    mem_write_iovec(rt, OFF_IOVS, 0u, OFF_BUF0, 0u)
+    equal(t, call_fd_read(t, rt, token, 3u, OFF_IOVS, 1u, OFF_COUNT), u32(WASI_ERRNO_SUCCESS), "a directory reads 0 bytes")
+    equal(t, mem_read32(rt, OFF_COUNT), 0u, "nread is 0")
+    mem_write_iovec(rt, OFF_IOVS, 0u, OFF_BUF0, 4u)
+    equal(t, call_fd_read(t, rt, token, 3u, OFF_IOVS, 1u, OFF_COUNT), u32(WASI_ERRNO_ISDIR), "reading bytes from a directory is ISDIR")
+    equal(t, call_fd_write(t, rt, token, 3u, OFF_IOVS, 0u, OFF_COUNT), u32(WASI_ERRNO_BADF), "a directory is not writable")
+
+    equal(t, call_fd_close(t, rt, token, 3u), u32(WASI_ERRNO_SUCCESS), "fd_close(3)")
+    equal(t, call_preview1_fd_seek(t, rt, token, 3u, 0l, 0u, OFF_OUT), u32(WASI_ERRNO_BADF), "a closed directory is BADF")
+    let dot = mem_write_string(rt, OFF_PATH, ".")
+    equal(t, call_path_open(t, rt, token, 4u, OFF_PATH, dot, 0u, WASI_RIGHTS_FD_READ, 0u, OFF_OUT), u32(WASI_ERRNO_SUCCESS), "reopen \".\"")
+    equal(t, mem_read32(rt, OFF_OUT), 3u, "into the lowest free descriptor")
+    equal(t, call_preview1_fd_seek(t, rt, token, 3u, 0l, 1u, OFF_OUT), u32(WASI_ERRNO_SUCCESS), "SEEK_CUR 0 on the new open")
+    equal(t, mem_read64(rt, OFF_OUT), 0ul, "a new open starts at offset 0")
     m3_FreeRuntime(rt)
 }
 
@@ -1076,6 +1302,14 @@ def public run_tests_m3_api_wasi_fd(var t : TestRun; fx : FixtureSource) {
     test_iovec_out_of_bounds(t, fx)
     begin_test(t, "test_path_open_default")
     test_path_open_default(t, fx)
+    begin_test(t, "test_iovec_linux")
+    test_iovec_linux(t, fx)
+    begin_test(t, "test_fd_datasync_default")
+    test_fd_datasync_default(t, fx)
+    begin_test(t, "test_path_open_dot_flags")
+    test_path_open_dot_flags(t, fx)
+    begin_test(t, "test_dir_seek_default")
+    test_dir_seek_default(t, fx)
     begin_test(t, "test_linked_fd_write")
     test_linked_fd_write(t, fx)
 }

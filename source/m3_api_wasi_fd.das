@@ -25,11 +25,19 @@ require math
     - C's `buf + N` pointer arithmetic inside linear memory is an offset sum.
 
     Conditional compilation: the port targets the POSIX (Linux) branch of the
-    C file (`!_WIN32`, `!APE`). fd_read and fd_write take the non-HAS_IOVEC
-    branch (one read/write per iovec, stopping after a short transfer), which
-    wasm3 ships for the platforms without <sys/uio.h>; there is no readv or
-    writev to call. copy_iov_to_host belongs to the HAS_IOVEC branch and is
-    therefore not represented.
+    C file (`!_WIN32`, `!APE`, and HAS_IOVEC, which m3_api_wasi.c defines
+    for __linux__). fd_read and fd_write take the HAS_IOVEC branch:
+    copy_iov_to_host checks every iovec (the empty ones too) before any
+    I/O, then one readv / writev moves the bytes, and its result is the
+    answer (a partial count is SUCCESS, only a failed call is an errno).
+
+    Eden: the upstream port took the non-HAS_IOVEC loop (one read/write per
+    iovec, skipping empty ones, stopping after a short transfer), which is
+    not what the Linux build of C does (empty iovecs are checked, 0 iovecs
+    on a bad fd is BADF, more than IOV_MAX iovecs is INVAL, a later
+    out-of-bounds buffer traps before the earlier ones move, an error after
+    a partial transfer is not reported); the HAS_IOVEC branch is ported
+    instead, with readv / writev as backend calls (see THE BACKEND).
 
     Eden: deviations from the upstream port (.upstream/source/m3_api_wasi_fd.das)
     and from C, for the EdenSpark sandbox (docs/eden-port/DESIGN.md 4.5, 4.7,
@@ -37,7 +45,7 @@ require math
     upstream descriptor layer over fio FILE handles is replaced by a
     descriptor table over a pluggable backend:
 
-      - THE BACKEND. C calls the host OS (open/openat, read, write, lseek,
+      - THE BACKEND. C calls the host OS (open/openat, readv, writev, lseek,
         close, fdatasync, fcntl F_GETFL, fstat). Those eight calls are the
         lambdas of `struct M3WasiFsBackend`, one per C call, POSIX-shaped:
         each takes the runtime (for the in-memory stdio of DESIGN 4.7) and a
@@ -45,7 +53,14 @@ require math
         (a handle, a byte count, an offset, the flags, st_mode, 0) or the
         NEGATED <errno.h> value on failure (the Linux numbering below, which
         is public for that reason). The fd layer maps the errno with C's
-        errno_to_wasi. Bytes cross the interface as array<u8> (DESIGN 4.7c).
+        errno_to_wasi. Bytes cross the interface as array<u8> (DESIGN 4.7c):
+        an iovec is one array<u8>; readv gets them sized to the iovec
+        lengths, fills them in order and returns the count, which fd_read
+        scatters back into linear memory (only the first `count` bytes, as
+        readv writes them). A backend follows Linux readv/writev: EBADF for
+        a handle that is not open (even with 0 iovecs), then EINVAL for more
+        than IOV_MAX iovecs, then EBADF for a handle not open for that
+        direction, and a partial transfer returns its count.
         open receives the open(2) flags and mode C computes from the WASI
         oflags / fdflags / rights, so a backend sees exactly what openat
         would have seen; dirHandle is a backend handle, AT_FDCWD for C's
@@ -55,12 +70,22 @@ require math
         falls back to the wasi_default_* functions of this module, so
         M3WasiFsBackend() is the in-memory backend of DESIGN 4.7b-wasi:
         handle 0 reads (and consumes) rt.stdinBuffer, handles 1 and 2 append
-        to rt.stdoutBuffer / rt.stderrBuffer, and "." is an empty directory
-        (handle WASI_DEFAULT_DIR_HANDLE), so the two preopens open and every
-        path under them is ENOENT (with O_CREAT as well: there is nowhere to
-        create a file). Because the default needs no lambda, the editor
-        never stores a function value in a global, and a hot reload that
-        carries the context table over (DESIGN 1) keeps it usable.
+        to rt.stdoutBuffer / rt.stderrBuffer (character devices, 0 read-only
+        and 1, 2 write-only; lseek is ESPIPE and fdatasync EINVAL, as on a
+        terminal or a pipe), and
+        "." is an empty directory, so the two preopens open and every path
+        under them is ENOENT (with O_CREAT as well: there is nowhere to
+        create a file). Every open of "." is a new directory handle (from
+        WASI_DEFAULT_DIR_HANDLE up) with its own offset, as every open(2) is
+        a new open file description; it behaves as a directory of Linux's
+        in-memory file system (tmpfs, dcache_dir_lseek; measured on Linux
+        6.6): open with O_CREAT|O_EXCL is EEXIST, with O_CREAT, O_TRUNC or
+        write access EISDIR; lseek SEEK_SET / SEEK_CUR move the offset,
+        SEEK_END, another whence or a negative result is EINVAL; readv of
+        0 bytes is 0, of more EISDIR; fdatasync is 0. Because the default
+        needs no lambda, the editor never stores a function value in a
+        global, and a hot reload that carries the globals over (DESIGN 1)
+        keeps it usable.
         .local/app installs a fio backend with m3_SetWasiFsBackend.
       - THE CONTEXT. C's m3_wasi_context_t (m3_api_wasi.h) moves here, one
         layer down, because it now holds the descriptor table and the
@@ -107,9 +132,12 @@ require math
         close()/fdatasync() itself (0xFFFFFFFF), not errno_to_wasi(errno).
       - fd_write no longer flushes the standard streams (upstream: fio
         FILE buffering); the buffers are the streams.
-      - C's parameter `addr` of the iovec loops is `at` (a daslang keyword,
-        DESIGN 6); `options never_inline` is dropped (untested in the
-        editor, DESIGN 1).
+      - C's `struct iovec iovs[iovs_len]` (a VLA of host pointers) is an
+        array<iovec> whose iov_base is a linear-memory offset; the bytes
+        move through one array<u8> per iovec (THE BACKEND), and fd_read
+        writes back at most the iovecs' total even if a backend claims
+        more; `options never_inline` is dropped (untested in the editor,
+        DESIGN 1).
 */
 
 
@@ -166,6 +194,7 @@ let public O_DSYNC = 4096
 let public O_DIRECTORY = 65536
 let public O_SYNC = 1052672
 let public AT_FDCWD = -100
+let public IOV_MAX = 1024     // <limits.h>, the kernel's UIO_MAXIOV: readv/writev beyond it are EINVAL
 
 let public SEEK_SET = 0
 let public SEEK_CUR = 1
@@ -253,10 +282,12 @@ var public preopen = [
 struct public M3WasiFsBackend {
     // C: openat(dirfd, path, flags, mode) / open(path, flags): a new handle
     open : lambda<(var rt : M3Runtime; dirHandle : int; path : string; flags : int; mode : int) : int>
-    // C: read(fd, buf, len): the byte count, the bytes in `buf`
-    read : lambda<(var rt : M3Runtime; handle : int; var buf : array<u8>; len : int) : int>
-    // C: write(fd, buf, len): the byte count written
-    write : lambda<(var rt : M3Runtime; handle : int; bytes : array<u8>) : int>
+    // C: readv(fd, iov, iovcnt): the byte count; `bufs` holds one array per
+    // iovec, sized to its length, and the bytes fill them in order
+    readv : lambda<(var rt : M3Runtime; handle : int; var bufs : array<array<u8>>) : int>
+    // C: writev(fd, iov, iovcnt): the byte count written, taken from `bufs`
+    // (one array per iovec) in order
+    writev : lambda<(var rt : M3Runtime; handle : int; bufs : array<array<u8>>) : int>
     // C: lseek(fd, offset, whence): the new offset
     lseek : lambda<(var rt : M3Runtime; handle : int; offset : i64; whence : int) : i64>
     // C: close(fd): 0
@@ -359,17 +390,59 @@ def private wasi_fd_alloc(token : int; handle : int) : int {
 // ============================================================================
 
 
-// Eden: the handle of the default backend's only directory, "."
+// Eden: the first directory handle of the default backend; every open of
+// "." takes the lowest closed one from here up
 let public WASI_DEFAULT_DIR_HANDLE = 3
 
 
+// Eden: the default backend's open directories: entry k is the handle
+// WASI_DEFAULT_DIR_HANDLE + k and holds that open file description's offset
+// (f_pos), -1 when the handle is closed. A global like m3_wasi_contexts:
+// backend handles belong to the backend (the OS in C), not to a context.
+var private wasi_default_dir_pos : array<i64>
+
+
+// Eden: whether `handle` is an open directory of the default backend
+def private wasi_default_is_dir(handle : int) : bool {
+    let k = handle - WASI_DEFAULT_DIR_HANDLE
+    return k >= 0 && k < length(wasi_default_dir_pos) && wasi_default_dir_pos[k] >= 0l
+}
+
+
+// Eden: whether `handle` is open in the default backend (a standard stream
+// or a directory)
+def private wasi_default_is_open(handle : int) : bool {
+    return (handle >= 0 && handle <= 2) || wasi_default_is_dir(handle)
+}
+
+
+// Eden: a new directory handle at offset 0, the lowest closed one
+def private wasi_default_new_dir() : int {
+    for (k in range(length(wasi_default_dir_pos))) {
+        if (wasi_default_dir_pos[k] < 0l) {
+            wasi_default_dir_pos[k] = 0l
+            return WASI_DEFAULT_DIR_HANDLE + k
+        }
+    }
+    push(wasi_default_dir_pos, 0l)
+    return WASI_DEFAULT_DIR_HANDLE + length(wasi_default_dir_pos) - 1
+}
+
+
 def public wasi_default_open(var rt : M3Runtime; dirHandle : int; path : string; flags : int; mode : int) : int {
-    if (dirHandle == AT_FDCWD || dirHandle == WASI_DEFAULT_DIR_HANDLE) {
+    if (dirHandle == AT_FDCWD || wasi_default_is_dir(dirHandle)) {
         if (path == "." || path == "./") {
-            if ((flags & O_ACCMODE) != O_RDONLY) {
+            // Linux do_open, then may_open, on an existing directory
+            if ((flags & O_CREAT) != 0) {
+                if ((flags & O_EXCL) != 0) {
+                    return -EEXIST
+                }
                 return -EISDIR
             }
-            return WASI_DEFAULT_DIR_HANDLE
+            if ((flags & O_ACCMODE) != O_RDONLY || (flags & O_TRUNC) != 0) {
+                return -EISDIR   // write access (O_TRUNC asks for it too)
+            }
+            return wasi_default_new_dir()
         }
         return -ENOENT   // the directory is empty and nothing can be created in it
     }
@@ -383,62 +456,110 @@ def public wasi_default_open(var rt : M3Runtime; dirHandle : int; path : string;
 }
 
 
-def public wasi_default_read(var rt : M3Runtime; handle : int; var buf : array<u8>; len : int) : int {
+// Linux readv: EBADF for a closed handle, EINVAL past IOV_MAX, then EBADF
+// for a handle not open for reading
+def public wasi_default_readv(var rt : M3Runtime; handle : int; var bufs : array<array<u8>>) : int {
+    if (!wasi_default_is_open(handle)) {
+        return -EBADF
+    }
+    if (length(bufs) > IOV_MAX) {
+        return -EINVAL
+    }
+    var total = 0
+    for (b in bufs) {
+        total += length(b)
+    }
     if (handle == 0) {
-        // stdin is a pipe: a read takes (and removes) what is buffered
-        let n = min(len, length(rt.stdinBuffer))
-        resize(buf, n)
-        for (i in range(n)) {
-            buf[i] = rt.stdinBuffer[i]
+        // stdin reads as a pipe: a read takes (and removes) what is
+        // buffered, filling the iovecs in order
+        let n = min(total, length(rt.stdinBuffer))
+        var k = 0
+        for (b in bufs) {
+            let take = min(length(b), n - k)
+            for (i in range(take)) {
+                b[i] = rt.stdinBuffer[k + i]
+            }
+            k += take
         }
         erase(rt.stdinBuffer, 0, n)
         return n
-    } elif (handle == WASI_DEFAULT_DIR_HANDLE) {
-        return -EISDIR
+    } elif (wasi_default_is_dir(handle)) {
+        return total == 0 ? 0 : -EISDIR   // a read of 0 bytes never reaches the directory
     }
-    return -EBADF
+    return -EBADF   // stdout and stderr are write-only
 }
 
 
-def public wasi_default_write(var rt : M3Runtime; handle : int; bytes : array<u8>) : int {
-    if (handle == 1) {
-        for (b in bytes) {
-            push(rt.stdoutBuffer, b)
-        }
-        return length(bytes)
-    } elif (handle == 2) {
-        for (b in bytes) {
-            push(rt.stderrBuffer, b)
-        }
-        return length(bytes)
+// Linux writev: EBADF for a closed handle, EINVAL past IOV_MAX, then EBADF
+// for a handle not open for writing
+def public wasi_default_writev(var rt : M3Runtime; handle : int; bufs : array<array<u8>>) : int {
+    if (!wasi_default_is_open(handle)) {
+        return -EBADF
     }
-    return -EBADF
+    if (length(bufs) > IOV_MAX) {
+        return -EINVAL
+    }
+    if (handle == 1 || handle == 2) {
+        var n = 0
+        for (b in bufs) {
+            for (x in b) {
+                if (handle == 1) {
+                    push(rt.stdoutBuffer, x)
+                } else {
+                    push(rt.stderrBuffer, x)
+                }
+            }
+            n += length(b)
+        }
+        return n
+    }
+    return -EBADF   // stdin and the directories are read-only
 }
 
 
+// the standard streams do not seek (ESPIPE); a directory seeks as Linux's
+// dcache_dir_lseek (tmpfs): SET and CUR only, never below 0
 def public wasi_default_lseek(var rt : M3Runtime; handle : int; offset : i64; whence : int) : i64 {
     if (handle >= 0 && handle <= 2) {
         return i64(-ESPIPE)
-    } elif (handle == WASI_DEFAULT_DIR_HANDLE) {
-        return 0l
+    } elif (wasi_default_is_dir(handle)) {
+        let k = handle - WASI_DEFAULT_DIR_HANDLE
+        var target = 0l
+        if (whence == SEEK_SET) {
+            target = offset
+        } elif (whence == SEEK_CUR) {
+            target = wasi_default_dir_pos[k] + offset
+        } else {
+            return i64(-EINVAL)   // SEEK_END and anything else
+        }
+        if (target < 0l) {
+            return i64(-EINVAL)
+        }
+        wasi_default_dir_pos[k] = target
+        return target
     }
     return i64(-EBADF)
 }
 
 
 def public wasi_default_close(var rt : M3Runtime; handle : int) : int {
-    if ((handle >= 0 && handle <= 2) || handle == WASI_DEFAULT_DIR_HANDLE) {
+    if (handle >= 0 && handle <= 2) {
+        return 0
+    } elif (wasi_default_is_dir(handle)) {
+        wasi_default_dir_pos[handle - WASI_DEFAULT_DIR_HANDLE] = -1l
         return 0
     }
     return -EBADF
 }
 
 
+// Linux fdatasync: EINVAL on a pipe or character device (no fsync), 0 on a
+// directory
 def public wasi_default_fdatasync(var rt : M3Runtime; handle : int) : int {
-    if (handle == 1 || handle == 2) {
-        return 0
-    } elif (handle == 0 || handle == WASI_DEFAULT_DIR_HANDLE) {
+    if (handle >= 0 && handle <= 2) {
         return -EINVAL
+    } elif (wasi_default_is_dir(handle)) {
+        return 0
     }
     return -EBADF
 }
@@ -449,7 +570,7 @@ def public wasi_default_fcntl_getfl(var rt : M3Runtime; handle : int) : int {
         return O_RDONLY
     } elif (handle == 1 || handle == 2) {
         return O_WRONLY
-    } elif (handle == WASI_DEFAULT_DIR_HANDLE) {
+    } elif (wasi_default_is_dir(handle)) {
         return O_RDONLY | O_DIRECTORY
     }
     return -EBADF
@@ -459,7 +580,7 @@ def public wasi_default_fcntl_getfl(var rt : M3Runtime; handle : int) : int {
 def public wasi_default_fstat_mode(var rt : M3Runtime; handle : int) : int {
     if (handle >= 0 && handle <= 2) {
         return S_IFCHR
-    } elif (handle == WASI_DEFAULT_DIR_HANDLE) {
+    } elif (wasi_default_is_dir(handle)) {
         return S_IFDIR
     }
     return -EBADF
@@ -496,29 +617,29 @@ def private wasi_host_openat(var rt : M3Runtime; token : int; dirfd : int; path 
 }
 
 
-// C: read(fd, buf, len)
-def private wasi_host_read(var rt : M3Runtime; token : int; fd : u32; var buf : array<u8>; len : int) : int {
+// C: readv(fd, iovs, iovs_len)
+def private wasi_host_readv(var rt : M3Runtime; token : int; fd : u32; var bufs : array<array<u8>>) : int {
     let handle = wasi_fd_handle(token, fd)
     if (handle == -1) {
         return -EBADF
     }
-    if (m3_wasi_contexts[token].backend.read != null) {
-        return invoke(m3_wasi_contexts[token].backend.read, rt, handle, buf, len)
+    if (m3_wasi_contexts[token].backend.readv != null) {
+        return invoke(m3_wasi_contexts[token].backend.readv, rt, handle, bufs)
     }
-    return wasi_default_read(rt, handle, buf, len)
+    return wasi_default_readv(rt, handle, bufs)
 }
 
 
-// C: write(fd, buf, len)
-def private wasi_host_write(var rt : M3Runtime; token : int; fd : u32; bytes : array<u8>) : int {
+// C: writev(fd, iovs, iovs_len)
+def private wasi_host_writev(var rt : M3Runtime; token : int; fd : u32; bufs : array<array<u8>>) : int {
     let handle = wasi_fd_handle(token, fd)
     if (handle == -1) {
         return -EBADF
     }
-    if (m3_wasi_contexts[token].backend.write != null) {
-        return invoke(m3_wasi_contexts[token].backend.write, rt, handle, bytes)
+    if (m3_wasi_contexts[token].backend.writev != null) {
+        return invoke(m3_wasi_contexts[token].backend.writev, rt, handle, bufs)
     }
-    return wasi_default_write(rt, handle, bytes)
+    return wasi_default_writev(rt, handle, bufs)
 }
 
 
@@ -652,6 +773,40 @@ def public wasi_fd_open_preopens(var rt : M3Runtime; token : int) {
         let fd = wasi_host_openat(rt, token, AT_FDCWD, preopen[i].real_path, O_RDONLY, 0)
         preopen[i].fd = fd >= 0 ? fd : -1
     }
+}
+
+
+// ============================================================================
+// copy_iov_to_host (HAS_IOVEC)
+// ============================================================================
+
+
+// C <sys/uio.h>: struct iovec { void* iov_base; size_t iov_len; };
+// Eden: iov_base is the offset into rt.mem that m3ApiOffsetToPtr gives
+struct private iovec {
+    iov_base : int
+    iov_len : u64
+}
+
+
+/*  C (#if defined(HAS_IOVEC)):
+
+        static inline
+        const void* copy_iov_to_host(IM3Runtime runtime, void* _mem, struct iovec* host_iov, wasi_iovec_t* wasi_iov, int32_t iovs_len)
+
+    Eden: host_iov is the caller's array of iovs_len entries (C's VLA),
+    wasi_iov the offset of the wasi_iovec_t array in linear memory; _mem is
+    rt.mem. m3ApiCheckMem returns its trap to the caller (see above). */
+def private copy_iov_to_host(rt : M3Runtime; var host_iov : array<iovec>; wasi_iov : int; iovs_len : int) : M3Result {
+    // Convert wasi memory offsets to host addresses
+    for (i in range(iovs_len)) {
+        let iov = wasi_iov + i * int(WASI_IOVEC_SIZE)
+        host_iov[i].iov_base = m3ApiOffsetToPtr(m3ApiReadMem32(rt, iov + int(WASI_IOVEC_OFF_BUF)))
+        host_iov[i].iov_len = u64(m3ApiReadMem32(rt, iov + int(WASI_IOVEC_OFF_BUF_LEN)))
+        let check = m3ApiCheckMem(rt, host_iov[i].iov_base, host_iov[i].iov_len)
+        if (check != m3Err_none) { return check }
+    }
+    return m3ApiSuccess()
 }
 
 
@@ -929,29 +1084,36 @@ def public m3_wasi_generic_fd_read(var rt : M3Runtime; ctx : M3ImportContext; sp
     check = m3ApiCheckMem(rt, nread, 4ul) // sizeof(__wasi_size_t)
     if (check != m3Err_none) { return check }
 
-    var res = 0
-    for (i in urange(iovs_len)) {
-        let iov = wasi_iovs + int(i * WASI_IOVEC_SIZE)
-        let buf = m3ApiReadMem32(rt, iov + int(WASI_IOVEC_OFF_BUF))
-        let at = m3ApiOffsetToPtr(buf)
-        let len = m3ApiReadMem32(rt, iov + int(WASI_IOVEC_OFF_BUF_LEN))
-        if (len == 0u) { continue }
-        check = m3ApiCheckMem(rt, at, u64(len))
-        if (check != m3Err_none) { return check }
-        var bytes : array<u8>
-        var ret = wasi_host_read(rt, ctx.userdata, fd, bytes, int(len))   // C: int ret = read (fd, addr, len)
-        if (ret < 0) {
-            m3ApiReturn_u32(rt, raw_return, u32(errno_to_wasi(-ret)))
-            return m3Err_none
-        }
-        // Eden: the backend's bytes land in the checked buffer, never past it
-        ret = min(ret, int(len))
-        resize(bytes, ret)
-        m3ApiWriteBytes(rt, at, bytes)
-        res += ret
-        if (u32(ret) < len) { break }
+    // (HAS_IOVEC) C: struct iovec iovs[iovs_len];
+    var iovs : array<iovec>
+    resize(iovs, int(iovs_len))
+    let mem_check = copy_iov_to_host(rt, iovs, wasi_iovs, int(iovs_len))
+    if (mem_check != m3Err_none) {
+        return mem_check
     }
-    m3ApiWriteMem32(rt, nread, u32(res))
+
+    // Eden: one array per iovec, sized to it, for the backend to fill
+    var bufs : array<array<u8>>
+    resize(bufs, int(iovs_len))
+    for (iov, b in iovs, bufs) {
+        resize(b, int(iov.iov_len))
+    }
+    var ret = wasi_host_readv(rt, ctx.userdata, fd, bufs)   // C: ssize_t ret = readv(fd, iovs, iovs_len)
+    if (ret < 0) {
+        m3ApiReturn_u32(rt, raw_return, u32(errno_to_wasi(-ret)))
+        return m3Err_none
+    }
+    // Eden: the first `ret` bytes land in the iovecs in order, as readv
+    // writes them, never past the checked buffers
+    var left = ret
+    for (iov, b in iovs, bufs) {
+        let take = min(left, min(int(iov.iov_len), length(b)))
+        resize(b, take)
+        m3ApiWriteBytes(rt, iov.iov_base, b)
+        left -= take
+    }
+    ret -= left
+    m3ApiWriteMem32(rt, nread, u32(ret))
     m3ApiReturn_u32(rt, raw_return, u32(WASI_ERRNO_SUCCESS))
     return m3Err_none
 }
@@ -970,25 +1132,26 @@ def public m3_wasi_generic_fd_write(var rt : M3Runtime; ctx : M3ImportContext; s
     check = m3ApiCheckMem(rt, nwritten, 4ul) // sizeof(__wasi_size_t)
     if (check != m3Err_none) { return check }
 
-    var res = 0
-    for (i in urange(iovs_len)) {
-        let iov = wasi_iovs + int(i * WASI_IOVEC_SIZE)
-        let buf = m3ApiReadMem32(rt, iov + int(WASI_IOVEC_OFF_BUF))
-        let at = m3ApiOffsetToPtr(buf)
-        let len = m3ApiReadMem32(rt, iov + int(WASI_IOVEC_OFF_BUF_LEN))
-        if (len == 0u) { continue }
-        check = m3ApiCheckMem(rt, at, u64(len))
-        if (check != m3Err_none) { return check }
-        let bytes <- m3ApiReadBytes(rt, at, int(len))
-        let ret = wasi_host_write(rt, ctx.userdata, fd, bytes)   // C: int ret = write (fd, addr, len)
-        if (ret < 0) {
-            m3ApiReturn_u32(rt, raw_return, u32(errno_to_wasi(-ret)))
-            return m3Err_none
-        }
-        res += ret
-        if (u32(ret) < len) { break }
+    // (HAS_IOVEC) C: struct iovec iovs[iovs_len];
+    var iovs : array<iovec>
+    resize(iovs, int(iovs_len))
+    let mem_check = copy_iov_to_host(rt, iovs, wasi_iovs, int(iovs_len))
+    if (mem_check != m3Err_none) {
+        return mem_check
     }
-    m3ApiWriteMem32(rt, nwritten, u32(res))
+
+    // Eden: the bytes of each iovec, in order, for the backend
+    var bufs : array<array<u8>>
+    for (iov in iovs) {
+        var bytes <- m3ApiReadBytes(rt, iov.iov_base, int(iov.iov_len))
+        emplace(bufs, bytes)
+    }
+    let ret = wasi_host_writev(rt, ctx.userdata, fd, bufs)   // C: ssize_t ret = writev(fd, iovs, iovs_len)
+    if (ret < 0) {
+        m3ApiReturn_u32(rt, raw_return, u32(errno_to_wasi(-ret)))
+        return m3Err_none
+    }
+    m3ApiWriteMem32(rt, nwritten, u32(ret))
     m3ApiReturn_u32(rt, raw_return, u32(WASI_ERRNO_SUCCESS))
     return m3Err_none
 }

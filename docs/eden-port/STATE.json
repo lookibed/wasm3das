@@ -21,7 +21,7 @@
     {"name": "m3_bind",        "status": "done", "source": "m3_bind.das",        "eden_tests": "test_m3_bind.das",        "upstream_tests": ["test_m3_bind.das"]},
     {"name": "m3_api_defs",    "status": "done", "source": "m3_api_defs.das",    "eden_tests": "test_m3_api_defs.das", "upstream_tests": [], "note": "no upstream test file; the Eden tests link raw functions built with the helpers and call them from wasm"},
     {"name": "wasi_core",      "status": "done", "source": "wasi_core.das",      "eden_tests": "test_wasi_core.das",      "upstream_tests": ["test_wasi_core.das"]},
-    {"name": "m3_api_wasi_fd", "status": "porting", "source": "m3_api_wasi_fd.das", "eden_tests": "test_m3_api_wasi_fd.das", "upstream_tests": ["test_m3_api_wasi_fd.das"]},
+    {"name": "m3_api_wasi_fd", "status": "done", "source": "m3_api_wasi_fd.das", "eden_tests": "test_m3_api_wasi_fd.das", "upstream_tests": ["test_m3_api_wasi_fd.das"]},
     {"name": "m3_api_libc",    "status": "done", "source": "m3_api_libc.das",    "eden_tests": "test_m3_api_libc.das",    "upstream_tests": ["test_m3_api_libc.das"]},
     {"name": "m3_api_wasi",    "status": "todo", "source": "m3_api_wasi.das",    "eden_tests": "test_m3_api_wasi.das",    "upstream_tests": ["test_m3_api_wasi.das"]},
     {"name": "lang_modules",   "status": "todo", "source": null,                 "eden_tests": "test_lang_modules.das",   "upstream_tests": ["test_lang_modules.das", "test_fib32_regression.das"], "note": "end-to-end: every wasm3c/test/lang fixture through the whole stack, fib(25)=75025; the fib32 regression is folded in"},
