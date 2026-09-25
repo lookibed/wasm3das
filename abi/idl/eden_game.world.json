@@ -1,0 +1,22 @@
+{
+  "world": "eden_game",
+  "version": 1,
+  "doc": "A real-time program (game, emulator, demo) driven frame by frame by an Eden host.",
+  "imports": ["eden_core", "eden_asset", "eden_video", "eden_input", "eden_audio", "eden_storage"],
+  "constants": [
+    {"name": "STEP_FRAME", "value": 1, "doc": "eden_step: a frame was presented during this step"},
+    {"name": "STEP_QUIT", "value": 2, "doc": "eden_step: the guest wants to stop"},
+    {"name": "STEP_ERROR", "value": 4, "doc": "eden_step: the guest failed and logged why"}
+  ],
+  "exports": [
+    {"name": "eden_abi_version", "doc": "The world version the guest was built for.", "params": [], "result": "i32", "required": true},
+    {"name": "eden_alloc", "doc": "Allocates size bytes in linear memory; 0 on failure.", "params": [{"name": "size", "type": "i32"}], "result": "i32", "required": true},
+    {"name": "eden_free", "doc": "Frees a pointer from eden_alloc; 0 is ignored.", "params": [{"name": "ptr", "type": "i32"}], "result": "void", "required": true},
+    {"name": "eden_init", "doc": "Prepares the guest; 0 = ready, other values are the guest's error codes.", "params": [], "result": "i32", "required": true},
+    {"name": "eden_step", "doc": "Works for about budget_us microseconds of host time; returns STEP_* flags.", "params": [{"name": "budget_us", "type": "i32"}], "result": "i32", "required": true},
+    {"name": "eden_shutdown", "doc": "Releases everything; the instance is destroyed after it.", "params": [], "result": "void", "required": true},
+    {"name": "eden_state_size", "doc": "Bytes needed by eden_state_save now.", "params": [], "result": "i32", "required": false},
+    {"name": "eden_state_save", "doc": "Writes the snapshot to guest memory [dst, dst + cap); returns bytes written or a negative error.", "params": [{"name": "dst", "type": "i32"}, {"name": "cap", "type": "i32"}], "result": "i32", "required": false},
+    {"name": "eden_state_load", "doc": "Restores a snapshot made by eden_state_save of the same guest build; 0 = ok.", "params": [{"name": "snapshot", "type": "bytes"}], "result": "i32", "required": false}
+  ]
+}

@@ -27,7 +27,9 @@ require modules/wasm3das/tests/eden/all_tests
 
 def read_fixture(name : string) : array<uint8> {
     var bytes : array<uint8>
-    let path = "modules/wasm3das/wasm3c/test/{name}"
+    // names under abi/ are the ABI guests and their data (guests/), the rest
+    // wasm3c/test (the same mapping as scripts/eden/install_host.sh)
+    let path = starts_with(name, "abi/") ? "modules/wasm3das/guests/{slice(name, 4)}" : "modules/wasm3das/wasm3c/test/{name}"
     fopen(path, "rb") <| $(f) {
         if (f != null) {
             fmap(f) <| $(data) {

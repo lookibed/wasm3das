@@ -1,0 +1,22 @@
+{
+  "world": "abi_selftest",
+  "version": 1,
+  "doc": "The eden_game world plus the abi_test package and exports of every argument type: the round-trip guest of the ABI test suite.",
+  "extends": "eden_game",
+  "imports": ["abi_test"],
+  "constants": [],
+  "exports": [
+    {"name": "selftest_run_imports", "doc": "Calls every import of abi_test and eden_core with known values and checks the answers; returns the number of mismatches.", "params": [], "result": "i32", "required": true},
+    {"name": "selftest_take_str", "doc": "Returns the byte length of s plus 1000 * its first byte (0 when empty).", "params": [{"name": "s", "type": "str"}], "result": "i32", "required": true},
+    {"name": "selftest_take_bytes", "doc": "Returns the sum of the bytes of b.", "params": [{"name": "b", "type": "bytes"}], "result": "i32", "required": true},
+    {"name": "selftest_scalars", "doc": "Returns a + b + c + d + (e ? 1 : 0) as f64.", "params": [{"name": "a", "type": "i32"}, {"name": "b", "type": "i64"}, {"name": "c", "type": "f32"}, {"name": "d", "type": "f64"}, {"name": "e", "type": "bool"}], "result": "f64", "required": true},
+    {"name": "selftest_i64", "doc": "Returns v * 3.", "params": [{"name": "v", "type": "i64"}], "result": "i64", "required": true},
+    {"name": "selftest_f32", "doc": "Returns v * 0.5.", "params": [{"name": "v", "type": "f32"}], "result": "f32", "required": true},
+    {"name": "selftest_trap", "doc": "Calls abi_test.fail, which traps; never returns normally.", "params": [], "result": "i32", "required": true},
+    {"name": "selftest_bad_pointer", "doc": "Passes a bad argument to an import: 0 = a str range past linear memory, 1 = bytes with a negative length, 2 = a str holding a NUL byte. Each must trap in the host wrapper.", "params": [{"name": "which", "type": "i32"}], "result": "i32", "required": true},
+    {"name": "selftest_storage", "doc": "Exercises eden_storage directly (every error code but ERR_FULL and ERR_IO) and through the libc file modes (w, r, a, remove); leaves the blob `keep` (5 bytes: keep!) behind. Returns the number of mismatches.", "params": [], "result": "i32", "required": true},
+    {"name": "selftest_blob_size", "doc": "eden_storage.size of the blob as the guest sees it.", "params": [{"name": "name", "type": "str"}], "result": "i32", "required": true},
+    {"name": "selftest_reenter", "doc": "Calls abi_test.record(\"reenter\"); the host implementation tries to call back into the guest there.", "params": [], "result": "i32", "required": true},
+    {"name": "selftest_missing", "doc": "Not implemented by the guest on purpose: an optional export the host must see as absent.", "params": [], "result": "i32", "required": false}
+  ]
+}

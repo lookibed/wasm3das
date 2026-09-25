@@ -8,6 +8,9 @@ require modules/wasm3das/source/m3_env
 require modules/wasm3das/source/m3_module      // m3_FreeModule, m3_SetModuleName
 require modules/wasm3das/source/m3_api_libc    // m3_LinkSpecTest, m3_LinkLibC
 require modules/wasm3das/source/m3_api_wasi    // m3_LinkWASI, m3_GetWasiContext
+require modules/wasm3das/tests/eden/abi_golden // run_abi_golden (docs/eden-abi)
+require modules/wasm3das/eden/abi_guest_player // guest_player_start: a guest playing in the scene
+require modules/wasm3das/eden/abi_host_check   // run_abi_host_check: the Eden host paths
 require strings
 require daslib/strings_boost
 
@@ -97,24 +100,75 @@ def set_status(text : string) {
 }
 
 
+// The test modules run one per cheat call: wasm3_tests starts the run with
+// the first module, each wasm3_tests_next runs the next one and prints
+// "WASM3 TESTS STEP k/n"; after the last one the report and the summary
+// line "WASM3 TESTS pass=N fail=M". scripts/eden/eden_gate.sh drives it.
+//   - one module per call: the editor collects the script heap only between
+//     frames, and the temporaries of the whole suite do not fit its 100 MiB
+//     in one call
+//   - cheats, not on_update: on_update runs with denormal floats flushed to
+//     zero (measured, abi_denormal_probe), cheats keep IEEE semantics, which
+//     the port's float tests check
+var testQueue : array<TestModuleRun>
+var testNext = 0
+var testRun = TestRun()
+var testFx = FixtureSource()
+var testRunning = false
+
+
+def start_tests(var mods : array<TestModuleRun>; verbose : bool) {
+    testQueue <- mods
+    testNext = 0
+    testRun = TestRun()
+    testRun.verbose = verbose
+    testFx <- make_fixture_source()
+    testRunning = true
+    set_status("tests running: {length(testQueue)} modules")
+}
+
+
+def step_tests() {
+    if (!testRunning) {
+        return
+    }
+    if (testNext < length(testQueue)) {
+        invoke(testQueue[testNext], testRun, testFx)
+        testNext++
+    }
+    if (testNext < length(testQueue)) {
+        print("WASM3 TESTS STEP {testNext}/{length(testQueue)}")
+        return
+    }
+    testRunning = false
+    print_report(testRun)
+    set_status("{summary(testRun)}\n{length(testRun.failures)} failure(s) listed in the console")
+}
+
+
 [cheat]
 def wasm3_tests() {
-    var t = TestRun()
-    let fx <- make_fixture_source()
-    run_all_tests(t, fx)
-    print_report(t)
-    set_status("{summary(t)}\n{length(t.failures)} failure(s) listed in the console")
+    var mods <- all_test_modules()
+    start_tests(mods, false)
+    step_tests()
 }
 
 
 [cheat]
 def wasm3_tests_verbose() {
-    var t = TestRun()
-    t.verbose = true
-    let fx <- make_fixture_source()
-    run_all_tests(t, fx)
-    print_report(t)
-    set_status(summary(t))
+    var mods <- all_test_modules()
+    start_tests(mods, true)
+    step_tests()
+}
+
+
+[cheat]
+def wasm3_tests_next() {
+    if (!testRunning) {
+        print("WASM3 TESTS no run in progress (start with wasm3_tests)")
+        return
+    }
+    step_tests()
 }
 
 
@@ -343,6 +397,207 @@ def wasm3_run_start(fixture : string; a1 : string = ""; a2 : string = ""; a3 : s
 }
 
 
+// ---------------------------------------------------------------------------
+// The Eden guest ABI (modules/wasm3das/docs/eden-abi)
+// ---------------------------------------------------------------------------
+
+
+var playerNode : NodeId
+
+
+// the binjgb golden checks (tests/eden/abi_golden.das) inside the editor;
+// prints the report and "WASM3 TESTS pass=N fail=M" like wasm3_tests
+[cheat]
+def abi_binjgb_golden() {
+    var t = TestRun()
+    let fx <- make_fixture_source()
+    run_abi_golden(t, fx)
+    print_report(t)
+    set_status("abi golden: {summary(t)}")
+}
+
+
+// only the ABI test modules (one per frame, as wasm3_tests)
+[cheat]
+def abi_tests() {
+    var mods : array<TestModuleRun>
+    push(mods, @@run_tests_abi)
+    push(mods, @@run_tests_abi_binjgb)
+    start_tests(mods, false)
+    step_tests()
+}
+
+
+// heap growth of ABI operations inside one call (the heap is collected
+// only between engine frames): "ABI HEAP PROBE <what> delta=N"
+[cheat]
+def abi_heap_probe() {
+    let fx <- make_fixture_source()
+    let selftest <- load_fixture(fx, "abi/build/abi_selftest.wasm")
+    let wasm <- load_fixture(fx, BINJGB_WASM)
+    let rom <- load_fixture(fx, ACID2_ROM)
+    var h0 = heap_bytes_allocated()
+    for (i in range(10)) {
+        var big : array<uint8>
+        resize(big, 1048576)
+        delete big
+    }
+    print("ABI HEAP PROBE 1 MB array allocated and deleted x10 delta={int64(heap_bytes_allocated()) - int64(h0)}")
+    h0 = heap_bytes_allocated()
+    for (i in range(10)) {
+        var big : array<uint8>
+        reserve(big, 327680)
+        resize(big, 327680)
+        delete big
+    }
+    print("ABI HEAP PROBE reserve+resize 320 KB then delete x10 delta={int64(heap_bytes_allocated()) - int64(h0)}")
+    h0 = heap_bytes_allocated()
+    for (i in range(10)) {
+        var env <- m3_NewEnvironment()
+        var rt <- m3_NewRuntime(env, 64u * 1024u, -1)
+        let parsed = m3_ParseModule(rt, selftest)
+        m3_FreeRuntime(rt)
+        m3_FreeEnvironment(env)
+    }
+    print("ABI HEAP PROBE bare wasm3 new+parse+free x10 delta={int64(heap_bytes_allocated()) - int64(h0)}")
+    h0 = heap_bytes_allocated()
+    for (i in range(10)) {
+        var env <- m3_NewEnvironment()
+        var rt <- m3_NewRuntime(env, 64u * 1024u, -1)
+        let parsed = m3_ParseModule(rt, selftest)
+        m3_LoadModule(rt, parsed._1)
+        m3_FreeRuntime(rt)
+        m3_FreeEnvironment(env)
+    }
+    print("ABI HEAP PROBE bare wasm3 new+parse+load+free x10 delta={int64(heap_bytes_allocated()) - int64(h0)}")
+    h0 = heap_bytes_allocated()
+    for (i in range(10)) {
+        var env <- m3_NewEnvironment()
+        var rt <- m3_NewRuntime(env, 64u * 1024u, -1)
+        m3_FreeRuntime(rt)
+        m3_FreeEnvironment(env)
+    }
+    print("ABI HEAP PROBE bare wasm3 new+free x10 delta={int64(heap_bytes_allocated()) - int64(h0)}")
+    h0 = heap_bytes_allocated()
+    for (i in range(10)) {
+        var inst <- abi_instantiate(selftest, "probe")
+        abi_destroy(inst)
+    }
+    print("ABI HEAP PROBE instantiate+destroy selftest x10 delta={int64(heap_bytes_allocated()) - int64(h0)}")
+    h0 = heap_bytes_allocated()
+    for (i in range(10)) {
+        var inst <- abi_instantiate(selftest, "probe")
+        headless_link_all(inst, false)
+        abi_destroy(inst)
+    }
+    print("ABI HEAP PROBE +link x10 delta={int64(heap_bytes_allocated()) - int64(h0)}")
+    h0 = heap_bytes_allocated()
+    var one <- golden_binjgb(wasm, rom, 1, 1000000000)
+    print("ABI HEAP PROBE binjgb 1 frame delta={int64(heap_bytes_allocated()) - int64(h0)}")
+    h0 = heap_bytes_allocated()
+    var four <- golden_binjgb(wasm, rom, 4, 1000000000)
+    print("ABI HEAP PROBE binjgb 4 frames delta={int64(heap_bytes_allocated()) - int64(h0)}")
+}
+
+
+// whether denormal doubles and floats survive arithmetic here and in
+// on_update: "ABI DENORMAL <where> f64=<bits> f32=<bits>" (0 = flushed)
+var denormalProbePending = false
+
+
+def denormal_report(context : string) {
+    var d = 1.0e-300lf
+    d = d * 1.0e-10lf       // 1e-310, a subnormal double
+    var f = 1.0e-30
+    f = f * 1.0e-10         // 1e-40, a subnormal float
+    print("ABI DENORMAL {context} f64={m3_bits_from_f64(d)} f32={m3_bits_from_f32(f)}")
+}
+
+
+[cheat]
+def abi_denormal_probe() {
+    denormal_report("cheat")
+    denormalProbePending = true
+}
+
+
+// the script heap now: "ABI HEAP bytes=N"
+[cheat]
+def abi_heap() {
+    print("ABI HEAP bytes={heap_bytes_allocated()}")
+}
+
+
+// the Eden host's engine paths (eden/abi_host_check.das); prints the report
+// and "WASM3 TESTS pass=N fail=M"
+[cheat]
+def abi_host_check() {
+    var t = TestRun()
+    let fx <- make_fixture_source()
+    run_abi_host_check(t, fx)
+    print_report(t)
+    set_status("abi host check: {summary(t)}")
+}
+
+
+// what eden_input answers right now: "ABI INPUT pad=<mask> key30=<0|1>"
+// (scan code 30 = A); scripts/abi/gate.sh holds keys with the MCP input
+// tool and reads this line
+[cheat]
+def abi_input_probe() {
+    print("ABI INPUT pad={eden_host_pad_buttons()} key30={eden_host_key_down(30) ? 1 : 0}")
+}
+
+
+// plays a guest in the scene with the Eden host: `guest` and `rom` are
+// fixture names (docs/eden-port/fixtures.txt); the ROM becomes the asset
+// "rom". budget = microseconds of guest work per editor frame
+[cheat]
+def abi_play(guest : string = "abi/build/binjgb.wasm"; rom : string = "abi/binjgb/roms/cgb-acid2.gbc"; budget : string = "12000") {
+    abi_stop()
+    let wasm <- load_fixture_bytes(guest)
+    var assets : table<string; array<uint8>>
+    if (!empty(rom)) {
+        assets["rom"] <- load_fixture_bytes(rom)
+    }
+    // saves (eden_storage) are kept per guest and ROM
+    let ns = "{fixture_file_name(guest)}_{fixture_file_name(rom)}"
+    playerNode = guest_player_start(wasm, fixture_file_name(guest), assets, ns, to_int(budget))
+    print("ABI PLAY {guest} {rom}: {playerNode.isAlive ? "started" : "failed"}")
+}
+
+
+[cheat]
+def abi_stop() {
+    if (playerNode.isAlive) {
+        remove_node(playerNode)
+    }
+    playerNode = NodeId()
+}
+
+
+// which function values of the running player survived the last hot
+// reload: "ABI RELOAD <abi_reload_report>"
+[cheat]
+def abi_reload_diag() {
+    print("ABI RELOAD {guest_player_reload_report(playerNode)}")
+}
+
+
+// turns on the RGB555 digest of the running player's frames and prints the
+// frame count and the last digest: "ABI PLAYER frames=N digest=D"
+[cheat]
+def abi_player_digest() {
+    let id = guest_player_instance_id(playerNode)
+    if (id < 0) {
+        print("ABI PLAYER none")
+        return
+    }
+    eden_host_set_digest(id, true)
+    print("ABI PLAYER frames={eden_host_frames(id)} digest={eden_host_last_digest(id)}")
+}
+
+
 [export]
 def on_initialize() {
     let camera = create_node(NodeData(name = "camera", position = float3(0, 0, -5)))
@@ -355,5 +610,8 @@ def on_initialize() {
 
 [export]
 def on_update() {
-    pass
+    if (denormalProbePending) {
+        denormalProbePending = false
+        denormal_report("on_update")
+    }
 }

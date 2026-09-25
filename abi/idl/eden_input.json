@@ -1,0 +1,52 @@
+{
+  "package": "eden_input",
+  "version": 1,
+  "doc": "Input state sampled by the host once per host frame. Buttons are a device-independent pad the host maps from keyboard and gamepad; keys are PC set-1 scan codes (the values of DirectInput DIK_* and of Eden's KeyCode).",
+  "constants": [
+    {"name": "BUTTON_A", "value": 1, "doc": "pad button A"},
+    {"name": "BUTTON_B", "value": 2, "doc": "pad button B"},
+    {"name": "BUTTON_SELECT", "value": 4, "doc": "pad button Select"},
+    {"name": "BUTTON_START", "value": 8, "doc": "pad button Start"},
+    {"name": "BUTTON_RIGHT", "value": 16, "doc": "d-pad right"},
+    {"name": "BUTTON_LEFT", "value": 32, "doc": "d-pad left"},
+    {"name": "BUTTON_UP", "value": 64, "doc": "d-pad up"},
+    {"name": "BUTTON_DOWN", "value": 128, "doc": "d-pad down"},
+    {"name": "BUTTON_X", "value": 256, "doc": "pad button X"},
+    {"name": "BUTTON_Y", "value": 512, "doc": "pad button Y"},
+    {"name": "BUTTON_L", "value": 1024, "doc": "left shoulder"},
+    {"name": "BUTTON_R", "value": 2048, "doc": "right shoulder"},
+    {"name": "MOUSE_LEFT", "value": 1, "doc": "left mouse button"},
+    {"name": "MOUSE_RIGHT", "value": 2, "doc": "right mouse button"},
+    {"name": "MOUSE_MIDDLE", "value": 4, "doc": "middle mouse button"},
+    {"name": "AXIS_X", "value": 0, "doc": "horizontal mouse axis"},
+    {"name": "AXIS_Y", "value": 1, "doc": "vertical mouse axis, positive down"},
+    {"name": "AXIS_WHEEL", "value": 2, "doc": "mouse wheel"},
+    {"name": "MAX_SCANCODE", "value": 255, "doc": "largest scan code key_down accepts"}
+  ],
+  "functions": [
+    {
+      "name": "buttons",
+      "doc": "Held buttons of pad `pad` (0 = the first player) as a BUTTON_* mask; 0 for a pad that does not exist.",
+      "params": [{"name": "pad", "type": "i32"}],
+      "result": "i32"
+    },
+    {
+      "name": "key_down",
+      "doc": "Whether the key with this set-1 scan code is held; false outside 1..MAX_SCANCODE.",
+      "params": [{"name": "scancode", "type": "i32"}],
+      "result": "bool"
+    },
+    {
+      "name": "mouse_buttons",
+      "doc": "Held mouse buttons as a MOUSE_* mask.",
+      "params": [],
+      "result": "i32"
+    },
+    {
+      "name": "mouse_delta",
+      "doc": "Movement of the mouse along AXIS_* since the previous host frame, in pixels (wheel: notches); 0 for an unknown axis.",
+      "params": [{"name": "axis", "type": "i32"}],
+      "result": "f32"
+    }
+  ]
+}

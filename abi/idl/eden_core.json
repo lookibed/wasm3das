@@ -1,0 +1,31 @@
+{
+  "package": "eden_core",
+  "version": 1,
+  "doc": "Logging, the host clock and fatal errors.",
+  "constants": [
+    {"name": "LOG_DEBUG", "value": 0, "doc": "diagnostic detail"},
+    {"name": "LOG_INFO", "value": 1, "doc": "normal messages"},
+    {"name": "LOG_WARN", "value": 2, "doc": "something is off but the guest continues"},
+    {"name": "LOG_ERROR", "value": 3, "doc": "the guest failed an operation"}
+  ],
+  "functions": [
+    {
+      "name": "log",
+      "doc": "Writes one line to the host console. level is one of LOG_*; other values are treated as LOG_INFO.",
+      "params": [{"name": "level", "type": "i32"}, {"name": "message", "type": "str"}],
+      "result": "void"
+    },
+    {
+      "name": "time_us",
+      "doc": "Monotonic host time in microseconds since the instance was created.",
+      "params": [],
+      "result": "i64"
+    },
+    {
+      "name": "abort",
+      "doc": "Stops the guest: the running export call fails with this message and the instance becomes faulted.",
+      "params": [{"name": "message", "type": "str"}],
+      "result": "void"
+    }
+  ]
+}

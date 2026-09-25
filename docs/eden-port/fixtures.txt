@@ -28,3 +28,8 @@ manual/real-world-plmpeg-stream/generated/plmpeg.wasm
 manual/real-world-plmpeg/generated/plmpeg.wasm
 manual/real-world-tinyexpr/generated/tinyexpr.wasm
 manual/self-hosting-luanoffi-builder/generated/self_hosting_luanoffi_builder.wasm
+# ABI guests and their data (guests/, docs/eden-abi): tests/eden/test_abi*.das and the ABI cheats
+abi/build/abi_selftest.wasm
+abi/build/binjgb.wasm
+abi/binjgb/roms/cgb-acid2.gbc
+abi/binjgb/roms/battery_test.gb

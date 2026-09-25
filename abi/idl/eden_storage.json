@@ -1,0 +1,41 @@
+{
+  "package": "eden_storage",
+  "version": 1,
+  "doc": "Persistent named blobs (save games, battery RAM, settings) that outlive the instance and the session. The host gives each guest its own namespace; the guest only names blobs inside it. A write replaces the whole blob and is persisted before it returns.",
+  "constants": [
+    {"name": "MAX_NAME", "value": 64, "doc": "longest blob name in bytes"},
+    {"name": "MAX_TOTAL_BYTES", "value": 3145728, "doc": "all blobs of a namespace together (the Eden host keeps a namespace in one engine storage of at most 5 MB, base64-encoded)"},
+    {"name": "OK", "value": 0, "doc": "success"},
+    {"name": "ERR_NOT_FOUND", "value": -1, "doc": "no blob with this name"},
+    {"name": "ERR_RANGE", "value": -2, "doc": "offset is negative or past the end of the blob"},
+    {"name": "ERR_FULL", "value": -3, "doc": "the write would take the namespace past MAX_TOTAL_BYTES"},
+    {"name": "ERR_IO", "value": -4, "doc": "the host could not persist the change (engine storage limits or errors); the previous content is kept"},
+    {"name": "ERR_NAME", "value": -5, "doc": "the name is empty or longer than MAX_NAME"}
+  ],
+  "functions": [
+    {
+      "name": "size",
+      "doc": "Size of the blob in bytes, or ERR_NOT_FOUND / ERR_NAME.",
+      "params": [{"name": "name", "type": "str"}],
+      "result": "i32"
+    },
+    {
+      "name": "read",
+      "doc": "Copies bytes [offset, offset + cap) of the blob (fewer at its end) into dst. Returns the number of bytes copied, or ERR_NOT_FOUND / ERR_RANGE / ERR_NAME.",
+      "params": [{"name": "name", "type": "str"}, {"name": "offset", "type": "i32"}, {"name": "dst", "type": "outbuf"}],
+      "result": "i32"
+    },
+    {
+      "name": "write",
+      "doc": "Replaces the blob with data (creating it) and persists it. Returns OK or ERR_FULL / ERR_IO / ERR_NAME.",
+      "params": [{"name": "name", "type": "str"}, {"name": "data", "type": "bytes"}],
+      "result": "i32"
+    },
+    {
+      "name": "remove",
+      "doc": "Deletes the blob and persists the change. Returns OK or ERR_NOT_FOUND / ERR_IO / ERR_NAME.",
+      "params": [{"name": "name", "type": "str"}],
+      "result": "i32"
+    }
+  ]
+}

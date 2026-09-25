@@ -7,9 +7,10 @@
 #   1. restart the game (a full stop + start, so hot-reload state is not
 #      trusted) and wait until get_game_status says Running; a status with
 #      "compilation failed" or "internal error" fails the gate and is printed
-#   2. run the cheat wasm3_tests and collect the console log until the line
-#      "WASM3 TESTS pass=N fail=M" appears (get_logs clears the buffer, so
-#      lines are accumulated here)
+#   2. run the cheat wasm3_tests, answer each "WASM3 TESTS STEP k/n" with the
+#      cheat wasm3_tests_next (one test module per call, see main.das), and
+#      collect the console log until the line "WASM3 TESTS pass=N fail=M"
+#      appears (get_logs clears the buffer, so lines are accumulated here)
 #   3. fail when M != 0, or when N differs from the local run recorded by
 #      scripts/eden/test.sh (tmp/eden/last_local_pass) unless --no-compare
 #
@@ -119,6 +120,7 @@ sleep 2      # let request_text of the fixtures settle after the start
 mcp exec_cheat '{"cmd": "wasm3_tests"}' >/dev/null
 log=""
 summary=""
+requested=0
 deadline=$((SECONDS + timeout_s))
 while (( SECONDS < deadline )); do
     sleep 1
@@ -126,9 +128,16 @@ while (( SECONDS < deadline )); do
     if [[ -n "$chunk" && "$chunk" != "No logs" ]]; then
         log+="$chunk"$'\n'
     fi
-    summary=$(echo "$log" | grep -E '^WASM3 TESTS pass=' | tail -1 || true)
+    summary=$(grep -E '^WASM3 TESTS pass=' <<< "$log" | tail -1 || true)
     if [[ -n "$summary" ]]; then
         break
+    fi
+    # one test module per cheat call (main.das step_tests): answer every
+    # "WASM3 TESTS STEP k/n" with the next call
+    steps=$(grep -cE '^WASM3 TESTS STEP ' <<< "$log" || true)
+    if (( steps > requested )); then
+        requested=$steps
+        mcp exec_cheat '{"cmd": "wasm3_tests_next"}' >/dev/null
     fi
     status=$(mcp get_game_status 2>&1 || true)
     case "$status" in

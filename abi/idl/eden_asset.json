@@ -1,0 +1,23 @@
+{
+  "package": "eden_asset",
+  "version": 1,
+  "doc": "Read-only named data files the host makes available to the guest (ROMs, WADs, levels). Names are host-defined keys, not file paths.",
+  "constants": [
+    {"name": "ERR_NOT_FOUND", "value": -1, "doc": "no asset with this name"},
+    {"name": "ERR_RANGE", "value": -2, "doc": "offset is negative or past the end of the asset"}
+  ],
+  "functions": [
+    {
+      "name": "size",
+      "doc": "Size of the asset in bytes, or ERR_NOT_FOUND.",
+      "params": [{"name": "name", "type": "str"}],
+      "result": "i32"
+    },
+    {
+      "name": "read",
+      "doc": "Copies bytes [offset, offset + cap) of the asset (fewer at its end) into dst. Returns the number of bytes copied, or ERR_NOT_FOUND / ERR_RANGE.",
+      "params": [{"name": "name", "type": "str"}, {"name": "offset", "type": "i32"}, {"name": "dst", "type": "outbuf"}],
+      "result": "i32"
+    }
+  ]
+}

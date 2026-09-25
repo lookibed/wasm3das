@@ -1,0 +1,48 @@
+{
+  "_doc": "Ledger of the Eden guest ABI (docs/eden-abi). One entry per case; each case has items. item status: todo | working | verify | done | blocked. Only the orchestrator (skill eden-abi) changes status, committed with the work it records. `gate` is what must be green for the item: scripts/abi/gate.sh plus the listed checks.",
+  "abi_version": {"world_eden_game": 1, "packages": {"eden_core": 1, "eden_asset": 1, "eden_video": 1, "eden_input": 1, "eden_audio": 1, "eden_storage": 1}},
+  "cases": [
+    {
+      "name": "core",
+      "doc": "The ABI itself: IDL, generator, runtime, headless and Eden hosts, guest libc, self-test guest, gate.",
+      "items": [
+        {"name": "idl+generator", "status": "done", "evidence": "scripts/abi/abigen.py --check"},
+        {"name": "runtime", "status": "done", "evidence": "tests/eden/test_abi.das (instantiate, link rules, both directions of every type, traps, faulted state, re-entrancy, budget at load and growth, snapshots, destroy, relink)"},
+        {"name": "headless host", "status": "done", "evidence": "tests/eden/test_abi.das test_abi_game_loop"},
+        {"name": "eden host", "status": "done", "evidence": "cheat abi_host_check (24 checks), gate stages input and reload"},
+        {"name": "guest libc", "status": "done", "evidence": "selftest printf line, fopen/fread/fseek over eden_asset, allocator reuse under 20 x 100 KB placements"},
+        {"name": "hot reload", "status": "done", "evidence": "gate stage reload: the player relinks in place and keeps presenting frames"},
+        {"name": "persistent storage", "status": "done", "evidence": "eden_storage: test_abi_storage (raw API, libc file modes, namespaces, quota), abi_host_check storage (engine save_storage / load_storage round trip)"},
+        {"name": "float environment", "status": "done", "note": "measured: on_update flushes denormals, cheats do not; documented in ABI.md 6 and PIPELINE.md 7, printed by the gate; no script control exists"}
+      ]
+    },
+    {
+      "name": "binjgb",
+      "doc": "Game Boy / Color emulator (binji/binjgb via Spider tests/manual/real-world-binjgb), playable in the scene.",
+      "items": [
+        {"name": "guest", "status": "done", "evidence": "guests/binjgb, built by scripts/abi/build_guests.sh; 5 initial pages instead of the fixture's 1027"},
+        {"name": "golden", "status": "done", "evidence": "16 frames = wasmtime baselines (1015431621, 838717591, -1323964910) whole, in 2 ms slices, and across a snapshot, locally and in the editor"},
+        {"name": "play in Eden", "status": "done", "evidence": "cheat abi_play: acid2 face on screen, correct colours, pad from keyboard and gamepad, audio stream"},
+        {"name": "real-time speed", "status": "todo", "deferred": true, "note": "about 1 emulated fps in the editor on the interpreter; the owner deferred optimisation (PLAN.md 2, 6)"},
+        {"name": "battery saves", "status": "done", "evidence": "test_abi_binjgb_battery: guests/binjgb/roms/battery_test.gb (scripts/abi/make_battery_rom.py) saves 8 KB to eden_storage at shutdown and restores it at the next start; saves are per guest and ROM in the Eden player"},
+        {"name": "snapshot audio", "status": "done", "note": "binjgb's snapshot does not carry its audio buffer: one audio frame of 24067 is lost across a restore (golden runs show 24066); video is exact"}
+      ]
+    },
+    {
+      "name": "puredoom",
+      "doc": "PureDOOM: wasi-sdk libc, WAD over eden_asset / WASI files, INDEXED8 video with palette, keys by scan code, SFX and music.",
+      "items": [
+        {"name": "guest build (wasi-sdk sysroot, WASI imports mapped or refused explicitly)", "status": "todo"},
+        {"name": "golden (timedemo digest from a native or wasmtime run)", "status": "todo"},
+        {"name": "play in Eden", "status": "todo"}
+      ]
+    },
+    {
+      "name": "unity",
+      "doc": "Unity output as a guest. Feasibility first (PLAN.md 4, phase 5): output format, GL call bridge, memory beyond the editor's 100 MiB heap.",
+      "items": [
+        {"name": "feasibility report", "status": "todo"}
+      ]
+    }
+  ]
+}

@@ -1,0 +1,23 @@
+{
+  "package": "abi_test",
+  "version": 1,
+  "doc": "Test-only package: one import per ABI type, used by the self-test guest to prove marshalling in both directions. Never offered to a real guest.",
+  "constants": [
+    {"name": "MAGIC", "value": 1234567, "doc": "a value both sides know"}
+  ],
+  "functions": [
+    {"name": "echo_i32", "doc": "Returns v.", "params": [{"name": "v", "type": "i32"}], "result": "i32"},
+    {"name": "echo_i64", "doc": "Returns v.", "params": [{"name": "v", "type": "i64"}], "result": "i64"},
+    {"name": "echo_f32", "doc": "Returns v.", "params": [{"name": "v", "type": "f32"}], "result": "f32"},
+    {"name": "echo_f64", "doc": "Returns v.", "params": [{"name": "v", "type": "f64"}], "result": "f64"},
+    {"name": "negate", "doc": "Returns !v.", "params": [{"name": "v", "type": "bool"}], "result": "bool"},
+    {"name": "mix", "doc": "Returns a + b + c + d + (e ? 1 : 0) as f64: arguments of every scalar type in one call.", "params": [{"name": "a", "type": "i32"}, {"name": "b", "type": "i64"}, {"name": "c", "type": "f32"}, {"name": "d", "type": "f64"}, {"name": "e", "type": "bool"}], "result": "f64"},
+    {"name": "str_len", "doc": "Returns the byte length of s as the host received it.", "params": [{"name": "s", "type": "str"}], "result": "i32"},
+    {"name": "bytes_sum", "doc": "Returns the sum of the bytes of b.", "params": [{"name": "b", "type": "bytes"}], "result": "i32"},
+    {"name": "fill", "doc": "Writes byte i = (seed + i) & 255 for every i < cap of dst; returns cap.", "params": [{"name": "dst", "type": "outbuf"}, {"name": "seed", "type": "i32"}], "result": "i32"},
+    {"name": "make_handle", "doc": "Creates a host object holding v; returns its handle.", "params": [{"name": "v", "type": "i32"}], "result": "handle"},
+    {"name": "handle_value", "doc": "Value of the host object, or -1 for a bad handle.", "params": [{"name": "h", "type": "handle"}], "result": "i32"},
+    {"name": "fail", "doc": "Always traps with the message `requested`.", "params": [], "result": "void"},
+    {"name": "record", "doc": "Appends the string to the host's call log (the host test reads it).", "params": [{"name": "s", "type": "str"}], "result": "void"}
+  ]
+}

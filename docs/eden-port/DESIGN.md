@@ -547,8 +547,12 @@ calls every test function. Each upstream `[test] def test_x` in
 enforces this mechanically; a dropped test needs a reason that names the
 capability the sandbox lacks, "hard to port" is not one.
 
-`tests/eden/all_tests.das` requires every test module that exists and runs them
-all; the porter adds the new module's line when the module lands.
+`tests/eden/all_tests.das` requires every test module that exists and lists
+their runners in `all_test_modules()`; the porter adds the new module's lines
+when the module lands. The local runner runs the list in one call; the
+editor host runs one module per engine frame, because the editor collects
+the script heap only between frames and the temporaries of the whole suite
+(the parser's among them) pass its 100 MiB in a single call.
 
 ### 5.3 Gates a module must pass (in this order)
 

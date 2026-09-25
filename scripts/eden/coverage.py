@@ -17,7 +17,8 @@ unsafe, macros, threads, network, the spec corpus); the words "hard",
 "complex", "later" or "todo" in a reason fail the check.
 
 Also checks that tests/eden/all_tests.das requires the module's test file and
-calls run_tests_<module>, and that the test file defines run_tests_<module>.
+lists @@run_tests_<module> in all_test_modules(), and that the test file
+defines run_tests_<module>.
 
 Usage: coverage.py <repo> [module ...]   (default: every done/verify module)
 Exit: 0 when everything is covered.
@@ -81,8 +82,8 @@ def main(argv):
         req = "require modules/wasm3das/tests/eden/%s" % eden_tests[:-4]
         if not re.search(r"^\s*" + re.escape(req) + r"\s*$", all_tests, re.M):
             problems.append("all_tests.das lacks `%s`" % req)
-        if not re.search(r"^\s*%s\(t, fx\)" % runner, all_tests, re.M):
-            problems.append("all_tests.das does not call %s(t, fx)" % runner)
+        if not re.search(r"^\s*push\(mods, @@%s\)" % runner, all_tests, re.M):
+            problems.append("all_tests.das all_test_modules() does not list @@%s" % runner)
         checked += len(upstream_names)
         if missing or weak or problems:
             failures += 1

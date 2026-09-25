@@ -23,6 +23,9 @@ for name in "${fixtures[@]}"; do
     # (.upstream/tests/manual, run_fixtures.py); the rest are wasm3c/test
     if [[ "$name" == manual/* ]]; then
         src="$repo/.upstream/tests/manual/${name#manual/}"
+    elif [[ "$name" == abi/* ]]; then
+        # the ABI guests and their data (docs/eden-abi)
+        src="$repo/guests/${name#abi/}"
     else
         src="$repo/wasm3c/test/$name"
     fi

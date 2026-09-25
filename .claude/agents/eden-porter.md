@@ -48,7 +48,8 @@ orchestrator owns it) and do not commit.
   `def public run_tests_$MODULE(var t : TestRun; fx : FixtureSource)` that
   calls `begin_test(t, "test_x")` then `test_x(t, fx)` for each.
 - `tests/eden/all_tests.das`: uncomment (or add) the module's `require` line
-  and its `run_tests_$MODULE(t, fx)` line, keeping the port order.
+  and its `push(mods, @@run_tests_$MODULE)` line in `all_test_modules()`,
+  keeping the port order (the editor runs one module per engine frame).
 - `docs/eden-port/fixtures.txt`: append any fixture a test reads.
 
 ## Rules that are not negotiable

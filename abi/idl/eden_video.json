@@ -1,0 +1,36 @@
+{
+  "package": "eden_video",
+  "version": 1,
+  "doc": "A software framebuffer the host shows as a texture.",
+  "constants": [
+    {"name": "FORMAT_RGBA8", "value": 0, "doc": "4 bytes per pixel in memory order R, G, B, A"},
+    {"name": "FORMAT_RGB565", "value": 1, "doc": "2 bytes per pixel, little-endian, red in the high 5 bits"},
+    {"name": "FORMAT_INDEXED8", "value": 2, "doc": "1 byte per pixel, an index into the palette set with set_palette"},
+    {"name": "MAX_WIDTH", "value": 4096, "doc": "largest accepted width"},
+    {"name": "MAX_HEIGHT", "value": 4096, "doc": "largest accepted height"},
+    {"name": "OK", "value": 0, "doc": "success"},
+    {"name": "ERR_FORMAT", "value": -1, "doc": "unknown format"},
+    {"name": "ERR_SIZE", "value": -2, "doc": "width, height or stride out of range, or pixels shorter than stride * height"},
+    {"name": "ERR_PALETTE", "value": -3, "doc": "palette is not a whole number of RGBA8 entries, is empty, or has more than 256"}
+  ],
+  "functions": [
+    {
+      "name": "present",
+      "doc": "Shows a frame. stride is the distance between rows in bytes. The host copies the pixels before returning. Returns OK or ERR_*.",
+      "params": [
+        {"name": "pixels", "type": "bytes"},
+        {"name": "width", "type": "i32"},
+        {"name": "height", "type": "i32"},
+        {"name": "stride", "type": "i32"},
+        {"name": "format", "type": "i32"}
+      ],
+      "result": "i32"
+    },
+    {
+      "name": "set_palette",
+      "doc": "Sets the palette for FORMAT_INDEXED8: up to 256 RGBA8 entries. Missing entries are opaque black. Returns OK or ERR_PALETTE.",
+      "params": [{"name": "colors", "type": "bytes"}],
+      "result": "i32"
+    }
+  ]
+}

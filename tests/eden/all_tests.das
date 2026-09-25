@@ -44,29 +44,50 @@ require modules/wasm3das/tests/eden/test_m3_api_wasi_fd
 require modules/wasm3das/tests/eden/test_m3_api_libc
 require modules/wasm3das/tests/eden/test_m3_api_wasi
 require modules/wasm3das/tests/eden/test_lang_modules
+// --- the Eden guest ABI (docs/eden-abi), on top of the port ---
+require modules/wasm3das/tests/eden/test_abi
+require modules/wasm3das/tests/eden/test_abi_binjgb
+
+
+typedef public TestModuleRun = function<(var t : TestRun; fx : FixtureSource) : void>
+
+
+// the test modules in run order. The editor host runs one per engine frame
+// (the script heap is collected only between frames, and the whole suite's
+// temporaries do not fit its 100 MiB in one call); the local runner runs
+// them in one go through run_all_tests
+def public all_test_modules() : array<TestModuleRun> {
+    var mods : array<TestModuleRun>
+    // --- run lines, in the same order (edited by the porter) ---
+    push(mods, @@run_tests_wasm3_defs)
+    push(mods, @@run_tests_m3_config)
+    push(mods, @@run_tests_m3_exception)
+    push(mods, @@run_tests_m3_core)
+    push(mods, @@run_tests_m3_types)
+    push(mods, @@run_tests_m3_math_utils)
+    push(mods, @@run_tests_m3_code)
+    push(mods, @@run_tests_m3_function)
+    push(mods, @@run_tests_m3_module)
+    push(mods, @@run_tests_m3_exec_defs)
+    push(mods, @@run_tests_m3_exec)
+    push(mods, @@run_tests_m3_compile)
+    push(mods, @@run_tests_m3_env)
+    push(mods, @@run_tests_m3_parse)
+    push(mods, @@run_tests_m3_bind)
+    push(mods, @@run_tests_m3_api_defs)
+    push(mods, @@run_tests_wasi_core)
+    push(mods, @@run_tests_m3_api_wasi_fd)
+    push(mods, @@run_tests_m3_api_libc)
+    push(mods, @@run_tests_m3_api_wasi)
+    push(mods, @@run_tests_lang_modules)
+    push(mods, @@run_tests_abi)
+    push(mods, @@run_tests_abi_binjgb)
+    return <- mods
+}
 
 
 def public run_all_tests(var t : TestRun; fx : FixtureSource) {
-    // --- run lines, in the same order (edited by the porter) ---
-    run_tests_wasm3_defs(t, fx)
-    run_tests_m3_config(t, fx)
-    run_tests_m3_exception(t, fx)
-    run_tests_m3_core(t, fx)
-    run_tests_m3_types(t, fx)
-    run_tests_m3_math_utils(t, fx)
-    run_tests_m3_code(t, fx)
-    run_tests_m3_function(t, fx)
-    run_tests_m3_module(t, fx)
-    run_tests_m3_exec_defs(t, fx)
-    run_tests_m3_exec(t, fx)
-    run_tests_m3_compile(t, fx)
-    run_tests_m3_env(t, fx)
-    run_tests_m3_parse(t, fx)
-    run_tests_m3_bind(t, fx)
-    run_tests_m3_api_defs(t, fx)
-    run_tests_wasi_core(t, fx)
-    run_tests_m3_api_wasi_fd(t, fx)
-    run_tests_m3_api_libc(t, fx)
-    run_tests_m3_api_wasi(t, fx)
-    run_tests_lang_modules(t, fx)
+    for (m in all_test_modules()) {
+        invoke(m, t, fx)
+    }
 }

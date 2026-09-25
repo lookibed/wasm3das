@@ -733,12 +733,22 @@ def public Environment_AddFuncType(var rt : M3Runtime; var io_funcType : IM3Func
 
 // C: IM3Runtime m3_NewRuntime (IM3Environment i_environment, u32 i_stackSizeInBytes, void * i_userdata)
 // Eden: returns the runtime value; i_userdata is an int token (see the header)
-def public m3_NewRuntime(i_environment : M3Environment; i_stackSizeInBytes : u32; i_userdata : int) : M3Runtime {
-    // Eden: the op table and the operation tables (C: static initialisers)
-    // and the hooks, before any code of this runtime compiles or runs
+// Eden: the op table and the operation tables (C: static initialisers) and
+// the hooks. Function values do not survive a hot reload of the scripts
+// (DESIGN 1), so m3_NewRuntime runs this for every runtime, and a host that
+// keeps a runtime across a reload runs it again before the next call
+// (source/abi/abi_runtime.das abi_relink_begin)
+def public m3_EdenRewireTables() {
     m3_build_operations_table()
     CompileFunctionHook = @@CompileFunction
     ResizeMemoryHook = @@ResizeMemory
+}
+
+
+def public m3_NewRuntime(i_environment : M3Environment; i_stackSizeInBytes : u32; i_userdata : int) : M3Runtime {
+    // Eden: the op table and the operation tables (C: static initialisers)
+    // and the hooks, before any code of this runtime compiles or runs
+    m3_EdenRewireTables()
 
     // C: m3_AllocStruct (M3Runtime); Eden: the value (allocation cannot fail observably)
     var runtime = M3Runtime()
