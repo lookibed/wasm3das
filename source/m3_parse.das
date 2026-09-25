@@ -19,11 +19,12 @@ require modules/wasm3das/source/m3_compile         // Eden: project-root-relativ
 // propagation intentionally follow the C implementation.
 //
 // Port adaptations applied uniformly (each documented here once):
-// - C handlers take `const u8 * bytes` by value and advance their own copy:
-//   the cursor is copied to a local `var bytes : bytes_t` with the const
-//   stripped via reinterpret (Read* functions require a mutable cursor).
-// - C FreeUtf8String of module-owned strings is a no-op here: Daslang strings
-//   own their storage and assignment replaces (frees) the previous value.
+// - C handlers take `bytes_t i_bytes` by value and advance it: the Eden
+//   handlers copy the index into `var pos : bytes_t = i_bytes` (the m3_core
+//   readers take the cursor by reference).
+// - C's `m3_Free (utf8)` / `m3_Free (name)` of module-owned strings is a
+//   no-op here: Daslang strings own their storage and assignment replaces
+//   (frees) the previous value.
 // - `var result : M3Result` is spelled explicitly because inference through
 //   the const-string return of the readers yields a const-qualified local.
 // - C m3_AllocArray(STRUCT, N) macro expands at the call site to a sized
