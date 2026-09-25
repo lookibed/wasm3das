@@ -31,7 +31,7 @@ require modules/wasm3das/tests/eden/test_m3_types
 require modules/wasm3das/tests/eden/test_m3_math_utils
 require modules/wasm3das/tests/eden/test_m3_code
 require modules/wasm3das/tests/eden/test_m3_function
-// require modules/wasm3das/tests/eden/test_m3_module
+require modules/wasm3das/tests/eden/test_m3_module
 // require modules/wasm3das/tests/eden/test_m3_exec_defs
 // require modules/wasm3das/tests/eden/test_m3_exec
 // require modules/wasm3das/tests/eden/test_m3_compile
@@ -57,7 +57,7 @@ def public run_all_tests(var t : TestRun; fx : FixtureSource) {
     run_tests_m3_math_utils(t, fx)
     run_tests_m3_code(t, fx)
     run_tests_m3_function(t, fx)
-    // run_tests_m3_module(t, fx)
+    run_tests_m3_module(t, fx)
     // run_tests_m3_exec_defs(t, fx)
     // run_tests_m3_exec(t, fx)
     // run_tests_m3_compile(t, fx)

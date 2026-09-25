@@ -165,6 +165,16 @@ Decisions fixed by `m3_types` (the struct table is in its header):
   Eden port pops the just-appended last slot (or compares before
   appending) so the survivor is the existing handle, which
   `op_CallIndirect` compares by handle.
+- `Module_AddFunction(var rt; m; i_typeIndex; i_importInfo : M3ImportInfo; i_isImport : bool)`:
+  the explicit flag replaces C's `i_importInfo != NULL` test (an import
+  field name may be `""`, `names.wast`). The parser passes `true` and the
+  import for C's `&import`, `false` and `M3ImportInfo()` for C's `NULL`.
+  The function slot's `moduleIdx` stays -1, exactly as C leaves
+  `func->module` NULL: `ParseSection_Code` sets it for a local function
+  with a body and `CompileRawFunction` (the `m3_bind` link path) for an
+  import; `Compile_Call` reports `function import missing` for an import
+  whose `moduleIdx` is still -1. Module handles into `rt.modules` are
+  never reused; `m3_FreeModule` leaves a released slot.
 - `M3Module.startFunction : i32 = -1` from construction (C callocs 0 and
   sets -1 in `m3_parse.c` before use; `m3_LoadModule` runs any index >= 0).
 - `cstr_t = string` cannot tell C's `NULL` from `""`. C relies on the

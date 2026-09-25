@@ -12,7 +12,7 @@
     {"name": "m3_math_utils",  "status": "done", "source": "m3_math_utils.das",  "eden_tests": "test_m3_math_utils.das",  "upstream_tests": ["test_m3_math_utils.das"]},
     {"name": "m3_code",        "status": "done", "source": "m3_code.das",        "eden_tests": "test_m3_code.das",        "upstream_tests": ["test_m3_code.das"]},
     {"name": "m3_function",    "status": "done", "source": "m3_function.das",    "eden_tests": "test_m3_function.das",    "upstream_tests": ["test_m3_function.das"]},
-    {"name": "m3_module",      "status": "todo", "source": "m3_module.das",      "eden_tests": "test_m3_module.das",      "upstream_tests": ["test_m3_module.das"]},
+    {"name": "m3_module",      "status": "done", "source": "m3_module.das",      "eden_tests": "test_m3_module.das",      "upstream_tests": ["test_m3_module.das"]},
     {"name": "m3_exec_defs",   "status": "todo", "source": "m3_exec_defs.das",   "eden_tests": "test_m3_exec_defs.das",   "upstream_tests": [], "note": "no upstream test file; the Eden file tests the slot/memory/immediate accessors of DESIGN 4.2-4.4 directly"},
     {"name": "m3_exec",        "status": "todo", "source": "m3_exec.das",        "eden_tests": "test_m3_exec.das",        "upstream_tests": ["test_m3_exec.das"]},
     {"name": "m3_compile",     "status": "todo", "source": "m3_compile.das",     "eden_tests": "test_m3_compile.das",     "upstream_tests": ["test_m3_compile.das"]},
