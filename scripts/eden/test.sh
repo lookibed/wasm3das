@@ -2,7 +2,7 @@
 # Gate 3 of the Eden port: the Eden test modules pass locally.
 #
 # Runs .local/run_tests.das (fixtures read with fio) under the sandbox project
-# with the 0.6.3 build when present, else the 0.6.4 pin. The summary line
+# with the local 0.6.4 build. The summary line
 # "WASM3 TESTS pass=N fail=M" is the contract; the pass count is written to
 # tmp/eden/last_local_pass so scripts/eden/eden_gate.sh can compare the
 # editor's run with it.

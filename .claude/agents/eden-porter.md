@@ -57,7 +57,8 @@ orchestrator owns it) and do not commit.
 - No `unsafe`, `addr`, `reinterpret`, `intptr`, `memcpy`, `new`/`delete` for
   `M3*` data, `daslib/ast`, `daslib/fio`, `[macro]`-family annotations,
   `[init]`, `[unsafe_deref]`. `scripts/eden/compile.sh` greps for them.
-- No 0.6.4-only syntax: `addr<T>` and anything the 0.6.3 build rejects.
+- The target is daslang 0.6.4 (EdenSpark 1.0): `[inline]` is allowed, typed
+  `addr<T>` is not (unsafe).
 - Handles (`int`, -1 = null) into runtime arenas replace every pointer; the
   linear memory, stack and code are arrays indexed as DESIGN §4 says; bit
   casts go through `daslib/math_bits`.

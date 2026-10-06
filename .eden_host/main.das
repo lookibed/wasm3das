@@ -11,6 +11,7 @@ require modules/wasm3das/source/m3_api_wasi    // m3_LinkWASI, m3_GetWasiContext
 require modules/wasm3das/tests/eden/abi_golden // run_abi_golden (docs/eden-abi)
 require modules/wasm3das/eden/abi_guest_player // guest_player_start: a guest playing in the scene
 require modules/wasm3das/eden/abi_host_check   // run_abi_host_check: the Eden host paths
+require modules/wasm3das/eden/abi_dgv_player   // dgv_player_start: a doomgeneric (dgv_*) guest in the scene
 require strings
 require daslib/strings_boost
 
@@ -703,6 +704,29 @@ def abi_stop() {
         remove_node(playerNode)
     }
     playerNode = NodeId()
+}
+
+
+// plays Spider's doomgeneric guest (dgv_* interface, eden/abi_dgv_player.das):
+// `guest` and `wad` are fixture names, mode 0 = play, 1 = -timedemo demo1
+[cheat]
+def abi_doom(mode : string = "0"; guest : string = "local/doom/doom.wasm"; wad : string = "local/doom/doom1.wad") {
+    abi_stop()
+    let wasm <- load_fixture_bytes(guest)
+    let wadBytes <- load_fixture_bytes(wad)
+    if (length(wasm) == 0 || length(wadBytes) == 0) {
+        print("ABI DOOM failed: {guest} or {wad} not loaded")
+        return
+    }
+    playerNode = dgv_player_start(wasm, wadBytes, fixture_file_name(guest), to_int(mode))
+    print("ABI DOOM {guest} {wad} mode {mode}: {playerNode.isAlive ? "started" : "failed"}")
+}
+
+
+// "ABI DOOM tics=N frames=F digest=D ..." of the running doom player
+[cheat]
+def abi_doom_report() {
+    print("ABI DOOM {dgv_player_report(playerNode)}")
 }
 
 

@@ -30,7 +30,7 @@ set -uo pipefail
 repo="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")/../.." && pwd)"
 eden_root="$(cd -- "$repo/../.." && pwd)"
 M="$repo/scripts/eden/edenmcp"
-DASLANG="${DASLANG_063:-/root/daScript-0.6.3/bin/daslang}"
+DASLANG="${DASLANG_064:-/root/daScript/bin/daslang}"
 local_only=0
 [[ "${1:-}" == "--local" ]] && local_only=1
 

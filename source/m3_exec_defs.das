@@ -144,6 +144,7 @@ require daslib/math_bits                         // Eden: bit casts of the f32/f
 // Eden: C's `_mem->length` (M3MemoryHeader.length, the size of the linear
 // memory in bytes), which every load, store and bulk-memory operation checks
 // its address against
+[inline]
 def public mem_size(rt : M3Runtime) : int {
     return length(rt.mem)
 }
@@ -154,16 +155,19 @@ def public mem_size(rt : M3Runtime) : int {
 // cast the operation applies). No bounds check: the operation tests
 // `address + n <= mem_size(rt)` first, as C's m3MemCheck does.
 
+[inline]
 def public load_u8(rt : M3Runtime; at : int) : u8 {
     return rt.mem[at]
 }
 
 
+[inline]
 def public load_s8(rt : M3Runtime; at : int) : i8 {
     return i8(rt.mem[at])
 }
 
 
+[inline]
 def public load_u16(rt : M3Runtime; at : int) : u16 {
     // Eden: assembled in u32, gen2 has no arithmetic on 16-bit storage types
     let b0 = u32(rt.mem[at])
@@ -172,11 +176,13 @@ def public load_u16(rt : M3Runtime; at : int) : u16 {
 }
 
 
+[inline]
 def public load_s16(rt : M3Runtime; at : int) : i16 {
     return i16(load_u16(rt, at))
 }
 
 
+[inline]
 def public load_u32(rt : M3Runtime; at : int) : u32 {
     let b0 = u32(rt.mem[at])
     let b1 = u32(rt.mem[at + 1])
@@ -186,11 +192,13 @@ def public load_u32(rt : M3Runtime; at : int) : u32 {
 }
 
 
+[inline]
 def public load_i32(rt : M3Runtime; at : int) : i32 {
     return i32(load_u32(rt, at))
 }
 
 
+[inline]
 def public load_u64(rt : M3Runtime; at : int) : u64 {
     let lo = u64(load_u32(rt, at))
     let hi = u64(load_u32(rt, at + 4))
@@ -198,16 +206,19 @@ def public load_u64(rt : M3Runtime; at : int) : u64 {
 }
 
 
+[inline]
 def public load_i64(rt : M3Runtime; at : int) : i64 {
     return i64(load_u64(rt, at))
 }
 
 
+[inline]
 def public load_f32(rt : M3Runtime; at : int) : f32 {
     return uint_bits_to_float(load_u32(rt, at))
 }
 
 
+[inline]
 def public load_f64(rt : M3Runtime; at : int) : f64 {
     return uint64_bits_to_double(load_u64(rt, at))
 }
@@ -217,11 +228,13 @@ def public load_f64(rt : M3Runtime; at : int) : f64 {
 // (C: a memcpy of sizeof (TYPE) bytes from the narrowed value). A signed
 // value is stored through its unsigned width: store_u32(rt, at, u32(v)).
 
+[inline]
 def public store_u8(var rt : M3Runtime; at : int; v : u8) {
     rt.mem[at] = v
 }
 
 
+[inline]
 def public store_u16(var rt : M3Runtime; at : int; v : u16) {
     let bits = u32(v)
     rt.mem[at] = u8(bits)
@@ -229,6 +242,7 @@ def public store_u16(var rt : M3Runtime; at : int; v : u16) {
 }
 
 
+[inline]
 def public store_u32(var rt : M3Runtime; at : int; v : u32) {
     rt.mem[at] = u8(v)
     rt.mem[at + 1] = u8(v >> 8u)
@@ -237,17 +251,20 @@ def public store_u32(var rt : M3Runtime; at : int; v : u32) {
 }
 
 
+[inline]
 def public store_u64(var rt : M3Runtime; at : int; v : u64) {
     store_u32(rt, at, u32(v))
     store_u32(rt, at + 4, u32(v >> 32ul))
 }
 
 
+[inline]
 def public store_f32(var rt : M3Runtime; at : int; v : f32) {
     store_u32(rt, at, float_bits_to_uint(v))
 }
 
 
+[inline]
 def public store_f64(var rt : M3Runtime; at : int; v : f64) {
     store_u64(rt, at, double_bits_to_uint64(v))
 }
@@ -268,6 +285,7 @@ def public store_f64(var rt : M3Runtime; at : int; v : f64) {
 
 /* C: # define d_m3ClearRegisters d_m3ExpClearRegisters (_fp0 = 0.;) — _r0 = 0; _fp0 = 0.; */
 // Eden: the registers are fields, so the macro is a function of the runtime
+[inline]
 def public d_m3ClearRegisters(var rt : M3Runtime) {
     rt.r0 = 0ul        // C: _r0 = 0
     rt.fp0 = 0.0lf     // C: _fp0 = 0.
@@ -310,6 +328,7 @@ let public M3_TRAP : m3ret_t = -3
 // jump is a return to the dispatching loop, which reads the word at rt.pc.
 // Eden: `rt` is taken for the uniform spelling of every tail position; it is
 // not read.
+[inline]
 def public nextOpDirect(var rt : M3Runtime) : m3ret_t {
     return M3_NEXT
 }
@@ -318,6 +337,7 @@ def public nextOpDirect(var rt : M3Runtime) : m3ret_t {
 // C: #define jumpOpDirect(PC) M3_MUSTTAIL return jumpOpImpl((pc_t)(PC))
 // Only the branch target has to be handed over; the dispatching loop reads
 // the word at the new rt.pc.
+[inline]
 def public jumpOpDirect(var rt : M3Runtime; PC : pc_t) : m3ret_t {
     rt.pc = PC
     return M3_NEXT
@@ -327,6 +347,7 @@ def public jumpOpDirect(var rt : M3Runtime; PC : pc_t) : m3ret_t {
 // C: `return m3Err_none` from an operation (op_Return): the function's code
 // completed, control goes back to the nesting site's RunLoop caller.
 // Eden: `rt` is taken for the uniform spelling; it is not read.
+[inline]
 def public retOp(var rt : M3Runtime) : m3ret_t {
     return M3_RETURN
 }
@@ -336,6 +357,7 @@ def public retOp(var rt : M3Runtime) : m3ret_t {
 // false, so the pushBacktraceFrame() half of the recording form is compiled
 // out. Eden: the trap string is recorded in the runtime and the protocol
 // value returned (upstream: `return err`, the string itself).
+[inline]
 def public newTrap(var rt : M3Runtime; err : M3Result) : m3ret_t {
     rt.trap = err
     return M3_TRAP
@@ -345,6 +367,7 @@ def public newTrap(var rt : M3Runtime; err : M3Result) : m3ret_t {
 // C m3_exec.h: #define forwardTrap(err) return err — the result of a nested
 // call (Call, nextOpImpl) passed on unchanged: M3_RETURN, M3_TRAP (rt.trap
 // already set by the operation that trapped) or a loop pc.
+[inline]
 def public forwardTrap(err : m3ret_t) : m3ret_t {
     return err
 }
@@ -354,6 +377,7 @@ def public forwardTrap(err : m3ret_t) : m3ret_t {
 // the host function's result as the operation's m3ret_t: NULL (m3Err_none)
 // means the function completed, anything else is the trap. Eden: the
 // M3Result form of forwardTrap maps that onto the protocol.
+[inline]
 def public forwardTrap(var rt : M3Runtime; err : M3Result) : m3ret_t {
     if (m3ResultIsError(err)) {
         return newTrap(rt, err)
@@ -385,6 +409,7 @@ def public forwardTrap(var rt : M3Runtime; err : M3Result) : m3ret_t {
 
 
 /* C: immediate (code_t) — the raw word (upstream: immediate_code) */
+[inline]
 def public immediate_u64(var rt : M3Runtime) : u64 {
     let value = rt.code[rt.pc]
     rt.pc++
@@ -394,6 +419,7 @@ def public immediate_u64(var rt : M3Runtime) : u64 {
 
 /* C: immediate (u32) — Eden: the low 32 bits of the word (a 32-bit value is
    zero-extended into its word, DESIGN.md section 4.4) */
+[inline]
 def public immediate_u32(var rt : M3Runtime) : u32 {
     let value = u32(rt.code[rt.pc])
     rt.pc++
@@ -402,6 +428,7 @@ def public immediate_u32(var rt : M3Runtime) : u32 {
 
 
 /* C: immediate (i32) — Eden: the low 32 bits of the word, sign as stored */
+[inline]
 def public immediate_i32(var rt : M3Runtime) : i32 {
     let value = i32(u32(rt.code[rt.pc]))
     rt.pc++
@@ -410,6 +437,7 @@ def public immediate_i32(var rt : M3Runtime) : i32 {
 
 
 /* C: immediate (i64) — Eden: the bits of the word */
+[inline]
 def public immediate_i64(var rt : M3Runtime) : i64 {
     let value = i64(rt.code[rt.pc])
     rt.pc++
@@ -418,6 +446,7 @@ def public immediate_i64(var rt : M3Runtime) : i64 {
 
 
 /* C: immediate (f32) — Eden: the low 32 bits of the word are the float's bits */
+[inline]
 def public immediate_f32(var rt : M3Runtime) : f32 {
     let value = uint_bits_to_float(u32(rt.code[rt.pc]))
     rt.pc++
@@ -426,6 +455,7 @@ def public immediate_f32(var rt : M3Runtime) : f32 {
 
 
 /* C: immediate (f64) — Eden: the bits of the word */
+[inline]
 def public immediate_f64(var rt : M3Runtime) : f64 {
     let value = uint64_bits_to_double(rt.code[rt.pc])
     rt.pc++
@@ -435,6 +465,7 @@ def public immediate_f64(var rt : M3Runtime) : f64 {
 
 /* C: immediate (pc_t) — Eden: an index into rt.code stored as u64(int), so a
    null pc (-1) round-trips (upstream: immediate_pc) */
+[inline]
 def public immediate_pc(var rt : M3Runtime) : pc_t {
     let value = int(rt.code[rt.pc])
     rt.pc++
@@ -446,6 +477,7 @@ def public immediate_pc(var rt : M3Runtime) : pc_t {
    the global's address — Eden: a handle into the runtime's arena stored as
    u64(int), -1 = NULL (upstream: immediate_function, immediate_module,
    immediate_functype, immediate_rawcall, immediate_code for a global) */
+[inline]
 def public immediate_handle(var rt : M3Runtime) : int {
     let value = int(rt.code[rt.pc])
     rt.pc++
@@ -456,6 +488,7 @@ def public immediate_handle(var rt : M3Runtime) : int {
 /* C: immediate (i32) inside slot () and slot_ptr () — the slot offset of an
    operand, in slots, relative to _sp; Eden: the same decode as immediate_i32,
    named for its use */
+[inline]
 def public immediate_slot(var rt : M3Runtime) : int {
     let value = i32(u32(rt.code[rt.pc]))
     rt.pc++
@@ -465,6 +498,7 @@ def public immediate_slot(var rt : M3Runtime) : int {
 
 /* C: _pc++ without a read (an operation that skips an operand it does not
    use); Eden: the advance alone */
+[inline]
 def public skip_immediate(var rt : M3Runtime) {
     rt.pc++
 }
@@ -477,6 +511,7 @@ def public skip_immediate(var rt : M3Runtime) {
 
 
 /* C: _sp + off — the index of slot `off` of the current frame */
+[inline]
 def public slot_index(rt : M3Runtime; off : int) : int {
     return rt.sp + off
 }
@@ -484,9 +519,11 @@ def public slot_index(rt : M3Runtime; off : int) : int {
 
 /* C: slot_ptr (TYPE) — the offset immediate, then the index (upstream:
    slot_ptr_u32 ... slot_ptr_f64; the type is the accessor's, below) */
+[inline]
 def public slot_index(var rt : M3Runtime) : int {
-    let off = immediate_slot(rt)
-    return slot_index(rt, off)
+    let off = i32(u32(rt.code[rt.pc]))
+    rt.pc++
+    return rt.sp + off
 }
 
 
@@ -494,31 +531,37 @@ def public slot_index(var rt : M3Runtime) : int {
 // slot_ptr (TYPE) pointer). One place per type decodes the word; the 32-bit
 // views are the low 32 bits.
 
+[inline]
 def public stack_u32(rt : M3Runtime; idx : int) : u32 {
     return u32(rt.stack[idx])
 }
 
 
+[inline]
 def public stack_i32(rt : M3Runtime; idx : int) : i32 {
     return i32(u32(rt.stack[idx]))
 }
 
 
+[inline]
 def public stack_u64(rt : M3Runtime; idx : int) : u64 {
     return rt.stack[idx]
 }
 
 
+[inline]
 def public stack_i64(rt : M3Runtime; idx : int) : i64 {
     return i64(rt.stack[idx])
 }
 
 
+[inline]
 def public stack_f32(rt : M3Runtime; idx : int) : f32 {
     return uint_bits_to_float(u32(rt.stack[idx]))
 }
 
 
+[inline]
 def public stack_f64(rt : M3Runtime; idx : int) : f64 {
     return uint64_bits_to_double(rt.stack[idx])
 }
@@ -527,31 +570,37 @@ def public stack_f64(rt : M3Runtime; idx : int) : f64 {
 // Eden: the typed writes of the word at a saved index (C: `* ptr = value`).
 // A 32-bit write is the whole word, zero-extended (see the header).
 
+[inline]
 def public set_stack_u32(var rt : M3Runtime; idx : int; v : u32) {
     rt.stack[idx] = u64(v)
 }
 
 
+[inline]
 def public set_stack_i32(var rt : M3Runtime; idx : int; v : i32) {
     rt.stack[idx] = u64(u32(v))
 }
 
 
+[inline]
 def public set_stack_u64(var rt : M3Runtime; idx : int; v : u64) {
     rt.stack[idx] = v
 }
 
 
+[inline]
 def public set_stack_i64(var rt : M3Runtime; idx : int; v : i64) {
     rt.stack[idx] = u64(v)
 }
 
 
+[inline]
 def public set_stack_f32(var rt : M3Runtime; idx : int; v : f32) {
     rt.stack[idx] = u64(float_bits_to_uint(v))
 }
 
 
+[inline]
 def public set_stack_f64(var rt : M3Runtime; idx : int; v : f64) {
     rt.stack[idx] = double_bits_to_uint64(v)
 }
@@ -561,139 +610,185 @@ def public set_stack_f64(var rt : M3Runtime; idx : int; v : f64) {
 // C: slot (TYPE) — the operand itself. Eden: slot_T(rt, off) is the deref
 // half (slot `off` of the current frame), slot_T(rt) the whole macro (the
 // offset immediate, then the deref); set_slot_T likewise for a write.
+//
+// Every reader and writer of this file is [inline], as its C original is a
+// macro: in the daslang interpreter a call costs more than the work of
+// these bodies, and the operations live in another module, where the
+// compiler's automatic inlining does not reach. The one-argument forms
+// (slot_T(rt), set_slot_T(rt, v), slot_index(rt)) are written out as leaves
+// (the immediate read, the advance, the stack word) instead of calling the
+// other readers: daslang 0.6.4 refuses a nested [inline] call taking the
+// `var rt` parameter after a statement of the outer body ("local reference
+// to non-local expression is unsafe", outside `unsafe`).
 // ----------------------------------------------------------------------------
 
 
+[inline]
 def public slot_u32(rt : M3Runtime; off : int) : u32 {
     return stack_u32(rt, slot_index(rt, off))
 }
 
 
+[inline]
 def public slot_u32(var rt : M3Runtime) : u32 {
-    let off = immediate_slot(rt)
-    return slot_u32(rt, off)
+    let off = i32(u32(rt.code[rt.pc]))
+    rt.pc++
+    return u32(rt.stack[rt.sp + off])
 }
 
 
+[inline]
 def public slot_i32(rt : M3Runtime; off : int) : i32 {
     return stack_i32(rt, slot_index(rt, off))
 }
 
 
+[inline]
 def public slot_i32(var rt : M3Runtime) : i32 {
-    let off = immediate_slot(rt)
-    return slot_i32(rt, off)
+    let off = i32(u32(rt.code[rt.pc]))
+    rt.pc++
+    return i32(u32(rt.stack[rt.sp + off]))
 }
 
 
+[inline]
 def public slot_u64(rt : M3Runtime; off : int) : u64 {
     return stack_u64(rt, slot_index(rt, off))
 }
 
 
+[inline]
 def public slot_u64(var rt : M3Runtime) : u64 {
-    let off = immediate_slot(rt)
-    return slot_u64(rt, off)
+    let off = i32(u32(rt.code[rt.pc]))
+    rt.pc++
+    return rt.stack[rt.sp + off]
 }
 
 
+[inline]
 def public slot_i64(rt : M3Runtime; off : int) : i64 {
     return stack_i64(rt, slot_index(rt, off))
 }
 
 
+[inline]
 def public slot_i64(var rt : M3Runtime) : i64 {
-    let off = immediate_slot(rt)
-    return slot_i64(rt, off)
+    let off = i32(u32(rt.code[rt.pc]))
+    rt.pc++
+    return i64(rt.stack[rt.sp + off])
 }
 
 
+[inline]
 def public slot_f32(rt : M3Runtime; off : int) : f32 {
     return stack_f32(rt, slot_index(rt, off))
 }
 
 
+[inline]
 def public slot_f32(var rt : M3Runtime) : f32 {
-    let off = immediate_slot(rt)
-    return slot_f32(rt, off)
+    let off = i32(u32(rt.code[rt.pc]))
+    rt.pc++
+    return uint_bits_to_float(u32(rt.stack[rt.sp + off]))
 }
 
 
+[inline]
 def public slot_f64(rt : M3Runtime; off : int) : f64 {
     return stack_f64(rt, slot_index(rt, off))
 }
 
 
+[inline]
 def public slot_f64(var rt : M3Runtime) : f64 {
-    let off = immediate_slot(rt)
-    return slot_f64(rt, off)
+    let off = i32(u32(rt.code[rt.pc]))
+    rt.pc++
+    return uint64_bits_to_double(rt.stack[rt.sp + off])
 }
 
 
 /* C: slot (TYPE) = value — the write through the macro (upstream:
    `slot_ptr_T(_pc, _sp)[0] = value`) */
 
+[inline]
 def public set_slot_u32(var rt : M3Runtime; off : int; v : u32) {
     set_stack_u32(rt, slot_index(rt, off), v)
 }
 
 
+[inline]
 def public set_slot_u32(var rt : M3Runtime; v : u32) {
-    let off = immediate_slot(rt)
-    set_slot_u32(rt, off, v)
+    let off = i32(u32(rt.code[rt.pc]))
+    rt.pc++
+    rt.stack[rt.sp + off] = u64(v)
 }
 
 
+[inline]
 def public set_slot_i32(var rt : M3Runtime; off : int; v : i32) {
     set_stack_i32(rt, slot_index(rt, off), v)
 }
 
 
+[inline]
 def public set_slot_i32(var rt : M3Runtime; v : i32) {
-    let off = immediate_slot(rt)
-    set_slot_i32(rt, off, v)
+    let off = i32(u32(rt.code[rt.pc]))
+    rt.pc++
+    rt.stack[rt.sp + off] = u64(u32(v))
 }
 
 
+[inline]
 def public set_slot_u64(var rt : M3Runtime; off : int; v : u64) {
     set_stack_u64(rt, slot_index(rt, off), v)
 }
 
 
+[inline]
 def public set_slot_u64(var rt : M3Runtime; v : u64) {
-    let off = immediate_slot(rt)
-    set_slot_u64(rt, off, v)
+    let off = i32(u32(rt.code[rt.pc]))
+    rt.pc++
+    rt.stack[rt.sp + off] = v
 }
 
 
+[inline]
 def public set_slot_i64(var rt : M3Runtime; off : int; v : i64) {
     set_stack_i64(rt, slot_index(rt, off), v)
 }
 
 
+[inline]
 def public set_slot_i64(var rt : M3Runtime; v : i64) {
-    let off = immediate_slot(rt)
-    set_slot_i64(rt, off, v)
+    let off = i32(u32(rt.code[rt.pc]))
+    rt.pc++
+    rt.stack[rt.sp + off] = u64(v)
 }
 
 
+[inline]
 def public set_slot_f32(var rt : M3Runtime; off : int; v : f32) {
     set_stack_f32(rt, slot_index(rt, off), v)
 }
 
 
+[inline]
 def public set_slot_f32(var rt : M3Runtime; v : f32) {
-    let off = immediate_slot(rt)
-    set_slot_f32(rt, off, v)
+    let off = i32(u32(rt.code[rt.pc]))
+    rt.pc++
+    rt.stack[rt.sp + off] = u64(float_bits_to_uint(v))
 }
 
 
+[inline]
 def public set_slot_f64(var rt : M3Runtime; off : int; v : f64) {
     set_stack_f64(rt, slot_index(rt, off), v)
 }
 
 
+[inline]
 def public set_slot_f64(var rt : M3Runtime; v : f64) {
-    let off = immediate_slot(rt)
-    set_slot_f64(rt, off, v)
+    let off = i32(u32(rt.code[rt.pc]))
+    rt.pc++
+    rt.stack[rt.sp + off] = double_bits_to_uint64(v)
 }

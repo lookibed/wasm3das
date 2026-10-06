@@ -5,11 +5,10 @@
 #   eden_root   the Eden project root: the folder with manifest.blk, two levels
 #               above the repository. The editor resolves `require` paths from
 #               there, so every local compile runs from there too.
-#   DASLANG_063 the daslang built from the tag nearest to the editor's 0.6.3
-#               (default /root/daScript-0.6.3/bin/daslang); the primary local
-#               compiler because it has the editor's parser
-#   DASLANG_064 the pinned daslang of the upstream port (default
-#               /root/daScript/bin/daslang); a second opinion, optional
+#   DASLANG_064 the local daslang nearest to the editor's 0.6.4 (EdenSpark
+#               1.0; default /root/daScript/bin/daslang). The editor's 0.6.3
+#               (EdenSpark 0.9) is no longer a target: the port uses
+#               0.6.4-only constructs such as [inline]
 #   SANDBOX     scripts/eden/sandbox.das_project, the model of the editor's rules
 #   EDENMCP     the command-line client of the editor's MCP server
 set -euo pipefail
@@ -21,7 +20,6 @@ if [[ ! -f "$eden_root/manifest.blk" ]]; then
     exit 2
 fi
 
-DASLANG_063="${DASLANG_063:-/root/daScript-0.6.3/bin/daslang}"
 DASLANG_064="${DASLANG_064:-/root/daScript/bin/daslang}"
 SANDBOX="$repo/scripts/eden/sandbox.das_project"
 EDENMCP="$repo/scripts/eden/edenmcp"
@@ -36,12 +34,11 @@ das_sandbox() {
 }
 
 compilers() {
-    # prints the available compilers, the 0.6.3 build first
-    local any=0
-    if [[ -x "$DASLANG_063" ]]; then echo "$DASLANG_063"; any=1; fi
-    if [[ -x "$DASLANG_064" ]]; then echo "$DASLANG_064"; any=1; fi
-    if [[ $any == 0 ]]; then
-        echo "eden: no daslang binary found (DASLANG_063=$DASLANG_063, DASLANG_064=$DASLANG_064)" >&2
+    # prints the available compilers (the 0.6.4 build)
+    if [[ -x "$DASLANG_064" ]]; then
+        echo "$DASLANG_064"
+    else
+        echo "eden: no daslang binary found (DASLANG_064=$DASLANG_064)" >&2
         return 1
     fi
 }

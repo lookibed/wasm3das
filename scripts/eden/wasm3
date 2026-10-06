@@ -9,15 +9,15 @@
 # from it; the working directory is left alone because the drivers pass
 # fixture paths relative to their own directory.
 #
-# Environment: DASLANG_063 (default /root/daScript-0.6.3/bin/daslang),
+# Environment: DASLANG_064 (default /root/daScript/bin/daslang, the local
+#              build nearest to the editor's 0.6.4),
 #              WASM3DAS_EDEN_APP overrides the entry point.
 # resolved through symlinks: spec.sh / wasi.sh call it as ./wasm3 from their
 # run directory, because the drivers split --exec on spaces and the
 # repository path contains spaces
 here="$(cd -- "$(dirname -- "$(readlink -f -- "${BASH_SOURCE[0]}")")" && pwd)"
 repo="$(cd -- "$here/../.." && pwd)"
-bin="${DASLANG_063:-/root/daScript-0.6.3/bin/daslang}"
-[[ -x "$bin" ]] || bin="${DASLANG_064:-/root/daScript/bin/daslang}"
+bin="${DASLANG_064:-/root/daScript/bin/daslang}"
 app="${WASM3DAS_EDEN_APP:-$repo/.local/app/wasm3_eden.das}"
 if [[ ! -f "$app" ]]; then
     echo "wasm3 (eden): $app does not exist yet (STATE.json module 'app')" >&2

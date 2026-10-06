@@ -10,8 +10,7 @@ start it, watch it, and what it leaves behind. The design it implements is
 |---|---|---|
 | Eden editor running with this project open (from the launcher) | Windows | `scripts/eden/edenmcp get_game_status` answers |
 | MCP bridge WSL → editor | `C:\Users\Andry\.edenspark\mcp_bridge.py`, registered as MCP server `EdenSpark` (user + local scope) | `claude mcp list` shows EdenSpark connected |
-| daslang 0.6.3 build (the editor's parser) | `/root/daScript-0.6.3` (git worktree of `v0.6.3-RC3`, built with `scripts/build-daslang.sh`) | `/root/daScript-0.6.3/bin/daslang --version` → `0.6.3` |
-| daslang 0.6.4 pin of the upstream port (second opinion) | `/root/daScript` | `/root/daScript/bin/daslang --version` |
+| daslang 0.6.4 build (the editor's version since EdenSpark 1.0; 0.6.3 is no longer a target) | `/root/daScript` (`DASLANG_064` overrides) | `/root/daScript/bin/daslang --version` |
 | Windows Python for the bridge/CLI | `C:\Python313\python.exe` | `/mnt/c/Python313/python.exe --version` |
 | python3 in WSL for the spec/WASI drivers and coverage.py | | `python3 --version` |
 
@@ -63,7 +62,7 @@ report lists it.
 
 | Script | Proves | Runs where |
 |---|---|---|
-| `scripts/eden/compile.sh` | every Eden-visible file obeys the sandbox (grep rules + `-project sandbox.das_project -compile-only`) with the 0.6.3 build and the 0.6.4 pin | WSL |
+| `scripts/eden/compile.sh` | every Eden-visible file obeys the sandbox (grep rules + `-project sandbox.das_project -compile-only`) with the 0.6.4 build | WSL |
 | `scripts/eden/coverage.sh` | every upstream `[test]` has an Eden counterpart or a justified drop | WSL |
 | `scripts/eden/test.sh` | the Eden tests pass locally (`WASM3 TESTS pass=N fail=0`) | WSL |
 | `scripts/eden/install_host.sh --check` | the project's `main.das` and `assets/wasm/*.data` match the repository | WSL → project root |

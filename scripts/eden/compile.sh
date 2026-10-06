@@ -1,7 +1,6 @@
 #!/usr/bin/env bash
 # Gate 1 of the Eden port: every Eden-visible file compiles under the editor's
-# rules, with every available local compiler (the 0.6.3 build first: it has
-# the editor's parser, which rejects 0.6.4 syntax such as `addr<T>`).
+# rules, with the local 0.6.4 build (the editor's version since EdenSpark 1.0).
 #
 # Two checks per file:
 #   1. textual: the constructs the editor refuses, found by grep so the
@@ -45,7 +44,7 @@ for f in "${files[@]}"; do
         echo "compile: $f: annotation unavailable in the editor" ; fail=1
     fi
     if grep -nE '\baddr<' "$f"; then
-        echo "compile: $f: typed addr<T> is 0.6.4 syntax, not in 0.6.3 (and unsafe anyway)" ; fail=1
+        echo "compile: $f: typed addr<T> is unsafe, refused by the editor" ; fail=1
     fi
     # two combined operand reads (immediate_*(rt), slot_*(rt), slot_index(rt),
     # set_slot_*(rt, v)) in one statement evaluate in unspecified order; the

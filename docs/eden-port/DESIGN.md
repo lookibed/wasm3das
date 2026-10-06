@@ -33,7 +33,8 @@ with the probe cheats described in PIPELINE.md §7 when the editor updates.
 
 The local stand-in for these rules is `scripts/eden/sandbox.das_project`
 (`daslang -no-dynamic-modules -project scripts/eden/sandbox.das_project`), run
-by `scripts/eden/compile.sh` with both the pinned 0.6.4 and the 0.6.3 build.
+by `scripts/eden/compile.sh` with the local 0.6.4 build (`/root/daScript`;
+0.6.3, the editor of EdenSpark 0.9, was dropped with the move to `[inline]`).
 It is a model of the editor; the editor itself (`scripts/eden/eden_gate.sh`)
 stays the final gate.
 
@@ -608,8 +609,16 @@ asking the compiler.
   `uint64` (not `int64`). Comparing it with an `int`/`int64` fails to
   compile ("no matching functions ... equal(int, uint)"); write signed
   constants in decimal or cast (`int(0x80)`).
-- `[inline]` does not exist in 0.6.3: drop it (the upstream port used it on
-  small helpers).
+- `[inline]` (0.6.4, the editor's version since EdenSpark 1.0) splices a body
+  into every call site; the operand readers of `m3_exec_defs` use it, as
+  their C originals are macros: a cross-module call costs more than their
+  bodies in the interpreter, and automatic inlining stays within a module
+  (DOOM timedemo per tick: 180 -> 157 ms locally, 239 -> 199 ms in the
+  editor). Under the sandbox a nested
+  `[inline]` call that takes a `var` struct parameter after a statement of
+  the outer body is refused ("local reference to non-local expression is
+  unsafe"); write such a body out as a leaf. 0.6.3 has no `[inline]`; it is
+  no longer a target.
 - Byte cursors are `(bytes : array<uint8>; var o_value : T&; var io_pos : int&; i_end : int) : M3Result`
   (the array first, then the C parameters in C order); the full list is in
   the header of `source/m3_core.das`.
