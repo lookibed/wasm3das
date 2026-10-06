@@ -201,6 +201,17 @@ let public d_m3ProfilerSlotMask : uint = 0xffffu
 let public d_m3RecordBacktraces = false
 let public d_m3EnableExceptionBreakpoint = false
 
+// Eden: C's d_m3Assert is assert() under DEBUG and nothing otherwise
+// (m3_core.h); the C wasm3 the port is measured against is a Release build,
+// so its asserts are off: an invalid module that reaches one continues to
+// the check that reports it ("compiling function underran the stack") or,
+// in C, to undefined behaviour the port's bounds checks turn into a guarded
+// panic. Off, the port matches the C wasm3 on the whole WebAssembly test
+// suite (docs/wasm-features); on, every C assert site panics (DEBUG). The
+// port's own invariants use d_m3Check, which is always on. A variable, not
+// a constant, so the tests of DEBUG behaviour turn it on around themselves.
+var public d_m3EnableAssertions = false
+
 
 /*
     Derived typed sizes used by the Daslang port. M3_SIZEOF_SLOT is an explicit

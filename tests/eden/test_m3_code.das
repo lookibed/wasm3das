@@ -6,6 +6,7 @@ module test_m3_code shared public
 require modules/wasm3das/source/eden_test
 require modules/wasm3das/source/m3_code
 require modules/wasm3das/source/m3_types
+require modules/wasm3das/source/m3_config   // d_m3EnableAssertions: the DEBUG-only tests
 
 /*
     test_m3_code.das: Eden counterpart of
@@ -640,7 +641,9 @@ def public run_tests_m3_code(var t : TestRun; fx : FixtureSource) {
     begin_test(t, "test_emit_words_and_pc")
     test_emit_words_and_pc(t, fx)
     begin_test(t, "test_emit_last_slot_and_overflow")
+    d_m3EnableAssertions = true    // C's DEBUG build: the overflow asserts
     test_emit_last_slot_and_overflow(t, fx)
+    d_m3EnableAssertions = false
     begin_test(t, "test_code_page_list")
     test_code_page_list(t, fx)
     begin_test(t, "test_free_code_pages")

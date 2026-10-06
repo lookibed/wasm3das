@@ -12,6 +12,7 @@ require modules/wasm3das/source/m3_function    // AllocFuncType
 require modules/wasm3das/source/m3_module      // Module_AddFunction
 require modules/wasm3das/source/m3_types
 require modules/wasm3das/source/m3_core
+require modules/wasm3das/source/m3_config   // d_m3EnableAssertions: the DEBUG-only tests
 
 /*
     test_m3_compile.das: Eden counterpart of
@@ -556,7 +557,8 @@ def test_compile_rejects_reserved_and_unknown_opcodes(var t : TestRun; fx : Fixt
     let f : IM3Function = 0
 
     // Each body first pushes local 0 so the dynamic stack is not empty when the
-    // bad opcode is compiled (the port's d_m3Assert is always on, unlike C's).
+    // bad opcode is compiled (the test holds in C's DEBUG build too, where
+    // GetStackTopIndex asserts on an empty stack).
 
     // 0x06 is a reserved row: GetOpInfo finds it, no compiler, Compile_Operator
     // finds no operation. C: ErrorCompile ("no operation found for opcode", ...).
@@ -1046,7 +1048,9 @@ def public run_tests_m3_compile(var t : TestRun; fx : FixtureSource) {
     begin_test(t, "test_slot_and_type_stack")
     test_slot_and_type_stack(t, fx)
     begin_test(t, "test_emit_words")
+    d_m3EnableAssertions = true    // C's DEBUG build: EmitOp of the null operation asserts
     test_emit_words(t, fx)
+    d_m3EnableAssertions = false
     begin_test(t, "test_patch_chain_and_scopes")
     test_patch_chain_and_scopes(t, fx)
     begin_test(t, "test_compile_function_trivial_bodies")

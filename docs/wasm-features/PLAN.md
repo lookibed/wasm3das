@@ -41,7 +41,7 @@ The ledger is `STATE.json` next to this file.
 |---|---|---|
 | P0 | the pipeline (corpus, groups, run.py with --check / --update / --exec / --reference / --parity), the baselines | done |
 | F1 | parity with the C wasm3 on the corpus: gap 0 | 2026-10-07: gap 20 -> 0 (f64 floor/ceil/trunc/nearest of a signalling NaN return it quieted as glibc does; an element segment that leaves table0 empty fails the load as C's _throwifnull does) |
-| F2 | the commands the port passes and the C wasm3 does not: each one either a C behaviour to match or a documented intended difference | open: 5 assert_invalid of br_table / local_tee the port rejects and the C wasm3 accepts |
+| F2 | the commands the port passes and the C wasm3 does not: each one either a C behaviour to match or a documented intended difference | 2026-10-07: exact parity, the same 29480 commands on both sides, no crash; C's d_m3Assert off as in its Release build (`d_m3EnableAssertions`), the br_table code-page leak fixed, crashes counted as failures |
 | E1 | the same in the editor: the parity set run inside EdenSpark through the guest ABI's host, with the editor's float environment (flush-to-zero, non-IEEE NaN compares, docs/eden-abi PIPELINE 7); every difference to the local run measured and either fixed in the port or recorded with its cause | next |
 | E2 | the ABI side of arbitrary modules: a guest that imports what the C wasm3's front end links (spectest, libc, WASI) runs through eden_game hosts, and an eden_game guest built from any of the corpus' passing programs behaves as under the C wasm3 | after E1 |
 

@@ -326,7 +326,7 @@ def public m3_OpWord(name : string) : u64 {
     if (key_exists(g_opIndex, name)) {
         idx = g_opIndex[name]
     }
-    d_m3Assert(idx >= 0, "m3_OpWord: not an m3_exec operation: {name}")
+    d_m3Check(idx >= 0, "m3_OpWord: not an m3_exec operation: {name}")
     return u64(idx)
 }
 

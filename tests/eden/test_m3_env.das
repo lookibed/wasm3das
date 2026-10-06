@@ -12,6 +12,7 @@ require modules/wasm3das/source/m3_function    // AllocFuncType
 require modules/wasm3das/source/m3_module      // Module_AddFunction, Module_AddGlobal
 require modules/wasm3das/source/m3_types
 require modules/wasm3das/source/m3_core
+require modules/wasm3das/source/m3_config   // d_m3EnableAssertions: the DEBUG-only tests
 
 /*
     test_m3_env.das: Eden counterpart of
@@ -196,7 +197,7 @@ def private add_import(var rt : M3Runtime; m : IM3Module; typeIndex : u32; modul
 def private add_function(var rt : M3Runtime; m : IM3Module; typeIndex : u32; body : array<u8>) : IM3Function {
     Module_AddFunction(rt, m, typeIndex, M3ImportInfo(), false)
     let f = rt.modules[m].functions[length(rt.modules[m].functions) - 1]
-    d_m3Assert(length(body) < 128, "test bodies are shorter than one LEB byte")
+    d_m3Check(length(body) < 128, "test bodies are shorter than one LEB byte")
     rt.functions[f].moduleIdx = m
     rt.functions[f].wasm = length(rt.modules[m].wasm)
     push(rt.modules[m].wasm, u8(length(body)))
@@ -1292,6 +1293,24 @@ def test_env_host_panic_restores_origin_stack(var t : TestRun; fx : FixtureSourc
 // ============================================================================
 
 
+// the Release build (d_m3EnableAssertions off, as the C wasm3 the port is
+// measured against): the same invalid body reaches C's check and fails
+// with its error instead of a panic, and leaves no code page active
+def test_env_invalid_body_release(var t : TestRun; fx : FixtureSource) {
+    var rt <- new_runtime(64u * 1024u)
+    let m = add_module(rt, "bad")
+    let t0 = add_type(rt, m, [T_I32], [T_I32])
+    let bad = add_function(rt, m, t0, [0x00u8, 0x21u8, 0x00u8, 0x0bu8])                    // local.set 0 on an empty stack
+    export_function(rt, bad, "bad")
+    is_ok(t, m3_LoadModule(rt, m), "m3_LoadModule bad")
+    var f : IM3Function = 7
+    is_err(t, m3_FindFunction(rt, f, "bad"), m3Err_functionStackUnderrun, "the C wasm3's error for the body")
+    equal(t, rt.numActiveCodePages, 0u, "the failed compilation released its page")
+    is_err(t, m3_CompileModule(rt, m), m3Err_functionStackUnderrun, "m3_CompileModule reports the same")
+    m3_FreeRuntime(rt)
+}
+
+
 def test_env_invalid_body_panics_to_result(var t : TestRun; fx : FixtureSource) {
     var rt <- new_runtime(64u * 1024u)
     let m = add_module(rt, "bad")
@@ -1529,7 +1548,11 @@ def public run_tests_m3_env(var t : TestRun; fx : FixtureSource) {
     begin_test(t, "test_env_host_panic_restores_origin_stack")
     test_env_host_panic_restores_origin_stack(t, fx)
     begin_test(t, "test_env_invalid_body_panics_to_result")
+    d_m3EnableAssertions = true    // C's DEBUG build: the invalid body asserts, the guard maps the panic
     test_env_invalid_body_panics_to_result(t, fx)
+    d_m3EnableAssertions = false
+    begin_test(t, "test_env_invalid_body_release")
+    test_env_invalid_body_release(t, fx)
     begin_test(t, "test_env_evaluate_expression_and_interning")
     test_env_evaluate_expression_and_interning(t, fx)
     begin_test(t, "test_env_free_runtime_returns_memory")

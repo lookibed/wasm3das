@@ -474,14 +474,27 @@ def public m3_Abort(message : string) {
 
 
 /*
-    C d_m3Assert is a conditional macro. In pure Daslang this helper keeps the
-    accepted fail-fast behavior without reproducing the C preprocessor.
+    C d_m3Assert is a conditional macro: assert() under DEBUG, nothing in a
+    Release build. Eden: d_m3EnableAssertions (m3_config) is the DEBUG
+    switch; it is off, as in the Release C wasm3 the port is measured
+    against (docs/wasm-features). d_m3Check is the port's own invariant
+    check (the op table, test fixtures), always on.
 */
 
 def public d_m3Assert(
                       condition : bool;
                       message : string = "wasm3 assertion failed"
                       ) {
+    if (d_m3EnableAssertions && !condition) {
+        panic("wasm3: {message}")
+    }
+}
+
+
+def public d_m3Check(
+                     condition : bool;
+                     message : string = "wasm3das invariant failed"
+                     ) {
     if (!condition) {
         panic("wasm3: {message}")
     }

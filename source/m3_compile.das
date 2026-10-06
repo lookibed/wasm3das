@@ -1886,6 +1886,15 @@ def Compile_BranchTable(var rt : M3Runtime; i_opcode : m3opcode_t) : M3Result {
         }
 
         if (result != m3Err_none) {
+            // Eden: C marks this spot "FIX: continueOpPage can get lost if
+            // thrown": its _throw leaves continueOpPage active and the
+            // compilation on it. The C wasm3's Release build does not check
+            // and leaks the page; the port's d_m3Assert in Runtime_Release
+            // (numActiveCodePages == 0) then panics on the next runtime free
+            // (br_table.wast: an invalid br_table, then :init). The page is
+            // released and the saved page restored, as on the normal path.
+            ReleaseCompilationCodePage(rt)
+            rt.compilation.page = savedPage
             return result
         }
         ReleaseCompilationCodePage(rt)
@@ -2595,7 +2604,7 @@ def private ResolveOperationNames(var io_rows : array<M3OpInfo>) {
             if (empty(name)) {
                 row.operations[i] = c_opNull
             } else {
-                d_m3Assert(key_exists(g_opIndex, name), "m3_build_operations_table: not an m3_exec operation: {name}")
+                d_m3Check(key_exists(g_opIndex, name), "m3_build_operations_table: not an m3_exec operation: {name}")
                 row.operations[i] = g_opIndex[name]
             }
         }
@@ -2849,8 +2858,8 @@ def public m3_build_operations_table() {
     push(c_operationsFC, M3OP("memory.copy", 0, none, "", "", "", "", @@Compile_Memory_CopyFill))   // 0x0a
     push(c_operationsFC, M3OP("memory.fill", 0, none, "", "", "", "", @@Compile_Memory_CopyFill))   // 0x0b
 
-    d_m3Assert(length(c_operations) == 253, "c_operations has C's 253 rows (0x00 .. 0xfc)")
-    d_m3Assert(length(c_operationsFC) == 12, "c_operationsFC has C's 12 rows")
+    d_m3Check(length(c_operations) == 253, "c_operations has C's 253 rows (0x00 .. 0xfc)")
+    d_m3Check(length(c_operationsFC) == 12, "c_operationsFC has C's 12 rows")
 
     // Eden: the op names become op-table indices (DESIGN.md 4.4a)
     ResolveOperationNames(c_operations)

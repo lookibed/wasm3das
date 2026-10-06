@@ -229,15 +229,21 @@ def run_file(entry, json_root, timeout):
                 if c.get("module_type") != "binary":
                     record(c, "skip", "text module")
                     continue
+                crashed = ""
                 try:
                     out = w.load(os.path.join(base, c["filename"]))
                     err = parse_error(out)
                     if err is None:
                         err = parse_error(w.compile())
                 except RuntimeError as e:
-                    err = ("error", str(e))
+                    # a crash or a timeout is not a rejection: the front end
+                    # must report an error and stay alive
+                    err, crashed = None, str(e)
+                    w = Wasm3(timeout)
                 current, current_ok = None, False
-                if err is not None:
+                if crashed:
+                    record(c, "fail", f"{crashed} instead of an error")
+                elif err is not None:
                     record(c, "pass")
                 elif t in ("assert_invalid", "assert_invalid_custom"):
                     record(c, "fail", f"accepted an invalid module ({c.get('text', '')}) (V validation)")

@@ -40,8 +40,8 @@
     },
     {
       "name": "F2 port-only passes",
-      "status": "todo",
-      "doc": "5 assert_invalid of br_table (1287, 1404) and local_tee (384, 417, 505) the port rejects and the C wasm3 accepts: match the C wasm3 or document the difference"
+      "status": "done",
+      "doc": "exact parity: the port and the C wasm3 pass the same 29480 commands, none on one side only, no crash on either. (1) d_m3Assert follows d_m3EnableAssertions (m3_config, off as in the Release C build; d_m3Check for the port's own invariants): invalid modules reach C's own checks (unreached-invalid: 'compiling function underran the stack') instead of a guarded panic, and br_table / local_tee bodies the C wasm3 accepts are accepted. (2) Compile_BranchTable releases continueOpPage on its error path (C's 'FIX: continueOpPage can get lost if thrown'): the leak made the next runtime free panic and kill the process. (3) run.py counts a crash or timeout as a failure, not as a rejection."
     },
     {
       "name": "E1 parity inside the editor",
@@ -175,7 +175,8 @@
   "reference": {
     "exec": "/root/wasm3das/tmp/wasm3c-build/wasm3 (v0.5.2, Release, uvwasi, from wasm3c/)",
     "pass": 29480,
-    "file": "docs/wasm-features/reference.json"
+    "file": "docs/wasm-features/reference.json",
+    "note": "recomputed with run.py counting a crash or timeout as a failure (not as a rejection): unchanged, 0 crashes"
   },
   "parity_changes": [
     {
@@ -186,6 +187,16 @@
         "elem:210:module"
       ],
       "why": "valid modules whose element segment leaves table0 empty; the C wasm3 refuses them (memory allocation failed, from _throwifnull (io_module->table0)) and the port now does the same (F1)"
+    },
+    {
+      "commands": [
+        "br_table:1287:assert_invalid",
+        "br_table:1404:assert_invalid",
+        "local_tee:384:assert_invalid",
+        "local_tee:417:assert_invalid",
+        "local_tee:505:assert_invalid"
+      ],
+      "why": "invalid modules the C wasm3 (Release, asserts off) accepts; the port rejected them through always-on asserts or a crash; with d_m3EnableAssertions off it accepts them as the C wasm3 does (F2)"
     }
   ]
 }

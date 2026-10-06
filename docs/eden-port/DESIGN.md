@@ -337,7 +337,7 @@ resets it before `RunCode`. `op_CallRawFunction` swaps `rt.originStack`
 as C swaps `runtime->stack`, so `m3_Call` uses `rt.originStack` as the
 frame base. `op_Entry` keeps C's strict `sp + maxStackSlots <
 maxStack` check with `maxStack = rt.numStackSlots` (see 4.3). An unknown op name in `m3_OpWord` is a
-`d_m3Assert` panic (as upstream `m3_OpIndex`). Deep wasm
+`d_m3Check` panic (as upstream `m3_OpIndex`). Deep wasm
 recursion therefore needs `options stack = 67_108_864` in the Eden host and in
 `.local/app`; the trap `[trap] stack overflow` from `op_Entry` remains the
 documented limit.
@@ -378,13 +378,17 @@ documented limit.
 - `CompileFunction(rt, functionIdx)` is what `CompileFunctionHook` of
   `m3_exec` points to; `m3_env` wires it (`CompileFunctionHook = @@CompileFunction`).
 
-- `d_m3Assert` panics (the upstream choice; C's release build compiles it
-  out). A structurally invalid body (e.g. `local.set` on an empty stack)
-  therefore panics in `GetStackTopIndex` instead of returning C's
-  stack-underrun error. In the editor a panic stops the running cheat;
-  `m3_env`'s entry points (`m3_LoadModule`, `m3_Call`) and the host wrap
-  compilation in `try/recover` and turn a panic into an `M3Result`, so a
-  bad module cannot take down the game.
+- `d_m3Assert` follows `d_m3EnableAssertions` (m3_config): off, as in the
+  Release C wasm3 the port is measured against (docs/wasm-features: with
+  it off the port and the C wasm3 pass the same commands of the
+  WebAssembly test suite). A structurally invalid body (e.g. `local.set`
+  on an empty stack) therefore reaches C's own check and returns its
+  stack-underrun error. On (C's DEBUG build, used by the tests of DEBUG
+  behaviour) it panics in `GetStackTopIndex`. The port's own invariants
+  (the op table, `m3_OpWord`) use `d_m3Check`, always on. In the editor a
+  panic stops the running cheat; `m3_env`'s entry points (`m3_LoadModule`,
+  `m3_Call`) and the host wrap compilation in `try/recover` and turn a
+  panic into an `M3Result`, so a bad module cannot take down the game.
 
 ### 4.5 Host functions
 
