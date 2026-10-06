@@ -575,6 +575,14 @@ struct M3Compilation {
     // index of the enclosing one (m3_compile pushes and pops). An absent
     // C field.
     scopeStack : array<M3CompilationScope>
+
+    // Eden: the SetSlot fusion candidate (m3_compile "Optional operation
+    // fusion"): the pc of the last emitted operation that has a fused form,
+    // the pc right after its operands, and the word of its fused form; -1 when
+    // there is none. Absent in C.
+    fusePc : pc_t = -1
+    fuseEnd : pc_t = -1
+    fuseWord : int = -1
 }
 
 
@@ -648,6 +656,12 @@ struct M3Runtime {
     stdinBuffer : array<u8>        // fd 0 reads from here
     stdoutBuffer : array<u8>       // fd 1 appends here
     stderrBuffer : array<u8>       // fd 2 appends here
+
+    // Eden: optional operation fusion (m3_compile "Optional operation
+    // fusion"), off by default: off, the compiler emits exactly the C
+    // compiler's operations. Set before the module's functions compile
+    // (m3_EdenSetFuseOps). Absent in C.
+    edenFuseOps : bool = false
 }
 
 

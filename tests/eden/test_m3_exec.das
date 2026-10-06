@@ -43,7 +43,11 @@ require strings                               // starts_with / ends_with / find:
         form, the reinterpret / trunc conversion's _r_r form and the
         i64.const 63; i64.shr_u; i32.wrap_i64 tail of the sign-bit cases.
     Tests added for the Eden shape (no upstream counterpart):
-      - test_op_table: the registration count of the complete table (510)
+      - test_fused_ops: every optional fused operation against its pair
+        (the operation, then op_SetSlot_i32) on the same frame and memory:
+        protocol value, trap, register and every stack word, the memory
+        traps included (the slot stays unwritten);
+      - test_op_table: the registration count of the complete table (515)
         and the word layout of its three parts, the m3_OpAt(m3_OpWord(name))
         round trip, the registration order, the idempotent rebuild, and the
         d_m3Assert panic on an unknown name (caught with try / recover,
@@ -105,10 +109,11 @@ require strings                               // starts_with / ends_with / find:
 
 
 // the number of operations registered (the `def public op_` count of
-// source/m3_exec.das: 128 of part 1, 250 of part 2 and 132 of part 3), and
-// the words of the part-2 and part-3 ranges, registered right after op_NoOp
-// in file order, before the part-1 operations
-let OP_COUNT = 510
+// source/m3_exec.das: 128 of part 1, 250 of part 2, 132 of part 3 and the 5
+// optional fused operations, registered last), and the words of the part-2
+// and part-3 ranges, registered right after op_NoOp in file order, before the
+// part-1 operations
+let OP_COUNT = 515
 let PART2_FIRST_WORD = 1
 let PART2_LAST_WORD = 250
 let PART3_FIRST_WORD = 251
@@ -663,7 +668,9 @@ def test_op_table(var t : TestRun; fx : FixtureSource) {
     equal(t, m3_OpWord("op_i32_Wrap_i64_r"), u64(PART3_FIRST_WORD), "op_i32_Wrap_i64_r follows the part-2 range")
     equal(t, m3_OpWord("op_f64_Reinterpret_i64_s_s"), u64(PART3_LAST_WORD), "op_f64_Reinterpret_i64_s_s is the last word of part 3")
     equal(t, m3_OpWord("op_GetGlobal_s32"), u64(PART3_LAST_WORD + 1), "op_GetGlobal_s32 follows the part-3 range")
-    equal(t, m3_OpWord("op_i64_Store_i64_ss"), u64(OP_COUNT - 1), "op_i64_Store_i64_ss is the last word")
+    equal(t, m3_OpWord("op_i64_Store_i64_ss"), u64(OP_COUNT - 6), "op_i64_Store_i64_ss is the last word of part 1")
+    equal(t, m3_OpWord("op_i32_Add_ss_SetSlot"), u64(OP_COUNT - 5), "the optional fused operations follow part 1")
+    equal(t, m3_OpWord("op_i32_Load_u8_r_SetSlot"), u64(OP_COUNT - 1), "op_i32_Load_u8_r_SetSlot is the last word")
     check(t, m3_OpWord("op_i32_Add_rs") < m3_OpWord("op_u32_Divide_sr"), "op_i32_Add_rs precedes op_u32_Divide_sr")
     check(t, m3_OpWord("op_i32_Trunc_f32_r_r") < m3_OpWord("op_i32_TruncSat_f32_r_r"), "op_i32_Trunc_f32_r_r precedes op_i32_TruncSat_f32_r_r")
     check(t, m3_OpWord("op_f32_Convert_i32_r_r") < m3_OpWord("op_f32_Convert_i32_s_r"), "the Convert forms register r_r, s_r, r_s, s_s (C's macro order)")
@@ -3138,6 +3145,78 @@ def test_call_indirect_and_compile(var t : TestRun; fx : FixtureSource) {
 // family tables cover their ranges; this one covers part 1 too): every word
 // 0..OP_COUNT-1 of g_opIndex was marked by mark_executed, from a program this
 // file assembled and ran or from a table invoke. Runs last.
+// ============================================================================
+// Eden: the optional fused operations (m3_compile "Optional operation fusion")
+// ============================================================================
+
+
+// a frame at sp 4 with known slots (1: 40, 2: -2, 3: the address 8), 64
+// bytes of memory (byte i = i * 7 + 1) and r0 = `r0`
+def private fused_runtime(r0 : u64) : M3Runtime {
+    var rt <- exec_runtime(32)
+    rt.sp = 4
+    set_stack_i32(rt, 5, 40)
+    set_stack_i32(rt, 6, -2)
+    set_stack_u32(rt, 7, 8u)
+    resize(rt.mem, 64)
+    for (i in range(64)) {
+        rt.mem[i] = u8((i * 7 + 1) & 255)
+    }
+    rt.r0 = r0
+    return <- rt
+}
+
+
+// runs `op` with `operands`, then op_SetSlot_i32 to slot 9, and the fused
+// form with the same operands and slot 9, each on a fresh fused_runtime;
+// both must return the same, leave the same register, stack and trap
+def private check_fused(var t : TestRun; fused : string; op : string; operands : array<int>; r0 : u64; wantTrap : bool) {
+    var a <- fused_runtime(r0)
+    var pc = emit_op(a, op)
+    for (w in operands) {
+        emit_int(a, w)
+    }
+    emit_op(a, "op_SetSlot_i32")
+    emit_int(a, 9)
+    let ra = run_single(a, pc)
+
+    var b <- fused_runtime(r0)
+    pc = emit_op(b, fused)
+    for (w in operands) {
+        emit_int(b, w)
+    }
+    emit_int(b, 9)
+    let rb = run_single(b, pc)
+
+    equal(t, rb, ra, "{fused}: the result protocol value of the pair")
+    equal(t, rb == M3_TRAP, wantTrap, "{fused}: traps exactly when expected")
+    equal(t, b.trap, a.trap, "{fused}: the trap of the pair")
+    equal(t, b.r0, a.r0, "{fused}: the register of the pair")
+    var same = length(a.stack) == length(b.stack)
+    if (same) {
+        for (i in range(length(a.stack))) {
+            if (a.stack[i] != b.stack[i]) {
+                same = false
+            }
+        }
+    }
+    check(t, same, "{fused}: every stack word of the pair")
+}
+
+
+def test_fused_ops(var t : TestRun; fx : FixtureSource) {
+    check_fused(t, "op_i32_Add_ss_SetSlot", "op_i32_Add_ss", [1, 2], 0ul, false)
+    check_fused(t, "op_i32_Add_rs_SetSlot", "op_i32_Add_rs", [1], 5ul, false)
+    check_fused(t, "op_i32_Add_rs_SetSlot", "op_i32_Add_rs", [2], 0xffffffff80000000ul, false)
+    check_fused(t, "op_i32_Load_i32_s_SetSlot", "op_i32_Load_i32_s", [3, 4], 0ul, false)
+    check_fused(t, "op_i32_Load_i32_s_SetSlot", "op_i32_Load_i32_s", [3, 100], 0ul, true)
+    check_fused(t, "op_i32_Load_i32_r_SetSlot", "op_i32_Load_i32_r", [4], 8ul, false)
+    check_fused(t, "op_i32_Load_i32_r_SetSlot", "op_i32_Load_i32_r", [0], 62ul, true)
+    check_fused(t, "op_i32_Load_u8_r_SetSlot", "op_i32_Load_u8_r", [4], 8ul, false)
+    check_fused(t, "op_i32_Load_u8_r_SetSlot", "op_i32_Load_u8_r", [0], 64ul, true)
+}
+
+
 def test_every_op_executed(var t : TestRun; fx : FixtureSource) {
     m3_build_op_table()
     equal(t, m3_OpCount(), OP_COUNT, "the table registers {OP_COUNT} operations")
@@ -3189,6 +3268,8 @@ def public run_tests_m3_exec(var t : TestRun; fx : FixtureSource) {
     test_memory_ops(t, fx)
     begin_test(t, "test_call_indirect_and_compile")
     test_call_indirect_and_compile(t, fx)
+    begin_test(t, "test_fused_ops")
+    test_fused_ops(t, fx)
     begin_test(t, "test_every_op_executed")
     test_every_op_executed(t, fx)
 }

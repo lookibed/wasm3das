@@ -360,6 +360,65 @@ def EnsureCodePageNumLines(var rt : M3Runtime; i_numLines : u32) : M3Result {
 }
 
 
+// ----------------------------------------------------------------------------
+// Eden: optional operation fusion (absent in C)
+// ----------------------------------------------------------------------------
+//
+// With the runtime's edenFuseOps set, an op_SetSlot_i32 that follows one of
+// the operations below directly - nothing emitted between the operation's
+// operands and it, no page change, no jump target at its pc - is not
+// emitted: the operation's word is rewritten to its fused form
+// (op_<name>_SetSlot, m3_exec "fused operations"), and the slot offset the
+// caller emits next becomes the fused operation's last operand. Every site
+// that makes the current pc a jump target calls FuseBarrier, so a branch
+// never lands between the two halves. With edenFuseOps clear the compiler
+// emits exactly C's operations.
+
+// the fusable operations, their fused forms and the number of operand words
+// each emits after its operation word
+let c_fuseOps = fixed_array("op_i32_Add_ss", "op_i32_Add_rs", "op_i32_Load_i32_s", "op_i32_Load_i32_r", "op_i32_Load_u8_r")
+let c_fuseOpsFused = fixed_array("op_i32_Add_ss_SetSlot", "op_i32_Add_rs_SetSlot", "op_i32_Load_i32_s_SetSlot", "op_i32_Load_i32_r_SetSlot", "op_i32_Load_u8_r_SetSlot")
+let c_fuseOperandWords = fixed_array(2, 1, 2, 1, 1)
+
+
+// the current pc becomes a jump target: no fusion across it
+def FuseBarrier(var rt : M3Runtime) {
+    rt.compilation.fusePc = -1
+}
+
+
+// after EmitOp emitted the word of `i_operation` at pc `i_pc`: records it as
+// the fusion candidate when it has a fused form, else clears the candidate
+def FuseNoteEmitted(var rt : M3Runtime; i_operation : int; i_pc : pc_t) {
+    rt.compilation.fusePc = -1
+    if (!rt.edenFuseOps) {
+        return
+    }
+    for (name, fused, words in c_fuseOps, c_fuseOpsFused, c_fuseOperandWords) {
+        if (i_operation == int(m3_OpWord(name))) {
+            rt.compilation.fusePc = i_pc
+            rt.compilation.fuseEnd = i_pc + 1 + words
+            rt.compilation.fuseWord = int(m3_OpWord(fused))
+        }
+    }
+}
+
+
+// true when `i_operation` is an op_SetSlot_i32 that fuses with the candidate
+// ending at the current pc; the candidate's word is then rewritten
+def FuseSetSlot(var rt : M3Runtime; i_operation : int) : bool {
+    if (!rt.edenFuseOps || rt.compilation.fusePc == -1 || i_operation != int(m3_OpWord("op_SetSlot_i32"))) {
+        return false
+    }
+    if (GetPC(rt) != rt.compilation.fuseEnd) {
+        return false
+    }
+    rt.code[rt.compilation.fusePc] = u64(rt.compilation.fuseWord)
+    rt.compilation.fusePc = -1
+    return true
+}
+
+
 // C: M3Result EmitOp (IM3Compilation o, IM3Operation i_operation) — the
 // operation as an op-table index (an M3OpInfo.operations entry); c_opNull
 // emits op_NoOp (see c_opNull)
@@ -374,12 +433,19 @@ def EmitOp(var rt : M3Runtime; i_operation : int) : M3Result {
 
         result = EnsureCodePageNumLines(rt, d_m3CodePageFreeLinesThreshold)
         if (result == m3Err_none) {
+            // Eden: optional fusion (above); a page change made by
+            // EnsureCodePageNumLines moved the pc, which FuseSetSlot sees
+            if (FuseSetSlot(rt, i_operation)) {
+                return result
+            }
             // d_m3LogEmit/d_m3RecordBacktraces are inactive: the C log_emit
             // and EmitMappingEntry calls are compiled out.
             // C: EmitWord (o->page, i_operation) — the operation word, the
             // op-table index (DESIGN.md 4.4); the NULL operation is op_NoOp
             let word = IsNoOp(i_operation) ? m3_OpWord("op_NoOp") : u64(i_operation)
+            let pc = GetPC(rt)
             EmitWord(rt, rt.compilation.page, word)
+            FuseNoteEmitted(rt, i_operation, pc)
         }
     }
     return result
@@ -1056,6 +1122,7 @@ def SetStackPolymorphic(var rt : M3Runtime) : M3Result {
 
 
 def PatchBranches(var rt : M3Runtime) {
+    FuseBarrier(rt)   // Eden: the pc becomes a branch target (optional fusion)
     let pc = GetPC(rt)
     var patches = rt.compilation._block.patches
     rt.compilation._block.patches = -1
@@ -1648,6 +1715,7 @@ def Compile_Branch(var rt : M3Runtime; i_opcode : m3opcode_t) : M3Result {
                     return result
                 }
                 EmitPointer(rt, target.pc)
+                FuseBarrier(rt)   // Eden: the pc becomes a branch target (optional fusion)
                 rt.code[jumpTo] = u64(GetPC(rt))   // C: * jumpTo = GetPC (o)
             } else {
                 result = CopyStackTopToRegister(rt, false)
@@ -1732,6 +1800,7 @@ def Compile_Branch(var rt : M3Runtime; i_opcode : m3opcode_t) : M3Result {
     }
 
     if (jumpTo != -1) {
+        FuseBarrier(rt)   // Eden: the pc becomes a branch target (optional fusion)
         rt.code[jumpTo] = u64(GetPC(rt))   // C: * jumpTo = GetPC (o)
     }
     if (i_opcode == c_waOp_branch) {
@@ -1788,6 +1857,7 @@ def Compile_BranchTable(var rt : M3Runtime; i_opcode : m3opcode_t) : M3Result {
             return result
         }
 
+        FuseBarrier(rt)   // Eden: a new page and branch targets (optional fusion)
         let startPC = GetPagePC(rt, continueOpPage)
         let savedPage = rt.compilation.page
         rt.compilation.page = continueOpPage
@@ -2144,6 +2214,7 @@ def CompileElseBlock(var rt : M3Runtime; var o_startPC : pc_t&; i_blockType : IM
     if (result != m3Err_none) {
         return result
     }
+    FuseBarrier(rt)   // Eden: the else page starts at a branch target (optional fusion)
     o_startPC = GetPagePC(rt, elsePage)
     rt.compilation.page = elsePage
     result = CompileBlock(rt, i_blockType, c_waOp_else)
@@ -2214,6 +2285,7 @@ def Compile_If(var rt : M3Runtime; i_opcode : m3opcode_t) : M3Result {
         }
         rt.code[pc] = u64(startPC)   // C: * pc = startPC
     } else {
+        FuseBarrier(rt)   // Eden: the pc becomes a branch target (optional fusion)
         rt.code[pc] = u64(GetPC(rt))   // C: * pc = GetPC (o)
     }
     return m3Err_none
@@ -2898,6 +2970,7 @@ def CompileBlock(var rt : M3Runtime; i_blockType : IM3FuncType; i_blockOpcode : 
     push(rt.compilation.scopeStack, rt.compilation._block)
     let outerScope = length(rt.compilation.scopeStack) - 1
     rt.compilation._block.outer = outerScope
+    FuseBarrier(rt)   // Eden: a block starts at a branch target (optional fusion)
     rt.compilation._block.pc = GetPagePC(rt, rt.compilation.page)
     rt.compilation._block.patches = -1
     rt.compilation._block.typeIdx = i_blockType
@@ -3101,6 +3174,7 @@ def public CompileFunction(var rt : M3Runtime; io_function : IM3Function) : M3Re
         result = AcquireCompilationCodePage(rt, rt.compilation.page)
     }
     if (result == m3Err_none) {
+        FuseBarrier(rt)   // Eden: a function entry (optional fusion)
         pc = GetPagePC(rt, rt.compilation.page)
 
         let numRetSlots = int(GetFunctionNumReturns(rt, rt.compilation.functionIdx)) * c_ioSlotCount

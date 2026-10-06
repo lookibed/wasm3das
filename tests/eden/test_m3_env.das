@@ -369,7 +369,7 @@ def test_env_new_runtime_environment_survives_wiring(var t : TestRun; fx : Fixtu
     equal(t, length(runtime.stack), 16384 + 4, "rt.stack has numStackSlots + 4 words")
     equal(t, runtime.originStack, 0, "originStack")
     equal(t, length(c_operations), 253, "operation table built")
-    equal(t, m3_OpCount(), 510, "op table built")
+    equal(t, m3_OpCount(), 515, "op table built (510 + 5 optional fused)")
 
     m3_FreeRuntime(runtime)
     equal(t, length(runtime.stack), 0, "m3_FreeRuntime frees the stack")

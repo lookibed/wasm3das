@@ -11,7 +11,8 @@
 #
 # Environment: DASLANG_064 (default /root/daScript/bin/daslang, the local
 #              build nearest to the editor's 0.6.4),
-#              WASM3DAS_EDEN_APP overrides the entry point.
+#              WASM3DAS_EDEN_APP overrides the entry point,
+#              WASM3DAS_EDEN_FUSE=1 adds --eden-fuse-ops.
 # resolved through symlinks: spec.sh / wasi.sh call it as ./wasm3 from their
 # run directory, because the drivers split --exec on spaces and the
 # repository path contains spaces
@@ -25,6 +26,9 @@ if [[ ! -f "$app" ]]; then
 fi
 ulimit -s 262144 2>/dev/null || true
 args=()
+# WASM3DAS_EDEN_FUSE=1 runs with the optional operation fusion, so the spec
+# and WASI drivers test both modes unchanged
+[[ "${WASM3DAS_EDEN_FUSE:-0}" == 1 ]] && args+=(--eden-fuse-ops)
 for a in "$@"; do
     case "$a" in
         --help|-h) args+=(--wasm3-help) ;;   # the daslang CLI swallows --help

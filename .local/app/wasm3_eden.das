@@ -71,6 +71,7 @@ let M3_VERSION = "0.5.2"
 var env = M3Environment()
 var runtime = M3Runtime()
 var haveRuntime = false          // Eden: C's `runtime != NULL`
+var argEdenFuseOps = false       // Eden: --eden-fuse-ops, the optional operation fusion (M3Runtime.edenFuseOps)
 var wasm_bins_qty = 0
 
 // C repl_call leaves the process through exit(wasi_ctx->exit_code); the
@@ -1025,6 +1026,7 @@ def repl_free() {
 def repl_init(stack : u32) : M3Result {
     repl_free()
     runtime <- m3_NewRuntime(env, stack, -1)
+    runtime.edenFuseOps = argEdenFuseOps
     haveRuntime = true
     // C: if (runtime == NULL) return "m3_NewRuntime failed"; Eden: a value, cannot fail
     return m3Err_none
@@ -1123,6 +1125,7 @@ def print_usage() {
     out_write("  --compile             disable lazy compilation\n")
     out_write("  --dump-on-trap        dump wasm memory\n")
     out_write("  --gas-limit           set gas limit\n")
+    out_write("  --eden-fuse-ops       optional operation fusion (Eden; off = C's operations)\n")
 }
 
 
@@ -1189,6 +1192,8 @@ def private main_run(var result : M3Result&) : int {
                 argRepl = true
             } elif (arg == "--dump-on-trap") {
                 argDumpOnTrap = true
+            } elif (arg == "--eden-fuse-ops") {
+                argEdenFuseOps = true
             } elif (arg == "--compile") {
                 argCompile = true
             } elif (arg == "--stack-size") {

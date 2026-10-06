@@ -5234,6 +5234,83 @@ def public op_i64_Store_i64_ss(var rt : M3Runtime) : m3ret_t {
 
 
 // ============================================================================
+// Eden: fused operations (optional; m3_compile "Optional operation fusion")
+// ============================================================================
+
+/*
+    Each is an operation followed by op_SetSlot_i32 in one dispatch: the
+    operation's own operands, then the slot offset op_SetSlot_i32 would have
+    read. The result goes to _r0 as in the operation and to the slot as in
+    op_SetSlot_i32, so every later reader of either sees what the pair
+    produced. A trap leaves the slot unwritten, as the pair does (the trap
+    returns before op_SetSlot_i32 runs). Absent in C; the compiler emits them
+    only when the runtime's edenFuseOps is set. The set is the DOOM timedemo's
+    most frequent predecessors of op_SetSlot_i32 (docs/eden-port/DESIGN.md
+    section 6).
+*/
+
+def public op_i32_Add_ss_SetSlot(var rt : M3Runtime) : m3ret_t {
+    let operand2 = slot_i32(rt)
+    let operand1 = slot_i32(rt)
+    let value = OP_ADD_32(operand1, operand2)
+    rt.r0 = u64(i64(value))
+    set_slot_i32(rt, value)
+    return nextOpDirect(rt)
+}
+
+
+def public op_i32_Add_rs_SetSlot(var rt : M3Runtime) : m3ret_t {
+    let operand = slot_i32(rt)
+    let value = OP_ADD_32(operand, i32(u32(rt.r0)))
+    rt.r0 = u64(i64(value))
+    set_slot_i32(rt, value)
+    return nextOpDirect(rt)
+}
+
+
+def public op_i32_Load_i32_s_SetSlot(var rt : M3Runtime) : m3ret_t {
+    var operand = u64(slot_u32(rt))
+    let offset = immediate_u32(rt)
+    operand += u64(offset)
+    if (d_m3SkipMemoryBoundsCheck || operand + u64(typeinfo sizeof(type<i32>)) <= u64(mem_size(rt))) {
+        let value = load_i32(rt, int(operand))
+        rt.r0 = u64(i64(value))
+        set_slot_i32(rt, value)
+        return nextOpDirect(rt)
+    }
+    return newTrap(rt, m3Err_trapOutOfBoundsMemoryAccess)
+}
+
+
+def public op_i32_Load_i32_r_SetSlot(var rt : M3Runtime) : m3ret_t {
+    let offset = immediate_u32(rt)
+    var operand = u64(u32(rt.r0))
+    operand += u64(offset)
+    if (d_m3SkipMemoryBoundsCheck || operand + u64(typeinfo sizeof(type<i32>)) <= u64(mem_size(rt))) {
+        let value = load_i32(rt, int(operand))
+        rt.r0 = u64(i64(value))
+        set_slot_i32(rt, value)
+        return nextOpDirect(rt)
+    }
+    return newTrap(rt, m3Err_trapOutOfBoundsMemoryAccess)
+}
+
+
+def public op_i32_Load_u8_r_SetSlot(var rt : M3Runtime) : m3ret_t {
+    let offset = immediate_u32(rt)
+    var operand = u64(u32(rt.r0))
+    operand += u64(offset)
+    if (d_m3SkipMemoryBoundsCheck || operand + u64(typeinfo sizeof(type<u8>)) <= u64(mem_size(rt))) {
+        let value = i32(load_u8(rt, int(operand)))
+        rt.r0 = u64(i64(value))
+        set_slot_i32(rt, value)
+        return nextOpDirect(rt)
+    }
+    return newTrap(rt, m3Err_trapOutOfBoundsMemoryAccess)
+}
+
+
+// ============================================================================
 // The op table (DESIGN.md section 4.4)
 // ============================================================================
 
@@ -5762,4 +5839,10 @@ def public m3_build_op_table() {
     m3_register_op("op_i64_Store_i64_rs", @@op_i64_Store_i64_rs)
     m3_register_op("op_i64_Store_i64_sr", @@op_i64_Store_i64_sr)
     m3_register_op("op_i64_Store_i64_ss", @@op_i64_Store_i64_ss)
+    // Eden: the fused operations (optional; m3_compile "Optional operation fusion")
+    m3_register_op("op_i32_Add_ss_SetSlot", @@op_i32_Add_ss_SetSlot)
+    m3_register_op("op_i32_Add_rs_SetSlot", @@op_i32_Add_rs_SetSlot)
+    m3_register_op("op_i32_Load_i32_s_SetSlot", @@op_i32_Load_i32_s_SetSlot)
+    m3_register_op("op_i32_Load_i32_r_SetSlot", @@op_i32_Load_i32_r_SetSlot)
+    m3_register_op("op_i32_Load_u8_r_SetSlot", @@op_i32_Load_u8_r_SetSlot)
 }

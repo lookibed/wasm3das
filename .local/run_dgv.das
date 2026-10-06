@@ -14,7 +14,7 @@ require modules/wasm3das/source/abi/abi_dgv
 
     Run from the Eden project root:
         daslang -no-dynamic-modules -project modules/wasm3das/scripts/eden/sandbox.das_project \
-            modules/wasm3das/.local/run_dgv.das -- <doom.wasm> <doom1.wad> [mode] [ticks]
+            modules/wasm3das/.local/run_dgv.das -- <doom.wasm> <doom1.wad> [mode] [ticks] [fuse]
 */
 
 
@@ -54,10 +54,11 @@ def main() {
     }
     let mode = length(args) > 2 ? to_int(args[2]) : 1
     let maxTicks = length(args) > 3 ? to_int(args[3]) : 100
+    let fuse = length(args) > 4 && args[4] == "fuse"
     let wasm <- read_file(args[0])
     let wad <- read_file(args[1])
     let t0 = ref_time_ticks()
-    var game <- dgv_start(wasm, wad, "doom", mode)
+    var game <- dgv_start(wasm, wad, "doom", mode, AbiConfig(fuseOps = fuse))
     let initMs = get_time_usec(t0) / 1000
     print("{game.log}")
     if (!empty(game.inst.error)) {

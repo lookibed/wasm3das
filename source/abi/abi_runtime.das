@@ -54,6 +54,7 @@ struct AbiBytes {
 struct AbiConfig {
     stackBytes : uint = 64u * 1024u          // the wasm3 operand stack
     maxMemoryBytes : int64 = 80l * 1048576l  // linear memory cap, initial and grown (the editor's heap is 100 MiB)
+    fuseOps : bool = false                   // optional operation fusion (M3Runtime.edenFuseOps); off = C's operations
 }
 
 
@@ -205,6 +206,7 @@ def public abi_instantiate(bytes : array<uint8>; name : string; config : AbiConf
     inst.startTicks = ref_time_ticks()
     inst.env <- m3_NewEnvironment()
     inst.rt <- m3_NewRuntime(inst.env, config.stackBytes, inst.id)
+    inst.rt.edenFuseOps = config.fuseOps
     let parsed = m3_ParseModule(inst.rt, bytes)
     if (parsed._0 != m3Err_none) {
         inst.error = "{name}: parse failed: {parsed._0}"

@@ -614,11 +614,27 @@ asking the compiler.
   their C originals are macros: a cross-module call costs more than their
   bodies in the interpreter, and automatic inlining stays within a module
   (DOOM timedemo per tick: 180 -> 157 ms locally, 239 -> 199 ms in the
-  editor). Under the sandbox a nested
-  `[inline]` call that takes a `var` struct parameter after a statement of
-  the outer body is refused ("local reference to non-local expression is
-  unsafe"); write such a body out as a leaf. 0.6.3 has no `[inline]`; it is
-  no longer a target.
+  editor). A nested `[inline]` call that takes the caller's `var` struct
+  parameter, inside an `[inline]` body inlined into a function that received
+  the struct as a parameter, is refused ("local reference to non-local
+  expression is unsafe"; with or without the sandbox, lookibed/daScript#11);
+  write such a body out as a leaf. 0.6.3 has no `[inline]`; it is no longer
+  a target.
+- Optional operation fusion (`M3Runtime.edenFuseOps`, `AbiConfig.fuseOps`,
+  the app's `--eden-fuse-ops`, `WASM3DAS_EDEN_FUSE=1` for the spec and WASI
+  drivers; off by default, and off the compiler emits exactly C's
+  operations): an `op_SetSlot_i32` emitted right after `op_i32_Add_ss`,
+  `op_i32_Add_rs`, `op_i32_Load_i32_s`, `op_i32_Load_i32_r` or
+  `op_i32_Load_u8_r` (nothing between, no page change, no jump target) is
+  folded into the operation's `_SetSlot` form, which writes the result to
+  `_r0` and to the slot. These five precede 85% of the 21 M
+  `op_SetSlot_i32` of 60 DOOM timedemo ticks; folding removes 60% of the
+  static `op_SetSlot_i32` words and saves about 4% per tick (164 -> 157 ms
+  locally): in the interpreter the work inside an operation, not its
+  dispatch, dominates. A direct-call fast path for the eight hottest
+  operations in `RunLoop` was measured as a 12% regression (an `invoke` of a
+  function value costs about what a direct call does, the comparisons are
+  extra) and dropped.
 - Byte cursors are `(bytes : array<uint8>; var o_value : T&; var io_pos : int&; i_end : int) : M3Result`
   (the array first, then the C parameters in C order); the full list is in
   the header of `source/m3_core.das`.

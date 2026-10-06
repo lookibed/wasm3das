@@ -618,8 +618,9 @@ def public set_stack_f64(var rt : M3Runtime; idx : int; v : f64) {
 // (slot_T(rt), set_slot_T(rt, v), slot_index(rt)) are written out as leaves
 // (the immediate read, the advance, the stack word) instead of calling the
 // other readers: daslang 0.6.4 refuses a nested [inline] call taking the
-// `var rt` parameter after a statement of the outer body ("local reference
-// to non-local expression is unsafe", outside `unsafe`).
+// `var rt` parameter, once the outer body is inlined into an operation that
+// received `rt` as a parameter ("local reference to non-local expression is
+// unsafe", lookibed/daScript#11).
 // ----------------------------------------------------------------------------
 
 

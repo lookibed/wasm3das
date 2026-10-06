@@ -251,7 +251,7 @@ def test_operation_table_after_new_environment(var t : TestRun; fx : FixtureSour
     check(t, !GetOpInfo(m3opcode_t(0x41), absent), "no row before the tables are built")
     m3_build_operations_table()
     check(t, m3_OpCount() > 0, "m3_build_operations_table built the empty op table")
-    equal(t, m3_OpCount(), 510, "the op table has every m3_exec operation")
+    equal(t, m3_OpCount(), 515, "the op table has every m3_exec operation (510 + 5 optional fused)")
     equal(t, length(c_operations), 253, "c_operations has C's 253 rows")
     equal(t, length(c_operationsFC), 12, "c_operationsFC has C's 12 rows")
 
