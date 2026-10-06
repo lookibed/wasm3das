@@ -1,0 +1,21 @@
+{
+  "_doc": "Feature groups of the WebAssembly test suite (docs/wasm-features/PLAN.md section 2). Paths are relative to the corpus checkout, without .wast. Groups are tried in order; the first whose patterns (fnmatch) match a path owns the file. A file no group claims fails scripts/features/corpus.sh. 'validation' is not a file group: it is the assert_invalid / assert_malformed commands of every group.",
+  "groups": [
+    {"name": "threads", "patterns": ["proposals/threads/*"]},
+    {"name": "wide-arithmetic", "patterns": ["proposals/wide-arithmetic/*"]},
+    {"name": "custom-page-sizes", "patterns": ["proposals/custom-page-sizes/*"]},
+    {"name": "custom-descriptors", "patterns": ["proposals/custom-descriptors/*"]},
+    {"name": "compact-import-section", "patterns": ["proposals/compact-import-section/*"]},
+    {"name": "exceptions", "patterns": ["legacy/*", "tag", "throw", "throw_ref", "try_table"]},
+    {"name": "relaxed-simd", "patterns": ["relaxed_*", "*_relaxed_*"]},
+    {"name": "simd", "patterns": ["simd_*"]},
+    {"name": "memory64", "patterns": ["*64", "binary_leb128_64", "memory64-imports"]},
+    {"name": "gc", "patterns": ["struct", "array", "array_*", "i31", "br_on_cast", "br_on_cast_fail", "ref_cast", "ref_test", "ref_eq", "extern", "type-canon", "type-rec", "type-subtyping", "binary-gc"]},
+    {"name": "function-references", "patterns": ["call_ref", "return_call_ref", "br_on_null", "br_on_non_null", "ref_as_non_null", "local_init", "type-equivalence", "ref"]},
+    {"name": "tail-call", "patterns": ["return_call", "return_call_indirect"]},
+    {"name": "multi-memory", "patterns": ["memory-multi", "address0", "address1", "load0", "load1", "load2", "store0", "store1", "store2", "memory_size0", "memory_size1", "memory_size2", "memory_size3", "memory_size_import", "data0", "data1", "float_memory0", "memory_copy0", "memory_copy1", "memory_fill0", "memory_init0", "memory_trap0", "memory_trap1", "imports0", "imports1", "imports2", "imports3", "imports4", "exports0", "linking0", "linking1", "linking2", "linking3", "binary0", "float_exprs0", "float_exprs1", "start0", "traps0", "data_drop0"]},
+    {"name": "reference-types", "patterns": ["ref_null", "ref_is_null", "ref_func", "table", "table-sub", "table_*"]},
+    {"name": "bulk-memory", "patterns": ["memory_copy", "memory_fill", "memory_init", "bulk"]},
+    {"name": "core", "patterns": ["*"]}
+  ]
+}
