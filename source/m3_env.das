@@ -577,6 +577,173 @@ def private parse_hex_float(text : string; at : int; var o_bits : u64&) : bool {
 }
 
 
+// ----------------------------------------------------------------------------
+// Eden: exact decimal subnormals without floating-point arithmetic.
+// EdenSpark 1.0 runs scripts with denormals flushed to zero (measured: a
+// subnormal product reads 0 in every script context), so the builtin
+// to_double returns 0 for "4.9e-324" where glibc returns the smallest
+// subnormal. When to_double gives 0 for a nonzero decimal, the value is
+// below the smallest normal, and its subnormal bits q (units of 2^-1074) are
+// computed with integers: q = round_half_even(N * 2^1074 / 10^k) for the
+// decimal N * 10^-k. Big integers are little-endian arrays of 32-bit words.
+// ----------------------------------------------------------------------------
+
+
+def private big_trim(var a : array<uint>) {
+    while (length(a) > 0 && a[length(a) - 1] == 0u) {
+        pop(a)
+    }
+}
+
+
+// a = a * m + add
+def private big_mul_add(var a : array<uint>; m : uint; add : uint) {
+    var carry = u64(add)
+    for (i in range(length(a))) {
+        let p = u64(a[i]) * u64(m) + carry
+        a[i] = uint(p & 0xfffffffful)
+        carry = p >> 32ul
+    }
+    if (carry != 0ul) {
+        push(a, uint(carry))
+    }
+}
+
+
+def private big_shl(var a : array<uint>; bits : int) {
+    let words = bits / 32
+    let rest = bits % 32
+    if (rest != 0) {
+        var carry = 0u
+        for (i in range(length(a))) {
+            let v = a[i]
+            a[i] = (v << uint(rest)) | carry
+            carry = v >> uint(32 - rest)
+        }
+        if (carry != 0u) {
+            push(a, carry)
+        }
+    }
+    if (words > 0 && length(a) > 0) {
+        var shifted : array<uint>
+        resize(shifted, words)
+        for (v in a) {
+            push(shifted, v)
+        }
+        delete a
+        a <- shifted
+    }
+}
+
+
+def private big_cmp(a : array<uint>; b : array<uint>) : int {
+    if (length(a) != length(b)) {
+        return length(a) < length(b) ? -1 : 1
+    }
+    var i = length(a) - 1
+    while (i >= 0) {
+        if (a[i] != b[i]) {
+            return a[i] < b[i] ? -1 : 1
+        }
+        i--
+    }
+    return 0
+}
+
+
+// a * q for q < 2^53
+def private big_times(a : array<uint>; q : u64) : array<uint> {
+    var lo : array<uint>
+    lo := a
+    big_mul_add(lo, uint(q & 0xfffffffful), 0u)
+    var hi : array<uint>
+    hi := a
+    big_mul_add(hi, uint(q >> 32ul), 0u)
+    big_shl(hi, 32)
+    // lo + hi
+    var out : array<uint>
+    var carry = 0ul
+    let n = max(length(lo), length(hi))
+    for (i in range(n)) {
+        let s = (i < length(lo) ? u64(lo[i]) : 0ul) + (i < length(hi) ? u64(hi[i]) : 0ul) + carry
+        push(out, uint(s & 0xfffffffful))
+        carry = s >> 32ul
+    }
+    if (carry != 0ul) {
+        push(out, uint(carry))
+    }
+    big_trim(out)
+    delete lo
+    delete hi
+    return <- out
+}
+
+
+// a - b for a >= b
+def private big_sub(a : array<uint>; b : array<uint>) : array<uint> {
+    var out : array<uint>
+    var borrow = 0l
+    for (i in range(length(a))) {
+        var d = int64(a[i]) - (i < length(b) ? int64(b[i]) : 0l) - borrow
+        borrow = 0l
+        if (d < 0l) {
+            d += 4294967296l
+            borrow = 1l
+        }
+        push(out, uint(d))
+    }
+    big_trim(out)
+    return <- out
+}
+
+
+// the subnormal bits of digits * 10^-k (digits: the decimal digits without
+// the point, k > 0); 0 below half of 2^-1074, 2^52 (the smallest normal)
+// when it rounds up to it
+def public decimal_subnormal_bits(digits : string; k : int) : u64 {
+    var m : array<uint>        // M = N * 2^1074
+    for (i in range(length(digits))) {
+        big_mul_add(m, 10u, uint(character_at(digits, i) - '0'))
+    }
+    big_trim(m)
+    if (length(m) == 0) {
+        return 0ul
+    }
+    big_shl(m, 1074)
+    var d : array<uint>        // D = 10^k
+    push(d, 1u)
+    for (i in range(k)) {
+        big_mul_add(d, 10u, 0u)
+    }
+    // q = floor(M / D) in [0, 2^53): the largest q with q * D <= M
+    var lo = 0ul
+    var hi = 1ul << 53ul
+    while (hi - lo > 1ul) {
+        let mid = (lo + hi) >> 1ul
+        var prod <- big_times(d, mid)
+        if (big_cmp(prod, m) <= 0) {
+            lo = mid
+        } else {
+            hi = mid
+        }
+        delete prod
+    }
+    var q = lo
+    var qd <- big_times(d, q)
+    var r <- big_sub(m, qd)
+    big_shl(r, 1)                // 2r against D: round half to even
+    let c = big_cmp(r, d)
+    if (c > 0 || (c == 0 && (q & 1ul) != 0ul)) {
+        q++
+    }
+    delete m
+    delete d
+    delete qd
+    delete r
+    return q
+}
+
+
 def private m3_strtod(i_text : string) : f64 {
     let text = strip_left(i_text)
     var i = 0
@@ -645,7 +812,27 @@ def private m3_strtod(i_text : string) : f64 {
         // out of range: the decimal exponent of the leading nonzero digit
         let pointAt = point == -1 ? digitsEnd : point
         let leading = (firstNonZero < pointAt ? pointAt - firstNonZero - 1 : pointAt - firstNonZero) + exponent
-        value = leading >= 0 ? uint64_bits_to_double(0x7ff0000000000000ul) : 0.0lf
+        if (leading >= 0) {
+            value = uint64_bits_to_double(0x7ff0000000000000ul)
+        } elif (leading >= -330) {
+            // Eden: a subnormal flushed to zero by the host (see above);
+            // its bits from integers, the sign as a bit (no arithmetic)
+            var digitText = ""
+            var fractionDigits = 0
+            for (j in range(start, digitsEnd)) {
+                let c = character_at(text, j)
+                if (c != '.') {
+                    digitText += to_char(c)
+                    if (point != -1 && j > point) {
+                        fractionDigits++
+                    }
+                }
+            }
+            let k = fractionDigits - exponent
+            if (k > 0) {
+                return uint64_bits_to_double(signBit | decimal_subnormal_bits(digitText, k))
+            }
+        }
     }
     return negative ? -value : value
 }

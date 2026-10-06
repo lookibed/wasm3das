@@ -904,6 +904,15 @@ def test_env_call_typed_values(var t : TestRun; fx : FixtureSource) {
         is_ok(t, m3_GetResults(rt, idF64, 1u, bits), "id_f64 results")
         equal(t, bits[0], c._1, "strtod(\"{c._0}\") bits")
     }
+    // Eden: the integer path strtod takes for subnormals when the host
+    // flushes them to zero (EdenSpark 1.0); expected bits from glibc strtod
+    let subnormalCases = [
+        ("49", 325, 1ul), ("2", 324, 0ul), ("25", 325, 1ul), ("247", 326, 0ul), ("248", 326, 1ul),
+        ("22250738585072009", 324, 0xffffffffffffful), ("1", 310, 0x12688b70e62bul),
+        ("123456789", 318, 0x16b9f4d3c385ul), ("22250738585072014", 324, 0x10000000000000ul)]
+    for (c in subnormalCases) {
+        equal(t, decimal_subnormal_bits(c._0, c._1), c._2, "decimal_subnormal_bits(\"{c._0}\", {c._1})")
+    }
     is_ok(t, m3_CallArgv(rt, idF32, ["0.1"]), "id_f32(\"0.1\")")
     is_ok(t, m3_GetResults(rt, idF32, 1u, bits), "id_f32 results")
     equal(t, m3_bits_to_f32(bits[0]), f32(0.1lf), "f32 of strtod (C: the double narrowed)")

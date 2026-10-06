@@ -23,6 +23,9 @@ done
 
 run="$repo/tmp/eden/.wasi/run"
 mkdir -p "$run"
+# the editor (a Windows process) cannot read WSL symlinks and rescans the
+# project for ever while they exist: they live only while the driver runs
+trap 'find "$repo/tmp/eden/.wasi" -maxdepth 3 -type l -delete 2>/dev/null || true' EXIT
 ln -sfn "$repo/wasm3c/test/run-wasi-test.py" "$run/run-wasi-test.py"
 ln -sfn "$repo/wasm3c/extra" "$repo/tmp/eden/.wasi/extra"
 ln -sfn "$repo/wasm3c/test/wasi" "$run/wasi"

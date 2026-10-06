@@ -24,6 +24,9 @@ done
 
 run="$repo/tmp/eden/.spec/run"
 mkdir -p "$run"
+# the editor (a Windows process) cannot read WSL symlinks and rescans the
+# project for ever while they exist: they live only while the driver runs
+trap 'find "$repo/tmp/eden/.spec" -maxdepth 3 -type l -delete 2>/dev/null || true' EXIT
 ln -sfn "$repo/wasm3c/test/run-spec-test.py" "$run/run-spec-test.py"
 ln -sfn "$repo/wasm3c/extra" "$repo/tmp/eden/.spec/extra"
 # the driver splits --exec on spaces and the repository path has spaces:

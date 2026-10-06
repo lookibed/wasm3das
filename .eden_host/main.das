@@ -107,9 +107,9 @@ def set_status(text : string) {
 //   - one module per call: the editor collects the script heap only between
 //     frames, and the temporaries of the whole suite do not fit its 100 MiB
 //     in one call
-//   - cheats, not on_update: on_update runs with denormal floats flushed to
-//     zero (measured, abi_denormal_probe), cheats keep IEEE semantics, which
-//     the port's float tests check
+//   - cheats, not on_update: in EdenSpark 0.9 on_update flushed denormal
+//     floats to zero and cheats did not; since 1.0 both flush
+//     (abi_denormal_probe), and the port's strtod no longer depends on it
 var testQueue : array<TestModuleRun>
 var testNext = 0
 var testRun = TestRun()
@@ -500,6 +500,136 @@ def abi_heap_probe() {
 }
 
 
+// ---------------------------------------------------------------------------
+// Autobench: the same CPU work timed in the editor (cheat abi_autobench) and
+// in a standalone build (runs by itself on the 30th frame there, since a
+// shipped game has no console): "AUTOBENCH <mode> <name> ms=<t> result=<r>"
+// ---------------------------------------------------------------------------
+
+
+var autobenchFrames = 0
+var autobenchDone = false
+
+
+// A build made for measuring carries the asset assets/wasm/autobench.data
+// with the byte '1' (scripts/eden/install_host.sh installs it as '0';
+// C:\Users\Andry\.edenspark\eden_build.py --autobench writes '1' only while
+// it packs the project). Nothing in Eden 1.0 tells a build from the editor:
+// is_standalone_exe() is about `daslang -exe` (false in both) and
+// get_command_line_arguments() panics in the game context
+// ("can't delete locked array" inside builtin.das, measured).
+var autobenchFlagId : TextId
+var edenBuildKnown = false
+var edenBuild = false
+
+
+def request_autobench_flag() {
+    autobenchFlagId = request_text("assets/wasm/autobench.data")
+}
+
+
+def is_eden_build() : bool {
+    if (!edenBuildKnown) {
+        let found = get_binary_asset(autobenchFlagId) $(data) {
+            edenBuild = length(data) > 0 && data[0] == uint8('1')
+        }
+        edenBuildKnown = found
+    }
+    return edenBuild
+}
+
+
+def autobench_ms(t0 : int64) : double {
+    return double(get_time_nsec(t0)) / 1000000.0lf
+}
+
+
+// pure daslang: integer mixing, an array walk, float math
+def bench_script_loop() : uint {
+    var h = 2166136261u
+    var buf : array<uint>
+    resize(buf, 1 << 20)
+    for (round in range(8)) {
+        for (i in range(length(buf))) {
+            buf[i] = buf[i] * 1664525u + uint(i) + 1013904223u
+            h = (h ^ buf[i]) * 16777619u
+        }
+    }
+    var f = 0.0lf
+    for (i in range(2000000)) {
+        f += sqrt(double(i)) * 0.5lf
+    }
+    delete buf
+    return h ^ uint(int(f) & 0x7fffffff)
+}
+
+
+def run_autobench() {
+    let mode = is_eden_build() ? "build" : "editor"
+    var lines : array<string>
+    var t0 = ref_time_ticks()
+    let h = bench_script_loop()
+    push(lines, "AUTOBENCH {mode} script_loop ms={autobench_ms(t0)} result={h}")
+
+    t0 = ref_time_ticks()
+    let wasm <- load_fixture_bytes("lang/fib32.wasm")
+    var env <- m3_NewEnvironment()
+    var rt <- m3_NewRuntime(env, 64u * 1024u, -1)
+    let parsed = m3_ParseModule(rt, wasm)
+    var r = parsed._0
+    if (r == m3Err_none) {
+        r = m3_LoadModule(rt, parsed._1)
+    }
+    var func : IM3Function = -1
+    if (r == m3Err_none) {
+        r = m3_FindFunction(rt, func, "fib")
+    }
+    var fibResult = "error"
+    if (r == m3Err_none) {
+        var args : array<string>
+        push(args, "24")
+        r = m3_CallArgv(rt, func, args)
+        var rets : array<u64>
+        if (r == m3Err_none && m3_GetResults(rt, func, 1u, rets) == m3Err_none) {
+            fibResult = "{m3_bits_to_i32(rets[0])}"
+        }
+    }
+    m3_FreeRuntime(rt)
+    m3_FreeEnvironment(env)
+    push(lines, "AUTOBENCH {mode} wasm3_fib24 ms={autobench_ms(t0)} result={fibResult}")
+
+    t0 = ref_time_ticks()
+    let bj <- load_fixture_bytes(BINJGB_WASM)
+    let rom <- load_fixture_bytes(ACID2_ROM)
+    let run <- golden_binjgb(bj, rom, 4, 1000000000)
+    let last = length(run.digests) > 0 ? run.digests[length(run.digests) - 1] : 0
+    push(lines, "AUTOBENCH {mode} binjgb_4_frames ms={autobench_ms(t0)} result={last} error={run.error}")
+
+    for (l in lines) {
+        print(l)
+    }
+    set_status(join(lines, "\n"))
+}
+
+
+[cheat]
+def abi_autobench() {
+    run_autobench()
+}
+
+
+def step_autobench() {
+    if (autobenchDone || !is_eden_build()) {
+        return
+    }
+    autobenchFrames++
+    if (autobenchFrames == 30) {
+        autobenchDone = true
+        run_autobench()
+    }
+}
+
+
 // whether denormal doubles and floats survive arithmetic here and in
 // on_update: "ABI DENORMAL <where> f64=<bits> f32=<bits>" (0 = flushed)
 var denormalProbePending = false
@@ -606,6 +736,7 @@ def on_initialize() {
     statusNode = create_debug_text(lastSummary, float2(16, 16), TOP_LEFT_ANCHOR)
     set_text_font_size(statusNode, 20.0)
     request_fixtures()
+    request_autobench_flag()
 }
 
 
@@ -615,4 +746,5 @@ def on_update() {
         denormalProbePending = false
         denormal_report("on_update")
     }
+    step_autobench()
 }

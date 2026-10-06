@@ -114,7 +114,8 @@ Results are `void` or one scalar (`i32`, `i64`, `f32`, `f64`, `bool`,
   `STEP_FRAME` per call). The host therefore sets the input of frame N+1
   between the step that presented frame N and the next one.
 - Floating point: a guest stepped from the engine's update (the scene
-  player) runs with denormals flushed to zero, an engine setting scripts
+  player, and since EdenSpark 1.0 any script context) runs with denormals
+  flushed to zero, an engine setting scripts
   cannot change (measured, PIPELINE.md 7). Guests whose results depend on
   subnormal floats see different values there than under a strict wasm
   engine; integer and fixed-point guests are unaffected.

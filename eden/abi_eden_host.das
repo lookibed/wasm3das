@@ -4,7 +4,6 @@ options indenting = 4
 module abi_eden_host shared public
 
 require engine.core
-require engine.input.global_input_state
 require modules/wasm3das/source/abi/impl/abi_headless public
 require strings
 require math
@@ -24,8 +23,9 @@ require daslib/base64        // eden_storage blobs as strings of the engine's lo
                              eden_host_texture gives it to the view
       eden_input             pad 0 from the action set "eden_abi_pad"
                              (keyboard and gamepad, table below); keys by
-                             set-1 scan code (= Eden KeyCode values); mouse
-                             from the global input state
+                             set-1 scan code (= Eden KeyCode values) and the
+                             mouse from the action sets "eden_abi_keys" and
+                             "eden_abi_mouse" (ensure_pad has why)
       eden_audio             play_sound_stream + append_to_stream per stream
       eden_storage           the abi_storage model, persisted with
                              save_storage / load_storage (engine limits:
@@ -156,11 +156,50 @@ def private gp(button : GamepadButton) : array<GamepadButtonInput> {
 }
 
 
+def private mb(button : MouseButton) : array<MouseButtonInput> {
+    var out : array<MouseButtonInput>
+    push(out, MouseButtonInput(idx = button))
+    return <- out
+}
+
+
+def private mouse_axis(axis : MouseMoveAxis) : array<MouseMoveAxisInput> {
+    var out : array<MouseMoveAxisInput>
+    push(out, MouseMoveAxisInput(idx = axis, sensitivity = 1.0))
+    return <- out
+}
+
+
+// All input goes through action sets: engine.input.global_input_state is
+// deprecated in EdenSpark 1.0 and a deprecated call fails the export of a
+// game ("It will prevent publishing the game", measured on 1.0.0.19).
+//   eden_abi_pad    the BUTTON_* pad (keyboard and gamepad)
+//   eden_abi_keys   one button action "key_<scancode>" per KeyCode (set-1
+//                   scan codes), queried with ModifierMatchMode.Weak so a
+//                   held Shift does not hide the other keys
+//   eden_abi_mouse  buttons and the raw movement / wheel axes
 def private ensure_pad() {
     if (g_padReady) {
         return
     }
     g_padReady = true
+    var keys : ActionSet
+    for (k in each(KeyCode.A)) {
+        let code = int(k)
+        if (code >= 1 && code <= EDEN_INPUT_MAX_SCANCODE && !(keys |> key_exists("key_{code}"))) {
+            keys["key_{code}"] = Action(buttonActions = ButtonAction(keyboardButtons <- kb(k)))
+            g_keyCodes[code] = k
+        }
+    }
+    add_and_activate_action_set("eden_abi_keys", keys)
+    add_and_activate_action_set("eden_abi_mouse", {
+        "mouse_left" => Action(buttonActions = ButtonAction(mouseButtons <- mb(MouseButton.Left))),
+        "mouse_right" => Action(buttonActions = ButtonAction(mouseButtons <- mb(MouseButton.Right))),
+        "mouse_middle" => Action(buttonActions = ButtonAction(mouseButtons <- mb(MouseButton.Middle))),
+        "mouse_dx" => Action(axisActions = AxisAction(mouseMoveAxis <- mouse_axis(MouseMoveAxis.Horizontal))),
+        "mouse_dy" => Action(axisActions = AxisAction(mouseMoveAxis <- mouse_axis(MouseMoveAxis.Vertical))),
+        "mouse_wheel" => Action(axisActions = AxisAction(mouseMoveAxis <- mouse_axis(MouseMoveAxis.Wheel)))
+    })
     add_and_activate_action_set("eden_abi_pad", {
         "pad_a" => Action(buttonActions = ButtonAction(keyboardButtons <- kb(KeyCode.X), gamepadButtons <- gp(GamepadButton.A))),
         "pad_b" => Action(buttonActions = ButtonAction(keyboardButtons <- kb(KeyCode.Z), gamepadButtons <- gp(GamepadButton.B))),
@@ -175,9 +214,6 @@ def private ensure_pad() {
         "pad_l" => Action(buttonActions = ButtonAction(keyboardButtons <- kb(KeyCode.Q), gamepadButtons <- gp(GamepadButton.LeftBumper))),
         "pad_r" => Action(buttonActions = ButtonAction(keyboardButtons <- kb(KeyCode.W), gamepadButtons <- gp(GamepadButton.RightBumper)))
     })
-    for (k in each(KeyCode.A)) {
-        g_keyCodes[int(k)] = k
-    }
 }
 
 
@@ -199,19 +235,19 @@ def private input_key_down(var rt : M3Runtime; inst : int; scancode : int) : boo
     if (scancode < 1 || scancode > EDEN_INPUT_MAX_SCANCODE || !(g_keyCodes |> key_exists(scancode))) {
         return false
     }
-    return key_down(g_keyCodes[scancode])
+    return is_action_pressed("key_{scancode}", ModifierMatchMode.Weak)
 }
 
 
 def private input_mouse_buttons(var rt : M3Runtime; inst : int) : int {
     var mask = 0
-    if (mouse_button_down(MouseButton.Left)) {
+    if (is_action_pressed("mouse_left", ModifierMatchMode.Weak)) {
         mask |= EDEN_INPUT_MOUSE_LEFT
     }
-    if (mouse_button_down(MouseButton.Right)) {
+    if (is_action_pressed("mouse_right", ModifierMatchMode.Weak)) {
         mask |= EDEN_INPUT_MOUSE_RIGHT
     }
-    if (mouse_button_down(MouseButton.Middle)) {
+    if (is_action_pressed("mouse_middle", ModifierMatchMode.Weak)) {
         mask |= EDEN_INPUT_MOUSE_MIDDLE
     }
     return mask
@@ -220,11 +256,11 @@ def private input_mouse_buttons(var rt : M3Runtime; inst : int) : int {
 
 def private input_mouse_delta(var rt : M3Runtime; inst : int; axis : int) : float {
     if (axis == EDEN_INPUT_AXIS_X) {
-        return get_mouse_delta().x
+        return get_action_axis("mouse_dx")
     } elif (axis == EDEN_INPUT_AXIS_Y) {
-        return get_mouse_delta().y
+        return get_action_axis("mouse_dy")
     } elif (axis == EDEN_INPUT_AXIS_WHEEL) {
-        return get_mouse_wheel()
+        return get_action_axis("mouse_wheel")
     }
     return 0.0
 }

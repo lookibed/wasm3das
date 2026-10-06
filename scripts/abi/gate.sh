@@ -98,9 +98,9 @@ cheat_suite() {
 }
 
 stage "float environment (information)"
-# guests in the scene run from on_update, which flushes denormal floats to
-# zero; cheats keep them (docs/eden-abi/PIPELINE.md 7). Printed so a change
-# of the engine shows up here
+# EdenSpark flushes denormal floats to zero (since 1.0 in every script
+# context; docs/eden-abi/PIPELINE.md 7). Printed so a change of the engine
+# shows up here
 "$M" get_logs > /dev/null
 "$M" exec_cheat '{"cmd":"abi_denormal_probe"}' > /dev/null
 sleep 3

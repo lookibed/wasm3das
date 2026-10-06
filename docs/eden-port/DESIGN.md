@@ -13,7 +13,7 @@ with the probe cheats described in PIPELINE.md §7 when the editor updates.
 
 | Fact | Value |
 |---|---|
-| Daslang in the editor | 0.6.3 (`get_das_version()`); docs bundled are 0.6.2; nearest local tag is `v0.6.3-RC3`, built at `/root/daScript-0.6.3` |
+| Daslang in the editor | 0.6.3 (`get_das_version()`); docs bundled are 0.6.2; nearest local tag is `v0.6.3-RC3`, built at `/root/daScript-0.6.3`. **EdenSpark 1.0 (1.0.0.12 / 1.0.0.19) ships 0.6.4**, an earlier point than master v0.6.4-481; the measured differences, the 1.0 sandbox module list and the build rules are in `/root/c2das/docs/eden-target.md` and `docs/eden-port/BUILDS.md`; the 0.6.3 model below still passes everything the 1.0 editor accepts |
 | Script discovery | the editor compiles **every non-hidden `.das` file** in the project tree; folders starting with `.` are skipped |
 | Error reporting | only the first error of the first failing file; with several failing files the status says only `internal error`, so bisect one file at a time |
 | `unsafe` | forbidden in every form (`unsafe function 'x'`); `options no_unsafe = false` refused |

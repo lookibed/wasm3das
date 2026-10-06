@@ -61,6 +61,18 @@ for name in "${fixtures[@]}"; do
     fi
 done
 
+# --- the autobench flag (main.das is_eden_build): '0' in the project; an
+# export made with eden_build.py --autobench packs it as '1' ---
+flag="$eden_root/assets/wasm/autobench.data"
+if [[ ! -f "$flag" ]] || [[ "$(cat "$flag")" != "0" ]]; then
+    echo "autobench flag: assets/wasm/autobench.data = 0"
+    changed=1
+    if [[ $check == 0 ]]; then
+        mkdir -p "$(dirname "$flag")"
+        printf '0' > "$flag"
+    fi
+fi
+
 # --- main.das ---
 tmp="$(mktemp)"
 {
