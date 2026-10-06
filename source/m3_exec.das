@@ -2187,8 +2187,9 @@ def public op_f64_CopySign_ss(var rt : M3Runtime) : m3ret_t {
 // C: d_m3UnaryOp_f (f32 / f64 Abs, Ceil, Floor, Trunc, Sqrt, Nearest,
 // Negate): the _r form works on the register, the _s form on a slot. The
 // libm calls are the m3_math_utils ports (fabsf / fabs, the musl floorf /
-// ceilf, rintf / rint) and the `math` module (trunc, sqrt and the f64
-// ceil / floor), as upstream.
+// ceilf, rintf / rint, and floor64 / ceil64 / trunc64 over the `math`
+// module's f64 functions, which return a NaN argument quieted as glibc
+// does) and the `math` module (the f32 trunc, sqrt).
 def public op_f32_Abs_r(var rt : M3Runtime) : m3ret_t {
     rt.fp0 = f64(fabsf(f32(rt.fp0)))
     return nextOpDirect(rt)
@@ -2294,40 +2295,40 @@ def public op_f64_Abs_s(var rt : M3Runtime) : m3ret_t {
 
 
 def public op_f64_Ceil_r(var rt : M3Runtime) : m3ret_t {
-    rt.fp0 = (math::ceil(rt.fp0))
+    rt.fp0 = (ceil64(rt.fp0))
     return nextOpDirect(rt)
 }
 
 
 def public op_f64_Ceil_s(var rt : M3Runtime) : m3ret_t {
     let operand = slot_f64(rt)
-    rt.fp0 = (math::ceil(operand))
+    rt.fp0 = (ceil64(operand))
     return nextOpDirect(rt)
 }
 
 
 def public op_f64_Floor_r(var rt : M3Runtime) : m3ret_t {
-    rt.fp0 = (math::floor(rt.fp0))
+    rt.fp0 = (floor64(rt.fp0))
     return nextOpDirect(rt)
 }
 
 
 def public op_f64_Floor_s(var rt : M3Runtime) : m3ret_t {
     let operand = slot_f64(rt)
-    rt.fp0 = (math::floor(operand))
+    rt.fp0 = (floor64(operand))
     return nextOpDirect(rt)
 }
 
 
 def public op_f64_Trunc_r(var rt : M3Runtime) : m3ret_t {
-    rt.fp0 = (math::trunc(rt.fp0))
+    rt.fp0 = (trunc64(rt.fp0))
     return nextOpDirect(rt)
 }
 
 
 def public op_f64_Trunc_s(var rt : M3Runtime) : m3ret_t {
     let operand = slot_f64(rt)
-    rt.fp0 = (math::trunc(operand))
+    rt.fp0 = (trunc64(operand))
     return nextOpDirect(rt)
 }
 

@@ -38,7 +38,7 @@ from concurrent.futures import ThreadPoolExecutor
 
 REPO = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", ".."))
 STATE = os.path.join(REPO, "docs", "wasm-features", "STATE.json")
-WASM3 = os.path.join(REPO, "scripts", "eden", "wasm3")
+WASM3 = os.path.join(REPO, "scripts", "eden", "wasm3")   # --exec replaces it (the C wasm3 reference)
 
 SCALAR = {"i32": 32, "i64": 64, "f32": 32, "f64": 64}
 
@@ -337,7 +337,13 @@ def main():
     ap.add_argument("--show", default="", help="print the failures of this group (or 'all')")
     ap.add_argument("--check", action="store_true", help="exit 1 when a command of docs/wasm-features/passing.json no longer passes")
     ap.add_argument("--update", action="store_true", help="write the passing commands of the files run into passing.json")
+    ap.add_argument("--exec", default="", help="the front end to run instead of scripts/eden/wasm3 (the C wasm3 for --reference)")
+    ap.add_argument("--reference", action="store_true", help="write the passing commands into reference.json (run with --exec <C wasm3>)")
+    ap.add_argument("--parity", action="store_true", help="list the commands reference.json passes and this run does not; exit 1 when any")
     a = ap.parse_args()
+    global WASM3
+    if a.exec:
+        WASM3 = os.path.abspath(a.exec)
 
     st = json.load(open(STATE))
     corpus = os.environ.get("WASM3DAS_CORPUS", "/root/.cache/wasm3das")
@@ -414,6 +420,30 @@ def main():
             lost += len(gone)
         print(f"run: {lost} regressions against passing.json")
         rc = 1 if lost else 0
+    reference_path = os.path.join(REPO, "docs", "wasm-features", "reference.json")
+    if a.reference:
+        json.dump({"_doc": "Commands of the pinned corpus the C wasm3 passes (scripts/features/run.py --exec <wasm3> "
+                           "--reference): the parity target of the port. Keys are line:type.",
+                   "commit": st["corpus"]["commit"], "exec": os.path.basename(WASM3), "files": dict(sorted(now.items()))},
+                  open(reference_path, "w"), indent=0, separators=(",", ":"))
+        print(f"run: reference.json written ({sum(len(v) for v in now.values())} commands)")
+    if a.parity:
+        ref = json.load(open(reference_path))["files"]
+        by_reason = {}
+        gap = 0
+        for r in done:
+            mine = {f"{x['line']}:{x['type']}": x for x in r["results"]}
+            for k in ref.get(r["path"], []):
+                x = mine.get(k)
+                if x is None or x["outcome"] != "pass":
+                    gap += 1
+                    why = (x["outcome"] + ": " + x["reason"].split(" (")[0][:70]) if x else "not run"
+                    key = f"{r['group']}: {why}"
+                    by_reason.setdefault(key, []).append(f"{r['path']}:{k}")
+        print(f"run: parity gap {gap} commands the C wasm3 passes and this run does not")
+        for key, items in sorted(by_reason.items(), key=lambda kv: -len(kv[1]))[:60]:
+            print(f"{len(items):>7}  {key}   e.g. {items[0]}")
+        rc = max(rc, 1 if gap else 0)
     if a.update:
         old = json.load(open(passing_path))["files"] if os.path.isfile(passing_path) else {}
         old.update(now)

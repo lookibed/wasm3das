@@ -1366,7 +1366,16 @@ def public InitElements(var io_runtime : M3Runtime; io_module : IM3Module) : M3R
                 }
                 io_runtime.modules[io_module].table0Size = u32(endElement)
             }
-            // C: _throwifnull (io_module->table0); Eden: allocation cannot fail observably (m3_core)
+            // C: _throwifnull (io_module->table0). Allocation cannot fail
+            // observably here (m3_core), but the check has a second effect
+            // in C: table0 stays NULL until a segment adds an element, so a
+            // segment that leaves the table empty (no elements, offset 0)
+            // fails the load with m3Err_mallocFailed. Eden: the same test on
+            // the size (measured against the C wasm3: elem.wast, table.wast,
+            // binary-leb128.wast)
+            if (io_runtime.modules[io_module].table0Size == 0u) {
+                return m3Err_mallocFailed
+            }
 
             for (e in range(int(numElements))) {
                 var functionIndex : u32 = 0u

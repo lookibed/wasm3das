@@ -1,35 +1,191 @@
 {
-  "_doc": "Ledger of WebAssembly feature coverage (docs/wasm-features/PLAN.md). corpus: the pinned test suite and converter. phases: status todo | working | verify | done | blocked, in PLAN order. groups: per group the numbers run.py measured at the last commit that recorded them (null until the baseline), and exclusions with their measured reasons.",
+  "_doc": "Ledger of WebAssembly feature coverage (docs/wasm-features/PLAN.md): parity with the C wasm3 on the pinned test suite, then the same inside EdenSpark. corpus: the pinned suite and converter. reference: what the C wasm3 passes. phases: todo | working | verify | done. parity_changes: commands that left passing.json to match the C wasm3. groups: per-group totals (baseline before F1).",
   "corpus": {
     "repository": "https://github.com/WebAssembly/testsuite",
     "commit": "b464a4cd100d98175ae6e3890db89a2e6c8302f7",
     "wasm_tools": "1.260.0",
     "unconverted": [
-      {"path": "legacy/rethrow", "phase": "F8 exceptions", "reason": "wasm-tools 1.260 has no text syntax for the legacy try/catch/delegate/rethrow (no feature flag); WABT wast2json --enable-exceptions converts it, to be pinned with F8"},
-      {"path": "legacy/throw", "phase": "F8 exceptions", "reason": "as legacy/rethrow"},
-      {"path": "legacy/try_catch", "phase": "F8 exceptions", "reason": "as legacy/rethrow"},
-      {"path": "legacy/try_delegate", "phase": "F8 exceptions", "reason": "as legacy/rethrow"}
+      {
+        "path": "legacy/rethrow",
+        "phase": "out of scope",
+        "reason": "wasm-tools 1.260 has no text syntax for the legacy try/catch/delegate/rethrow; exception handling is out of scope (the C wasm3 has none), WABT wast2json --enable-exceptions would convert it if the reference moves"
+      },
+      {
+        "path": "legacy/throw",
+        "phase": "out of scope",
+        "reason": "as legacy/rethrow"
+      },
+      {
+        "path": "legacy/try_catch",
+        "phase": "out of scope",
+        "reason": "as legacy/rethrow"
+      },
+      {
+        "path": "legacy/try_delegate",
+        "phase": "out of scope",
+        "reason": "as legacy/rethrow"
+      }
     ]
   },
   "phases": [
-    {"name": "P0 pipeline", "status": "done", "doc": "corpus.sh, groups.json, run.py (--check / --update against passing.json), the baseline per group (2026-10-07: 29469 of 65874 runnable commands, 31 s on 8 jobs)"},
-    {"name": "F1 core and multi-module linking", "status": "todo", "doc": "wasm-to-wasm imports (functions, globals, memories, tables), the REPL's named modules, register and get; the 3.0 details of the core files; signalling NaN bits through arguments and results (got 0x7fe00000 for 0x7fa00000); malformed UTF-8 names (528 assert_malformed of utf8-*)"},
-    {"name": "F2 bulk-memory", "status": "todo"},
-    {"name": "F3 reference-types", "status": "todo"},
-    {"name": "F4 tail-call", "status": "todo"},
-    {"name": "F5 multi-memory", "status": "todo"},
-    {"name": "F6 simd", "status": "todo"},
-    {"name": "F7 relaxed-simd", "status": "todo"},
-    {"name": "F8 exceptions", "status": "todo"},
-    {"name": "F9 memory64", "status": "todo"},
-    {"name": "F10 function-references", "status": "todo"},
-    {"name": "F11 gc", "status": "todo"},
-    {"name": "F12 threads, wide-arithmetic, custom-page-sizes", "status": "todo"},
-    {"name": "V validation", "status": "todo"}
+    {
+      "name": "P0 pipeline",
+      "status": "done",
+      "doc": "corpus.sh, groups.json, run.py (--check / --update / --exec / --reference / --parity), the baselines (port 29469, C wasm3 29480 of 65874 runnable commands; 31 s / 11 s on 8 jobs)"
+    },
+    {
+      "name": "F1 parity gap 0",
+      "status": "done",
+      "doc": "gap 20 -> 0: f64 floor / ceil / trunc / nearest of a signalling NaN return it quieted (glibc, the C build's libm); an element segment that leaves table0 empty fails the load with m3Err_mallocFailed as C's _throwifnull (io_module->table0) does"
+    },
+    {
+      "name": "F2 port-only passes",
+      "status": "todo",
+      "doc": "5 assert_invalid of br_table (1287, 1404) and local_tee (384, 417, 505) the port rejects and the C wasm3 accepts: match the C wasm3 or document the difference"
+    },
+    {
+      "name": "E1 parity inside the editor",
+      "status": "todo",
+      "doc": "the parity set run in EdenSpark through the guest ABI host, with the editor's float environment; differences to the local run fixed or recorded with their cause"
+    },
+    {
+      "name": "E2 arbitrary modules through the ABI",
+      "status": "todo",
+      "doc": "what the C front end links (spectest, libc, WASI) offered to eden_game guests; corpus programs as guests behave as under the C wasm3"
+    }
   ],
   "groups": {
     "_doc": "run.py totals per group: commands passed, failed, unsupported (a later phase), skipped (text modules). baseline = before F1; latest = the last commit that measured.",
-    "baseline": {"bulk-memory": {"files": 4, "pass": 4632, "fail": 285, "unsupported": 0, "skip": 0}, "compact-import-section": {"files": 2, "pass": 20, "fail": 40, "unsupported": 7, "skip": 3}, "core": {"files": 81, "pass": 14214, "fail": 2786, "unsupported": 98, "skip": 732}, "custom-descriptors": {"files": 14, "pass": 277, "fail": 576, "unsupported": 11, "skip": 16}, "custom-page-sizes": {"files": 5, "pass": 135, "fail": 58, "unsupported": 10, "skip": 4}, "exceptions": {"files": 4, "pass": 19, "fail": 63, "unsupported": 21, "skip": 2}, "function-references": {"files": 8, "pass": 38, "fail": 128, "unsupported": 6, "skip": 0}, "gc": {"files": 19, "pass": 100, "fail": 700, "unsupported": 13, "skip": 1}, "memory64": {"files": 26, "pass": 8205, "fail": 3355, "unsupported": 12, "skip": 63}, "multi-memory": {"files": 39, "pass": 55, "fail": 766, "unsupported": 35, "skip": 0}, "reference-types": {"files": 13, "pass": 252, "fail": 2565, "unsupported": 7, "skip": 6}, "relaxed-simd": {"files": 7, "pass": 8, "fail": 0, "unsupported": 69, "skip": 0}, "simd": {"files": 59, "pass": 1193, "fail": 358, "unsupported": 23928, "skip": 511}, "tail-call": {"files": 2, "pass": 29, "fail": 94, "unsupported": 0, "skip": 11}, "threads": {"files": 4, "pass": 282, "fail": 309, "unsupported": 6, "skip": 22}, "wide-arithmetic": {"files": 1, "pass": 10, "fail": 99, "unsupported": 0, "skip": 0}},
+    "baseline": {
+      "bulk-memory": {
+        "files": 4,
+        "pass": 4632,
+        "fail": 285,
+        "unsupported": 0,
+        "skip": 0
+      },
+      "compact-import-section": {
+        "files": 2,
+        "pass": 20,
+        "fail": 40,
+        "unsupported": 7,
+        "skip": 3
+      },
+      "core": {
+        "files": 81,
+        "pass": 14214,
+        "fail": 2786,
+        "unsupported": 98,
+        "skip": 732
+      },
+      "custom-descriptors": {
+        "files": 14,
+        "pass": 277,
+        "fail": 576,
+        "unsupported": 11,
+        "skip": 16
+      },
+      "custom-page-sizes": {
+        "files": 5,
+        "pass": 135,
+        "fail": 58,
+        "unsupported": 10,
+        "skip": 4
+      },
+      "exceptions": {
+        "files": 4,
+        "pass": 19,
+        "fail": 63,
+        "unsupported": 21,
+        "skip": 2
+      },
+      "function-references": {
+        "files": 8,
+        "pass": 38,
+        "fail": 128,
+        "unsupported": 6,
+        "skip": 0
+      },
+      "gc": {
+        "files": 19,
+        "pass": 100,
+        "fail": 700,
+        "unsupported": 13,
+        "skip": 1
+      },
+      "memory64": {
+        "files": 26,
+        "pass": 8205,
+        "fail": 3355,
+        "unsupported": 12,
+        "skip": 63
+      },
+      "multi-memory": {
+        "files": 39,
+        "pass": 55,
+        "fail": 766,
+        "unsupported": 35,
+        "skip": 0
+      },
+      "reference-types": {
+        "files": 13,
+        "pass": 252,
+        "fail": 2565,
+        "unsupported": 7,
+        "skip": 6
+      },
+      "relaxed-simd": {
+        "files": 7,
+        "pass": 8,
+        "fail": 0,
+        "unsupported": 69,
+        "skip": 0
+      },
+      "simd": {
+        "files": 59,
+        "pass": 1193,
+        "fail": 358,
+        "unsupported": 23928,
+        "skip": 511
+      },
+      "tail-call": {
+        "files": 2,
+        "pass": 29,
+        "fail": 94,
+        "unsupported": 0,
+        "skip": 11
+      },
+      "threads": {
+        "files": 4,
+        "pass": 282,
+        "fail": 309,
+        "unsupported": 6,
+        "skip": 22
+      },
+      "wide-arithmetic": {
+        "files": 1,
+        "pass": 10,
+        "fail": 99,
+        "unsupported": 0,
+        "skip": 0
+      }
+    },
     "exclusions": []
-  }
+  },
+  "reference": {
+    "exec": "/root/wasm3das/tmp/wasm3c-build/wasm3 (v0.5.2, Release, uvwasi, from wasm3c/)",
+    "pass": 29480,
+    "file": "docs/wasm-features/reference.json"
+  },
+  "parity_changes": [
+    {
+      "commands": [
+        "binary-leb128:1030:module",
+        "elem:201:module",
+        "elem:205:module",
+        "elem:210:module"
+      ],
+      "why": "valid modules whose element segment leaves table0 empty; the C wasm3 refuses them (memory allocation failed, from _throwifnull (io_module->table0)) and the port now does the same (F1)"
+    }
+  ]
 }

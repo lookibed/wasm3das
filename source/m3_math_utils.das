@@ -269,6 +269,31 @@ def rintf(arg : f32) : f32 {
 }
 
 
+// Eden: a NaN argument comes back quieted (its quiet bit set, the payload
+// kept), as glibc - the C build's libm on the reference platform - returns
+// it from floor / ceil / trunc / rint (x + x); musl's formulation and the
+// `math` module return a signalling NaN unchanged. Measured against the C
+// wasm3 on the WebAssembly test suite (f64.wast, nan:arithmetic results).
+def quietNaN64(x : f64) : f64 {
+    return uint64_bits_to_double(double_bits_to_uint64(x) | 0x0008000000000000ul)
+}
+
+
+def floor64(x : f64) : f64 {
+    return isnan(x) ? quietNaN64(x) : math::floor(x)
+}
+
+
+def ceil64(x : f64) : f64 {
+    return isnan(x) ? quietNaN64(x) : math::ceil(x)
+}
+
+
+def trunc64(x : f64) : f64 {
+    return isnan(x) ? quietNaN64(x) : math::trunc(x)
+}
+
+
 def rint(arg : f64) : f64 {
     var e : int
     var s : bool
@@ -276,6 +301,9 @@ def rint(arg : f64) : f64 {
     e = int((i >> 52ul) & 0x7fful)
     s = (i >> 63ul) != 0ul
     if (e >= int(0x3ff) + 52) {
+        if (isnan(arg)) {
+            return quietNaN64(arg)   // Eden: glibc's quieted NaN (quietNaN64)
+        }
         return arg
     }
     var y : f64

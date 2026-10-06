@@ -723,6 +723,25 @@ def test_rint(var t : TestRun; fx : FixtureSource) { // nolint:STYLE038
     expect_u64(t, "rint(-0.0)", bits_f64(rint(as_f64(0x8000000000000000ul))), 0x8000000000000000ul)
     expect_u64(t, "rint(inf)", bits_f64(rint(as_f64(0x7ff0000000000000ul))), 0x7ff0000000000000ul)
     expect_u64(t, "rint(nan)", bits_f64(rint(as_f64(0x7ff8000000000000ul))), 0x7ff8000000000000ul)
+    // a signalling NaN comes back quieted with its payload and sign (glibc,
+    // the C wasm3's libm; f64.wast nan:arithmetic)
+    expect_u64(t, "rint(snan)", bits_f64(rint(as_f64(0x7ff4000000000000ul))), 0x7ffc000000000000ul)
+    expect_u64(t, "rint(-snan)", bits_f64(rint(as_f64(0xfff4000000000000ul))), 0xfffc000000000000ul)
+}
+
+
+// Eden: the f64 floor / ceil / trunc of m3_math_utils over the `math`
+// module: a signalling NaN comes back quieted (payload and sign kept) as
+// glibc returns it, the other values as libm
+def test_f64_rounding_nan(var t : TestRun; fx : FixtureSource) { // nolint:STYLE038
+    expect_u64(t, "floor64(snan)", bits_f64(floor64(as_f64(0x7ff4000000000000ul))), 0x7ffc000000000000ul)
+    expect_u64(t, "floor64(-snan)", bits_f64(floor64(as_f64(0xfff4000000000000ul))), 0xfffc000000000000ul)
+    expect_u64(t, "ceil64(snan)", bits_f64(ceil64(as_f64(0x7ff4000000000000ul))), 0x7ffc000000000000ul)
+    expect_u64(t, "trunc64(-snan)", bits_f64(trunc64(as_f64(0xfff4000000000000ul))), 0xfffc000000000000ul)
+    expect_u64(t, "floor64(qnan)", bits_f64(floor64(as_f64(0x7ff8000000000000ul))), 0x7ff8000000000000ul)
+    expect_u64(t, "floor64(-1.5)", bits_f64(floor64(as_f64(0xbff8000000000000ul))), 0xc000000000000000ul)
+    expect_u64(t, "ceil64(-0.5)", bits_f64(ceil64(as_f64(0xbfe0000000000000ul))), 0x8000000000000000ul)
+    expect_u64(t, "trunc64(2.75)", bits_f64(trunc64(as_f64(0x4006000000000000ul))), 0x4000000000000000ul)
 }
 
 
@@ -1042,6 +1061,8 @@ def public run_tests_m3_math_utils(var t : TestRun; fx : FixtureSource) {
     test_rintf(t, fx)
     begin_test(t, "test_rint")
     test_rint(t, fx)
+    begin_test(t, "test_f64_rounding_nan")
+    test_f64_rounding_nan(t, fx)
 
     /*
         Eden only: the helpers m3_exec will call.

@@ -9,7 +9,7 @@
     {"name": "exceptions", "patterns": ["legacy/*", "tag", "throw", "throw_ref", "try_table"]},
     {"name": "relaxed-simd", "patterns": ["relaxed_*", "*_relaxed_*"]},
     {"name": "simd", "patterns": ["simd_*"]},
-    {"name": "memory64", "patterns": ["*64", "binary_leb128_64", "memory64-imports"]},
+    {"name": "memory64", "patterns": ["address64", "align64", "binary_leb128_64", "bulk64", "call_indirect64", "endianness64", "float_memory64", "load64", "memory64", "memory64-imports", "memory_copy64", "memory_fill64", "memory_grow64", "memory_init64", "memory_redundancy64", "memory_trap64", "table64", "table_copy64", "table_fill64", "table_get64", "table_grow64", "table_init64", "table_set64", "table_size64"]},
     {"name": "gc", "patterns": ["struct", "array", "array_*", "i31", "br_on_cast", "br_on_cast_fail", "ref_cast", "ref_test", "ref_eq", "extern", "type-canon", "type-rec", "type-subtyping", "binary-gc"]},
     {"name": "function-references", "patterns": ["call_ref", "return_call_ref", "br_on_null", "br_on_non_null", "ref_as_non_null", "local_init", "type-equivalence", "ref"]},
     {"name": "tail-call", "patterns": ["return_call", "return_call_indirect"]},

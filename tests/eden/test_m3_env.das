@@ -760,6 +760,17 @@ def test_env_load_full_module(var t : TestRun; fx : FixtureSource) {
     equal(t, Runtime_FirstModule(rt2), -1, "no module linked")
     m3_FreeRuntime(rt2)
 
+    // an element segment that leaves table0 empty fails the load as C's
+    // _throwifnull (io_module->table0) does: (elem (i32.const 0)) with no
+    // elements and no other segment (measured against the C wasm3 on the
+    // WebAssembly test suite)
+    var rt3 <- new_runtime(64u * 1024u)
+    let m3 = full_module(rt3)
+    rt3.modules[m3].elementSection = append_bytes(rt3, m3, [0x00u8, 0x41u8, 0x00u8, 0x0bu8, 0x00u8])
+    rt3.modules[m3].elementSectionEnd = length(rt3.modules[m3].wasm)
+    is_err(t, m3_LoadModule(rt3, m3), m3Err_mallocFailed, "an element segment leaving table0 empty")
+    m3_FreeRuntime(rt3)
+
     m3_FreeRuntime(rt)
 }
 
