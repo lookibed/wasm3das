@@ -320,7 +320,7 @@ def repl_load_hex(fsize : u32) : M3Result {
             // fgets-sized chunks; non-hex characters are skipped the same way.
             let chunk = fgets(fstdin())
             if (empty(chunk)) { return "cannot read EOL" }
-            let inscope s = str_bytes(chunk)
+            var inscope s = str_bytes(chunk)
             let n = length(s)
             for (k in 0 .. n) {
                 let d = hex_value(int(s[k]))
@@ -963,7 +963,7 @@ def private main_run(var result : M3Result&) : int {
         if (empty(cmd_buff)) {
             return 0
         }
-        let inscope argv <- split_argv(cmd_buff)
+        var inscope argv <- split_argv(cmd_buff)
         let argc = length(argv)
         if (argc <= 0) {
             continue

@@ -158,9 +158,9 @@ def main : int {
         wasm_mem = m3_GetMemory(runtime, mem_len, 0u)
         if (yp + ys > int(mem_len) || up + us > int(mem_len) || vp + vs > int(mem_len)) { break }
 
-        let inscope y <- copy_from_memory(wasm_mem, yp, ys)
-        let inscope u <- copy_from_memory(wasm_mem, up, us)
-        let inscope v <- copy_from_memory(wasm_mem, vp, vs)
+        var inscope y <- copy_from_memory(wasm_mem, yp, ys)
+        var inscope u <- copy_from_memory(wasm_mem, up, us)
+        var inscope v <- copy_from_memory(wasm_mem, vp, vs)
 
         let uw = w / 2
         let outpath = "{out_dir}/sample_frame{fi < 10 ? "00" : (fi < 100 ? "0" : "")}{fi}.ppm"
