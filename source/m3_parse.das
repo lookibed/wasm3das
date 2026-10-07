@@ -95,7 +95,7 @@ def ParseSection_Type(var io_module : IM3Module; i_bytes : bytes_t; i_end : cbyt
                 break
             }
 
-            var argTypes : array<u8>
+            var inscope argTypes : array<u8>
             resize(argTypes, int(numArgs) + 1)
 
             for (a in 0u..numArgs) {
