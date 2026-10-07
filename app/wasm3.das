@@ -795,6 +795,7 @@ def private process_argv() : array<string> {
     // a compiled executable (scripts/build_port.sh exe) sees its own argv
     // without daslang's `-- ` separator: everything after argv[0] is ours
     if (!seen) {
+        result |> reserve(length(raw))
         for (i in range(1, length(raw))) {
             result |> push(raw[i])
         }
