@@ -20,4 +20,9 @@
 # das names and locals for gdb/lldb (PR #3981), and 105 commits of
 # dasLLAMA/Vulkan work the port does not touch. #3991 (readonly on const
 # pointer parameters) is still open at this commit.
-388691eb1a0e64f2baacdf64607584d9dc6f64e1
+#
+# Bumped 2026-10-07 to 69a5896236c0d5832533c3ef20ffe04f9eecc40f
+# ("Merge pull request #4111"): the interpreter-first work (op_MemCopy on the
+# memmove builtin, the typed memory access) needs builtins 388691eb lacks;
+# the exe tier of v0.5.0 was built and verified on this commit.
+69a5896236c0d5832533c3ef20ffe04f9eecc40f

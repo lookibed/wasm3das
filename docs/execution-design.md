@@ -334,7 +334,73 @@ tier is ctx. Two asks to daslang remain: the emitter patch itself
 LLVM JIT for `return f(args)` with matching signatures, which would carry the
 same win to the exe tier (25 ms start).
 
-## 7. Open
+## 7. The JIT tier's dispatch on the trampoline form (2026-09-23)
+
+On the trampoline form the LLVM JIT lowers RunLoop's `operation(...)` to
+daslang's generic invoke: the SimFunction's native entry loaded from the
+function value, five argument pointers stored into a buffer on the stack, a
+`call *%rax` into the operation's wrapper, and the context's `stopFlags`
+cleared after it. Under `prog.policies.jit_enabled` only,
+`M3ExecDispatchPass` (m3_exec_expand.das) replaces that invoke with direct
+calls, keeping RunLoop the loop:
+
+- `m3_OpWord(op)`, the one spelling of an operation word (EmitOp,
+  EnsureCodePageNumLines' `op_Branch`, CompileRawFunction's
+  `op_CallRawFunction`, op_Compile's `op_Call` rewrite), returns the
+  operation's index over the op_* functions sorted by name (`m3_OpIndex`,
+  the reverse of the generated `m3_OpAt`);
+- RunLoop takes the body of `RunLoopIndexed`: the same loop, the word read as
+  that index and handed with the five registers (by reference) to
+  `m3_DispatchOp`;
+- `m3_DispatchOp` is generated as a balanced `if (idx < mid)` tree whose
+  leaves are `return op_k(_pc, _sp, _mem, _r0, _fp0)`, and marked
+  `[hint(alwaysinline)]`, so LLVM splices it into RunLoop's loop and inlines
+  the smaller operations there: the switch-in-a-loop interpreter.
+
+The interpreter, `-aot` and `-ctx` compile the source form: the emitted
+`wasm3.das.cpp` of the ctx build is function by function identical except for
+the five emission sites, which call `m3_OpWord` (the cast C's `EmitWord` does).
+
+Measured on the exe tier (taskset -c 10, five interleaved rounds, load
+average about 1; CoreMark is the printed score, higher is faster):
+
+| exe variant (`options _m3_dispatch`) | fib 35, median (min) | CoreMark |
+|---|---:|---:|
+| C wasm3 | 0.37 s | 1698 |
+| branch point, invoke | 1.37 s (1.34) | 448 |
+| direct chain, `m3_DispatchOp` a function of its own | 1.37 s | 436 |
+| `"chain"`, inlined: seven jump tables behind a cascade of range tests | 1.02-1.1 s | 670 |
+| `"blocks128"` | 0.90 s | 718 |
+| `"blocks64"` | 0.91 s | 780 |
+| `"blocks32"` | 0.90 s (0.89) | 838 |
+| `"blocks8"` | 0.92 s | 731 |
+| **`"tree"`, inlined (the default)** | **0.91 s (0.91)** | **937** |
+| `"tree"` with `[hint(noinline)]` on every operation | 1.07-1.15 s | 450 |
+
+A direct call alone buys nothing: the invoke measured 33-41 ns per call in a
+micro-model, but in RunLoop the whole operation costs about 4 ns, and the
+direct call to a separate dispatch function keeps the call, the prologue and
+the return. What pays is the dispatch inside the loop with the operations
+inlined into it, because then the registers stop living in memory. objdump of
+RunLoop in the cached JIT DLL (`nm -S` for the `m3_exec::RunLoop ...
+implementation` symbol, 25 KB) shows, for `"tree"`: `_pc` in `r13`, `_sp` in
+`r14`, a binary tree of `cmp edx, k; jg` on the word at `[r13]`, and every
+operation inlined except `op_Call`, `op_CallRawFunction` and `op_Compile`,
+which stay calls. With the inlined `"chain"` LLVM folds the chain into jump
+tables of 128 and 64 cases behind a cascade of range tests (up to seven for
+the high indices) and leaves 122 operations out of line, so `_pc` escapes and
+is reloaded from a stack slot on every dispatch; the blocked shapes sit in
+between.
+
+On the fixture corpus (`run_fixtures.py --runtimes wasm3,exe`, two
+interleaved rounds, 86/86 matches each) the exe tier's execution without
+start went from 4.85 s (1.8x C wasm3) to 2.48 s (0.91x of C's 2.71 s); total
+time with the 86 process starts 6.59 s to 4.21 s against C's 2.83 s. The
+`-jit` tier follows: fib 35 2.06 s to 1.52 s warm, front-end start included.
+The interpreter (fib 30, 2.34 s both) and the ctx tier (fib 35, 1.08 s both)
+did not move.
+
+## 8. Open
 
 - A second expansion layer for the `OP_*` helpers of `m3_math_utils` and
   `m3MemData` in load/store ops through the same pre-infer macro, estimated

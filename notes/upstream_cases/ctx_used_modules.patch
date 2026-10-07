@@ -1,0 +1,14 @@
+--- a/daslib/aot_cpp.das	2026-09-21 02:31:59.778434557 +0300
++++ b/daslib/aot_cpp.das	2026-09-21 04:40:00.000000000 +0300
+@@ -4634,7 +4634,9 @@
+     var visited : table<Module?>
+     for (mod in cppModules) {
+-        let isDefault = DEFAULT_MODULE_ORDER |> find_index(string(mod.cppClassName)) >= 0
+-        if ((isDefault || (linked |> key_exists(mod))) && canAotModule(mod)) {
++        // wasm3das experiment: a default C++ module the runtime program never reaches (rtti_core
++        // and ast_core here, loaded only for a compile-time macro) is not registered; the walk
++        // below still brings in every C++ dependency of a module that is linked
++        if ((linked |> key_exists(mod)) && canAotModule(mod)) {
+             insertWithDependencies(linked, visited, mod)
+         }
+     }

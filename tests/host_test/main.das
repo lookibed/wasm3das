@@ -158,9 +158,9 @@ def main : int {
         wasm_mem = m3_GetMemory(runtime, mem_len, 0u)
         if (yp + ys > int(mem_len) || up + us > int(mem_len) || vp + vs > int(mem_len)) { break }
 
-        let y <- copy_from_memory(wasm_mem, yp, ys)
-        let u <- copy_from_memory(wasm_mem, up, us)
-        let v <- copy_from_memory(wasm_mem, vp, vs)
+        var inscope y <- copy_from_memory(wasm_mem, yp, ys)
+        var inscope u <- copy_from_memory(wasm_mem, up, us)
+        var inscope v <- copy_from_memory(wasm_mem, vp, vs)
 
         let uw = w / 2
         let outpath = "{out_dir}/sample_frame{fi < 10 ? "00" : (fi < 100 ? "0" : "")}{fi}.ppm"
@@ -168,7 +168,7 @@ def main : int {
         fopen(outpath, "wb") $(out) {
             if (out == null) { return }
             fwrite(out, "P6\n{w} {h}\n255\n")
-            var rgb : array<u8>
+            var inscope rgb : array<u8>
             rgb |> resize(w * h * 3)
             var o = 0
             for (row in range(h)) {

@@ -12,6 +12,7 @@ module m3_exec_expand shared private
 // macro therefore registers itself through add_new_infer_macro and builds its
 // three generated nodes (ExprUnsafe, ExprLet, ExprVar) by hand.
 require daslib/ast
+require strings
 
 /*
     The C preprocessor's counterpart for the operand readers of m3_exec.
@@ -409,6 +410,14 @@ class private ExpandReaders : AstVisitor {
     }
 }
 
+// The functions of m3_exec on the operation path: every operation (`def public
+// op_<name> (d_m3OpSig)`, told apart by its five parameters). The dispatch
+// between them - RunLoop, nextOpImpl, jumpOpImpl, RunCode - carries
+// `[unsafe_deref]` in source.
+def private is_operation_path(var fn : FunctionPtr) : bool {
+    return (fn.name |> starts_with("op_")) && length(fn.arguments) == 5
+}
+
 //! Expands the m3_exec operand readers at their use sites, the way the C
 //! preprocessor expands immediate()/slot()/slot_ptr().
 class M3ExecExpandPass : AstPassMacro {
@@ -430,6 +439,18 @@ class M3ExecExpandPass : AstPassMacro {
         expander.prog := prog
         var ok = true
         for_each_function(mod, "") $(var fn : FunctionPtr) {
+            // C dereferences _pc, _sp and the memory pointers unchecked; the
+            // daslang backends test a pointer for null before a deref unless
+            // the function being generated carries the unsafe_deref flag
+            // (what `[unsafe_deref]` in source sets). Set here on the
+            // operations - the functions whose own code runs once per
+            // executed wasm instruction - and on nothing else of the module.
+            // Not on the readers: their bodies are cloned into the operations
+            // above, and the backends test the flag of the function they
+            // generate, so a reader's own flag would change no instruction.
+            if (is_operation_path(fn)) {
+                fn.flags.unsafeDeref = true
+            }
             if (!is_reader_name(string(fn.name))) return
             var r : Reader
             if (!split_reader(fn, r)) {
@@ -480,6 +501,232 @@ class M3ExecExpandPass : AstPassMacro {
     }
 }
 
+// ============================================================================
+// The direct-call dispatch of the JIT tier
+// ============================================================================
+
+
+// `options _m3_dispatch = "<shape>"` at the top of m3_exec.das, read the way
+// daslib reads its own options (dupe_detect.das, flatten.das, lint.das).
+// find_arg is daslib/ast_boost, which this module deliberately does not
+// require (see the require comment at the top), and it is four lines.
+//
+// The option has to sit in m3_exec.das and not in the entry file: m3_exec is a
+// `shared` module, so it compiles as a program of its own and the ProgramPtr
+// this pass is handed carries that module's options, not the entry file's.
+// The leading underscore is what makes it a custom user option; daslang
+// refuses an unregistered option without it.
+def private dispatch_shape(prog : ProgramPtr) : string {
+    for (a in prog._options) {
+        if (a.name == "_m3_dispatch" && a.basicType == Type.tString) return string(a.sValue)
+    }
+    // the same value m3_exec.das sets, so a missing option and the written one agree
+    return "tree"
+}
+
+// C's d_m3OpAllArgs, spelled from the function being generated: the names bind
+// at the use site, so the generated call passes the dispatcher's own
+// parameters straight through. `skip` leaves out the leading index parameter.
+def private argument_names(var fn : FunctionPtr; skip : int; var names : array<string>) {
+    for (arg, i in fn.arguments, count()) {
+        if (i >= skip) {
+            names |> push(string(arg.name))
+        }
+    }
+}
+
+// The leaf of either tree: the operation CALLED (m3_DispatchOp, C's
+// ((IM3Operation)(* _pc))(...) with the operation named instead of loaded) or
+// its function VALUE returned (m3_OpAt), because the two are the same shape
+// over the same names.
+def private build_op_leaf(at : LineInfo; name : string; argNames : array<string>; direct : bool) : ExpressionPtr {
+    if (direct) {
+        var call = new ExprCall(at = at, name := name)
+        for (argName in argNames) {
+            var argExpr = new ExprVar(at = at, name := argName)
+            emplace(call.arguments, argExpr)
+        }
+        return new ExprReturn(at = at, subexpr = call)
+    }
+    var opAddr = new ExprAddr(at = at, target := name)
+    return new ExprReturn(at = at, subexpr = opAddr)
+}
+
+// The linear chain over [lo, hi): one `if (idx == k) { return op_k (...) }`
+// per operation in index order, the last operation as the fall-through, which
+// is what LLVM folds into a switch with a jump table.
+def private build_op_chain_into(at : LineInfo; names : array<string>; lo : int; hi : int; direct : bool; argNames : array<string>; var body : ExprBlock?) {
+    for (i in range(lo, hi - 1)) {
+        var cond = new ExprOp2(at = at, op := "==",
+            left = new ExprVar(at = at, name := "idx"),
+            right = new ExprConstInt(at = at, value = i))
+        var ifTrue = new ExprBlock(at = at)
+        var leaf = build_op_leaf(at, names[i], argNames, direct)
+        emplace(ifTrue.list, leaf)
+        var branch : ExpressionPtr = new ExprIfThenElse(at = at, cond = cond, if_true = ifTrue)
+        emplace(body.list, branch)
+    }
+    var last = build_op_leaf(at, names[hi - 1], argNames, direct)
+    emplace(body.list, last)
+}
+
+// The balanced tree over [lo, hi), `if (idx < mid) { left } else { right }`
+// around the halves, down to ranges of at most `span` operations, each of
+// which is a chain. span 1 is the plain binary tree, a span of every
+// operation the plain chain; in between, each chain is one jump table and
+// the tree above it a few range tests.
+def private build_op_tree_into(at : LineInfo; names : array<string>; lo : int; hi : int; span : int; direct : bool; argNames : array<string>; var body : ExprBlock?) {
+    if (hi - lo <= span) {
+        build_op_chain_into(at, names, lo, hi, direct, argNames, body)
+        return
+    }
+    let mid = (lo + hi) / 2
+    var cond = new ExprOp2(at = at, op := "<",
+        left = new ExprVar(at = at, name := "idx"),
+        right = new ExprConstInt(at = at, value = mid))
+    var ifTrue = new ExprBlock(at = at)
+    build_op_tree_into(at, names, lo, mid, span, direct, argNames, ifTrue)
+    var ifFalse = new ExprBlock(at = at)
+    build_op_tree_into(at, names, mid, hi, span, direct, argNames, ifFalse)
+    var branch : ExpressionPtr = new ExprIfThenElse(at = at, cond = cond, if_true = ifTrue, if_false = ifFalse)
+    emplace(body.list, branch)
+}
+
+// `[hint(<name>)]` on a function, added here rather than written in
+// m3_exec.das because it is meaningful to the JIT alone and the other tiers
+// must compile the source form untouched.
+def private add_hint(var fn : FunctionPtr; name : string) : bool {
+    var builtin = find_compiling_module("$")
+    if (builtin == null) return false
+    var hint = module_find_annotation(builtin, "hint")
+    if (hint == null) return false
+    var decl = new AnnotationDeclaration(uninitialized)
+    decl.annotation = hint
+    let argIdx = decl.arguments |> add_annotation_argument(name)
+    decl.arguments[argIdx].basicType = Type.tBool
+    decl.arguments[argIdx].bValue = true
+    add_function_annotation(fn, decl)
+    return true
+}
+
+// Replace a placeholder body by `body`, exactly where the placeholder stood.
+def private set_body(var fn : FunctionPtr; var body : ExpressionPtr) {
+    fn.body = body
+    fn.not_inferred()
+}
+
+def private set_body_stmt(var fn : FunctionPtr; var stmt : ExpressionPtr) {
+    var body = new ExprBlock(at = fn.at)
+    emplace(body.list, stmt)
+    set_body(fn, body)
+}
+
+//! Generates the direct-call dispatch of m3_exec - m3_DispatchOp, m3_OpAt,
+//! m3_OpCount and m3_OpWord - and gives RunLoop the loop that uses it, so a
+//! code-page word is an operation index instead of the IM3Operation value C
+//! stores there. Runs under the LLVM JIT only.
+class M3ExecDispatchPass : AstPassMacro {
+    // Run-once, the same flag pattern and the same reason as M3ExecExpandPass
+    // above: the generated bodies must be inferred, not regenerated.
+    generated : bool = false
+
+    def override apply(prog : ProgramPtr; mod : Module?) : bool {
+        // The operations live in m3_exec; every other module compiles
+        // untouched. And the invoke is the source form, so the pass runs under
+        // the LLVM JIT alone - the daslang interpreter, the -aot emission and
+        // the -ctx emission compile m3_exec.das exactly as written.
+        if (mod.name != "m3_exec" || generated || !prog.policies.jit_enabled) return false
+        generated = true
+        let form = dispatch_shape(prog)
+        var names : array<string>
+        var anyAt = LineInfo()
+        var loopBody : ExpressionPtr
+        for_each_function(mod, "") $(var fn : FunctionPtr) {
+            anyAt = fn.at
+            // every operation is `def public op_<name> (d_m3OpSig)`, and the
+            // five parameters are what tells one apart from any other op_ name
+            if ((fn.name |> starts_with("op_")) && length(fn.arguments) == 5) {
+                names |> push(string(fn.name))
+            }
+            if (fn.name == "RunLoopIndexed") {
+                loopBody = clone_expression(fn.body)
+            }
+        }
+        // byte order, so the numbering is a function of the source alone
+        names |> sort()
+        if (empty(names) || loopBody == null) {
+            macro_sticky_error(prog, anyAt,
+                "m3_exec_expand: m3_exec must declare the op_* operations and RunLoopIndexed for the JIT dispatch")
+            return false
+        }
+        // The operations per chain: "tree" the binary tree down to single
+        // operations, "chain" one chain over all of them, "blocksN" a tree over
+        // chains of N, one jump table each (docs/execution-design.md section 7
+        // has the measurements).
+        let isBlocks = form |> starts_with("blocks")
+        let blockSpan = isBlocks ? to_int(slice(form, 6)) : 0
+        let span = form == "tree" ? 1 : isBlocks ? blockSpan : length(names)
+        if ((form != "chain" && form != "tree" && !isBlocks) || (isBlocks && blockSpan < 2)) {
+            macro_sticky_error(prog, anyAt,
+                "m3_exec_expand: options _m3_dispatch = \"{form}\" is not tree, chain or blocksN")
+            return false
+        }
+        var seen = 0
+        for_each_function(mod, "m3_DispatchOp") $(var fn : FunctionPtr) {
+            seen++
+            var argNames : array<string>
+            argument_names(fn, 1, argNames)
+            var body = new ExprBlock(at = fn.at)
+            build_op_tree_into(fn.at, names, 0, length(names), span, true, argNames, body)
+            set_body(fn, body)
+            // spliced into RunLoop's loop: kept a function of its own, the
+            // dispatch costs a call, a prologue and a return per executed
+            // operation, and measured twice as slow on CoreMark
+            if (!add_hint(fn, "alwaysinline")) {
+                macro_sticky_error(prog, fn.at, "m3_exec_expand: the builtin `hint` annotation is missing")
+            }
+        }
+        for_each_function(mod, "m3_OpAt") $(var fn : FunctionPtr) {
+            seen++
+            // always the tree: m3_OpAt runs once, when m3_OpIndex fills its
+            // reverse map, and never on the execution path
+            let noArgs : array<string>
+            var body = new ExprBlock(at = fn.at)
+            build_op_tree_into(fn.at, names, 0, length(names), 1, false, noArgs, body)
+            set_body(fn, body)
+        }
+        for_each_function(mod, "m3_OpCount") $(var fn : FunctionPtr) {
+            seen++
+            var count = new ExprConstInt(at = fn.at, value = length(names))
+            var ret : ExpressionPtr = new ExprReturn(at = fn.at, subexpr = count)
+            set_body_stmt(fn, ret)
+        }
+        // C: EmitWord (page, op) stores the IM3Operation value; the index
+        // stands in for it, and this is the single site that spells the word.
+        for_each_function(mod, "m3_OpWord") $(var fn : FunctionPtr) {
+            seen++
+            var call = new ExprCall(at = fn.at, name := "m3_OpIndex")
+            var opArg = new ExprVar(at = fn.at, name := string(fn.arguments[0].name))
+            emplace(call.arguments, opArg)
+            var ret : ExpressionPtr = new ExprReturn(at = fn.at, subexpr = call)
+            set_body_stmt(fn, ret)
+        }
+        // C: ((IM3Operation)(* _pc))(_pc + 1, d_m3OpArgs) — the loop reads the
+        // word as the index and m3_DispatchOp calls the operation directly.
+        // The two functions have the same parameters, so the copied body binds.
+        for_each_function(mod, "RunLoop") $(var fn : FunctionPtr) {
+            seen++
+            set_body(fn, loopBody)
+        }
+        if (seen != 5) {
+            macro_sticky_error(prog, anyAt,
+                "m3_exec_expand: m3_exec must declare the five dispatch placeholders m3_DispatchOp, m3_OpAt, m3_OpCount, m3_OpWord and RunLoop, found {seen}")
+            return false
+        }
+        return true
+    }
+}
+
 // An `[infer_macro]` registration, spelled out so the module needs daslib/ast
 // alone. Was `add_new_pre_infer_macro`: the pre-infer stage came out upstream
 // (see the class comment above), and an infer-macro pass that keeps its own
@@ -489,5 +736,6 @@ class M3ExecExpandPass : AstPassMacro {
 def private setup() {
     if (is_compiling_macros_in_module("m3_exec_expand")) {
         add_new_infer_macro("m3_exec_expand", new M3ExecExpandPass())
+        add_new_infer_macro("m3_exec_dispatch", new M3ExecDispatchPass())
     }
 }

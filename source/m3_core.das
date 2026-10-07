@@ -349,13 +349,29 @@ let public m3Err_trapStackOverflow : M3Result = "[trap] stack overflow"
 // ============================================================================
 
 
+// C tests an M3Result against NULL (`if (r)`, `if (!r)`): one pointer test.
+// The port's M3Result is a string and m3Err_none is "", which every daslang
+// tier represents as the null pointer (the AOT/ctx emitter writes `nullptr`
+// for an empty constant, the interpreter, the JIT and the string builder
+// produce null for an empty string). `empty(result)` is that test, AGENTS.md's
+// spelling for C's `== NULL`, and not the content comparison `result ==
+// m3Err_none` would be. The helpers are `empty` itself: the daslang
+// interpreter evaluates the builtin as one node, where the open-coded
+// pointer-and-first-byte test (`p == null || *p == 0u8`) splices a binding,
+// two comparisons and a dereference into every call site and cost fib(30) about 8 % on the interpreter tier. The LLVM JIT reaches
+// the runtime's string `empty` through a function pointer (llvm_jit_intrin.das
+// lowers `empty` only for arrays and tables); measured on the exe tier the
+// open-coded test gained about 3 % on fib(35) and lost about 3 % of the
+// CoreMark score, so the interpreter's spelling is the one kept.
+[inline]
 def public m3ResultIsOk(result : M3Result) : bool {
-    return result == m3Err_none
+    return empty(result)
 }
 
 
+[inline]
 def public m3ResultIsError(result : M3Result) : bool {
-    return result != m3Err_none
+    return !empty(result)
 }
 
 
